@@ -273,3 +273,111 @@ test('the loop CLI refuses a cross-home identity', () => {
     cleanup(homeB)
   }
 })
+
+// --- Per-PR delivery decisions drive the loop ------------------------------
+
+/**
+ * Build a fake delivery CLI whose resolve output is fixed.
+ * @param fields - delivery decision fields.
+ * @returns the script body.
+ */
+function deliveryScript({ mode = 'no-mistakes', yolo = 'on', source = 'pr' } = {}) {
+  return `#!/usr/bin/env bash
+case "$1" in
+  resolve) printf 'mode=${mode}\\nyolo=${yolo}\\ndelivery_source=${source}\\nyolo_source=${source}\\ntask=\\npr=\\nshadowed=\\nreason=\\n' ;;
+  *) printf 'ok\\n' ;;
+esac
+`
+}
+
+test('a per-PR decision can turn the pipeline off for a merge the registry would gate', async () => {
+  const home = loopHome({
+    config: {
+      tick_ms: 1000,
+      rules: [{
+        id: 'land',
+        when: 'in_flight',
+        script: 'fm-pr-merge.sh',
+        vars: { project: 'demo' },
+        args: ['{id}', '{pr_url}'],
+      }],
+    },
+    snapshot: IN_FLIGHT_SNAPSHOT,
+    mode: 'direct-PR on',
+  })
+  try {
+    writeScript(home, 'fm-delivery.sh', deliveryScript({ mode: 'direct-PR', yolo: 'off', source: 'pr' }))
+    const report = await reconcileTick({ home, identity: makeIdentity(home), apply: true })
+    assert.equal(report.actions[0].outcome, 'skipped')
+    assert.match(report.actions[0].reason, /from pr/)
+    assert.equal(existsSync(join(home, 'state', 'merge.log')), false)
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('a per-PR decision can turn the pipeline on for a merge the registry would allow', async () => {
+  const home = loopHome({
+    config: {
+      tick_ms: 1000,
+      rules: [{
+        id: 'land',
+        when: 'in_flight',
+        script: 'fm-pr-merge.sh',
+        vars: { project: 'demo' },
+        args: ['{id}', '{pr_url}'],
+      }],
+    },
+    snapshot: IN_FLIGHT_SNAPSHOT,
+    mode: 'direct-PR on',
+  })
+  try {
+    writeScript(home, 'fm-delivery.sh', deliveryScript({ mode: 'no-mistakes', yolo: 'on', source: 'task' }))
+    const report = await reconcileTick({ home, identity: makeIdentity(home, 'loop-session'), apply: true })
+    assert.equal(report.actions[0].outcome, 'acted')
+    assert.equal(existsSync(join(home, 'state', 'merge.log')), true)
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('loop rules can consume the resolved delivery decision', async () => {
+  const home = loopHome({
+    config: {
+      tick_ms: 1000,
+      rules: [{
+        id: 'dispatch',
+        when: 'queued',
+        script: 'fm-spawn.sh',
+        vars: { project: 'demo' },
+        args: ['{id}', '--mode', '{delivery_mode}', '--yolo', '{yolo}'],
+      }],
+    },
+  })
+  try {
+    writeScript(home, 'fm-delivery.sh', deliveryScript({ mode: 'direct-PR', yolo: 'on', source: 'task' }))
+    const report = await reconcileTick({ home, identity: makeIdentity(home, 'loop-session'), apply: true })
+    assert.equal(report.actions[0].outcome, 'acted')
+    const log = readFileSync(join(home, 'state', 'spawn.log'), 'utf8').trim()
+    assert.match(log, /fm-a --mode direct-PR --yolo on$/)
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('a rule needing a delivery decision is skipped when the layer is unavailable', async () => {
+  const home = loopHome({
+    config: {
+      tick_ms: 1000,
+      rules: [{ id: 'dispatch', when: 'queued', script: 'fm-spawn.sh', args: ['{id}', '--mode', '{delivery_mode}'] }],
+    },
+  })
+  try {
+    const report = await reconcileTick({ home, identity: makeIdentity(home), apply: true })
+    assert.equal(report.actions.length, 0)
+    assert.ok(report.skipped.some((entry) => /delivery decision unavailable/.test(entry.reason ?? '')))
+    assert.equal(existsSync(join(home, 'state', 'spawn.log')), false)
+  } finally {
+    cleanup(home)
+  }
+})

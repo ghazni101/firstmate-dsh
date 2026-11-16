@@ -145,6 +145,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-branch-prompt.sh`    | Emit the shared supervision branch's byte-stable system prompt ([pi-supervision-branch.md](pi-supervision-branch.md), [supervision-host.md](supervision-host.md)) |
 | `fm-branch-outcome.sh`   | Own the supervision branch's append-only outcome store, cursors, bounded status-coverage indexes, and session-start replay |
 | `fm-lease.sh`            | Claim, release, inspect, and sweep per-task supervision leases                       |
+| `fm-delivery.sh`         | Resolve, record, list, and clear per-PR or per-task delivery decisions over the project registry ([contract](delivery-decisions.md)) |
+| `fm-delivery-lib.sh`     | One owner of the delivery-decision record format, resolution order, and spawn conflict gate |
 | `fm-lease-lib.sh`        | One owner of the supervision lease contract and the main-only role-partition guards; routes a native home to the DSH per-task lease |
 | `fm-native-lib.sh`       | Native (DSH) task-lease enforcement seam: verify the presented fencing token for a mutation, no fleet lock, no branch actor ([contract](dsh-native-architecture.md)) |
 | `fm-control.sh`          | Agent lifecycle control plane: allowlisted `interrupt`, `exit`, and transactional `relaunch` verbs for an exact task id ([agent-control.md](agent-control.md)) |

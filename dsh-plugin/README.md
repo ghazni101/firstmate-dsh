@@ -19,11 +19,13 @@ the twelve settled decisions in
   adapter; `bin/fm-native-lib.sh` is the engine seam.
 - **Tools.** Read-only fleet tools (`firstmate_native_status`, `firstmate_native_tasks`, `firstmate_native_inbox`),
   lease control (`firstmate_native_lease`), a lease-guarded command channel (`firstmate_native_run`), one
-  reconciliation tick (`firstmate_native_reconcile`), and a lock-free native startup input
-  (`firstmate_native_start`).
+  reconciliation tick (`firstmate_native_reconcile`), a lock-free native startup input
+  (`firstmate_native_start`), and per-PR delivery decisions (`firstmate_native_delivery`).
 - **Reconciliation loop.** `src/reconcile.js` and `bin/fm-reconcile.mjs --once|--loop`: reap,
   observe, select from home-authored rules, lease-then-act, report. Merge rules are gated by
-  the task project's posture.
+  the resolved delivery decision for that PR/task: a durable per-PR record first, then a
+  per-task record, then the project registry ([delivery decisions](../docs/delivery-decisions.md)).
+  Rules may use `{delivery_mode}`, `{yolo}`, and `{delivery_source}` placeholders.
 - **Native engine guard.** When a home carries `config/dsh-native-lease`,
   `bin/fm-lease-lib.sh` routes `fm_lease_guard` / `fm_lease_forbid_branch` to
   `bin/fm-native-lib.sh`, so the existing mutating entrypoints enforce the DSH lease instead
@@ -63,8 +65,16 @@ Example loop configuration:
 ```
 
 A rule never names a supervisor-lifecycle script. Merge rules (`fm-pr-merge.sh`,
-`fm-merge-local.sh`) additionally need `vars.project` and run only when the project's
-registered posture reads yolo and the matching mode.
+`fm-merge-local.sh`) additionally need `vars.project` and run only when the resolved delivery
+decision reads yolo and the matching mode; a per-PR record can turn that on or off for one
+PR without touching the project registry.
+
+The per-PR switch itself lives in the engine and is shared with every harness:
+
+```sh
+bin/fm-delivery.sh set --pr <url> --pipeline off --reason "docs-only"
+bin/fm-delivery.sh resolve --pr <url> --project <name>
+```
 
 ## Headless loop
 

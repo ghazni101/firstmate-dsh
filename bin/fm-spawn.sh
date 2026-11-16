@@ -1308,6 +1308,17 @@ else
       exit 1
       ;;
     esac
+    # A durable per-PR or per-task delivery decision is authoritative once
+    # recorded, so an explicit spawn that contradicts it is refused instead of
+    # silently overriding the switch (bin/fm-delivery-lib.sh owns resolution
+    # and the record format). Registry and default postures stay intake inputs.
+    if [ -x "$FM_ROOT/bin/fm-delivery.sh" ]; then
+      if ! DELIVERY_REFUSAL=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \
+        "$FM_ROOT/bin/fm-delivery.sh" enforce-task "${POS[0]:-}" "$MODE" "$YOLO" 2>&1); then
+        printf '%s\n' "$DELIVERY_REFUSAL" >&2
+        exit 1
+      fi
+    fi
     if [ "$UPSTREAM_CONSENT_SET" -eq 1 ]; then
       if [ "$MODE" = local-only ]; then
         echo "error: --upstream-consent is meaningless on local-only, which publishes nothing; drop it" >&2

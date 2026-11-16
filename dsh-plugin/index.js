@@ -34,6 +34,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
+import { deliveryAction, resolveDelivery } from './src/delivery.js'
 import { LeaseError } from './src/errors.js'
 import { identifySession, identityNote } from './src/identity.js'
 import { isNativeHome } from './src/home.js'
@@ -746,6 +747,89 @@ export function apply(ctx, config = {}) {
     },
   }))
 
+  ctx.tools.register(defineTool({
+    name: 'firstmate_native_delivery',
+    description:
+      'Per-PR (or per-task) delivery decision for this session\'s home: whether a pull request must go through the no-mistakes gate or may be delivered directly. resolve reports the effective decision (PR record, then task record, then the project registry) with yolo and the losing source; set/clear write or remove the durable record (a task write takes that task\'s lease); list/show read it. This layer never runs or inspects a pipeline run itself.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['resolve', 'get', 'set', 'clear', 'list'],
+          description: 'resolve the effective decision, read one record, write one, clear one, or list all.',
+        },
+        task: { type: 'string', description: 'Exact task id. Required for get/set/clear unless pr is given.' },
+        pr: { type: 'string', description: 'Canonical pull/merge-request URL, for PR-scoped decisions and lookups.' },
+        project: { type: 'string', description: 'Project registry name, used as the resolution fallback for resolve/set.' },
+        mode: {
+          type: 'string',
+          enum: ['no-mistakes', 'direct-PR', 'local-only'],
+          description: 'Required for set: the delivery path this PR or task must use.',
+        },
+        yolo: {
+          type: 'string',
+          enum: ['on', 'off', 'inherit'],
+          description: 'Merge authority for set; inherit (default) keeps the project registry posture.',
+        },
+        reason: { type: 'string', description: 'Short reason recorded with the decision.' },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+    timeoutMs: 120000,
+    async execute(args, exec) {
+      const identity = requireIdentity(exec)
+      const action = args?.action
+      if (!['resolve', 'get', 'set', 'clear', 'list'].includes(action)) {
+        throw new Error('action must be resolve, get, set, clear, or list')
+      }
+      if (action !== 'list' && (typeof args?.task !== 'string' || args.task.length === 0)
+        && (typeof args?.pr !== 'string' || args.pr.length === 0)) {
+        throw new Error('task or pr is required')
+      }
+      if (action === 'set' && (typeof args?.mode !== 'string' || args.mode.length === 0)) {
+        throw new Error('mode is required for set')
+      }
+      if (action === 'set' && args?.yolo !== undefined && !['on', 'off', 'inherit'].includes(args.yolo)) {
+        throw new Error('yolo must be on, off, or inherit')
+      }
+      const call = () => deliveryAction({
+        home: identity.home,
+        action,
+        task: typeof args?.task === 'string' ? args.task : undefined,
+        prUrl: typeof args?.pr === 'string' ? args.pr : undefined,
+        project: typeof args?.project === 'string' ? args.project : undefined,
+        mode: typeof args?.mode === 'string' ? args.mode : undefined,
+        yolo: typeof args?.yolo === 'string' ? args.yolo : undefined,
+        reason: typeof args?.reason === 'string' ? args.reason : undefined,
+        signal: exec?.signal,
+      })
+      try {
+        // A task-scoped write is a task mutation: hold that task's lease for it.
+        const needsTaskLease = (action === 'set' || action === 'clear')
+          && typeof args?.task === 'string' && args.task.length > 0
+        if (needsTaskLease) {
+          const leased = await withLease(
+            { home: identity.home, task: args.task, identity, purpose: `delivery:${action}` },
+            call,
+          )
+          if (leased.fenced !== null) {
+            throw new Error(`${leased.fenced.code ?? 'fenced'}: ${leased.fenced.message}`)
+          }
+          const result = leased.result
+          if (!result.ok) throw new Error(`delivery decision failed: ${result.error}`)
+          return { ok: true, home: identity.home, action, task: args.task, fields: result.fields, text: result.text }
+        }
+        const result = await call()
+        if (!result.ok) throw new Error(`delivery decision failed: ${result.error}`)
+        return { ok: true, home: identity.home, action, fields: result.fields, text: result.text }
+      } catch (error) {
+        surfaceLeaseError(error)
+      }
+    },
+  }))
+
   ctx.on('agent/created', async ({ agent } = {}) => {
     try {
       const identity = identifySession({ agent, configuredHome })
@@ -807,4 +891,5 @@ export { isFirstmateHome, isNativeHome, resolveHome } from './src/home.js'
 export { buildFollowup, createFollowupChannel } from './src/transport.js'
 export { loadLoopConfig, observeHome, reconcileHint, reconcileTick } from './src/reconcile.js'
 export { listLeases } from './src/lease.js'
+export { deliveryAction, resolveDelivery } from './src/delivery.js'
 export { LeaseError } from './src/errors.js'

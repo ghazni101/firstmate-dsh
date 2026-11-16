@@ -1216,6 +1216,28 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test 
 
 Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](fm-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) owns the real-Herdr lane's isolation boundary, and [runtime-backends.md](verification/runtime-backends.md#herdr) owns active evidence.
 
+## Per-PR delivery decisions (data/delivery)
+
+A durable, PR-scoped decision can require no-mistakes for one pull request or skip the
+pipeline for another, overriding the project registry without changing it.
+[`delivery-decisions.md`](delivery-decisions.md) owns the record format, the resolution order
+(PR record, then task record, then the registry, then the unregistered default), the CLI
+(`bin/fm-delivery.sh`), the native `firstmate_native_delivery` tool, and the enforcement
+points.
+
+Records live under the gitignored `data/delivery/`:
+
+```text
+data/delivery/task-<task-id>.record
+data/delivery/pr-<host>_<owner>_<repo>_<number>.record
+```
+
+`bin/fm-spawn.sh` refuses a fresh ship whose explicit `--mode`/`--yolo` contradict an existing
+record, so the switch cannot be bypassed at dispatch. The native reconciliation loop resolves
+the same decision before a merge action and falls back to `bin/fm-project-mode.sh` when the
+decision layer is absent. Deleting the records directory restores registry-only behavior; no
+other runtime state points at it.
+
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
 
 Domain-local preferences for one captain's fleet live locally in each home's `data/captain.md`; it is gitignored and printed in the session-start context digest after `data/projects.md` and optional `data/secondmates.md`.

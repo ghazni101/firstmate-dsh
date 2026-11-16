@@ -26,6 +26,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveDelivery } from './delivery.js'
 import { assertSameHome } from './identity.js'
 import { reapExpiredLeases, withLease } from './lease.js'
 import { combinedOutput, runScript } from './scripts.js'
@@ -251,7 +252,7 @@ function substitute(argument, values) {
  * @param item - the observed item.
  * @returns `{ argv }` or `{ missing }`.
  */
-function buildArgv(rule, item) {
+function buildArgv(rule, item, extra = {}) {
   const values = {
     ...rule.vars,
     id: item.id,
@@ -261,6 +262,7 @@ function buildArgv(rule, item) {
     repo: item.repo,
     pr_url: item.pr_url,
     state: item.state,
+    ...extra,
   }
   const argv = []
   for (const template of rule.args) {
@@ -276,33 +278,48 @@ function buildArgv(rule, item) {
  * @param options - gate inputs.
  * @returns `{ allowed, reason, mode, yolo }`.
  */
-export async function mergeAuthority({ home, rule, script, timeoutMs = 30000, signal } = {}) {
+export async function mergeAuthority({ home, rule, script, task, prUrl, timeoutMs = 30000, signal } = {}) {
   const kind = MERGE_SCRIPTS.get(script)
-  if (kind === undefined) return { allowed: true, reason: null, mode: null, yolo: null }
+  if (kind === undefined) return { allowed: true, reason: null, mode: null, yolo: null, source: null }
   const project = rule.vars?.project
   if (typeof project !== 'string' || project.length === 0) {
-    return { allowed: false, reason: 'merge rule must set vars.project', mode: null, yolo: null }
+    return { allowed: false, reason: 'merge rule must set vars.project', mode: null, yolo: null, source: null }
   }
-  const result = await runScript(home, 'fm-project-mode.sh', [project], { timeoutMs, signal })
-  if (result.code !== 0) {
-    return { allowed: false, reason: `project posture unreadable for ${project}`, mode: null, yolo: null }
+  // The per-PR/per-task delivery decision (bin/fm-delivery.sh) is authoritative
+  // when it exists; the project registry remains the fallback for a home whose
+  // checkout predates the decision layer.
+  let mode = ''
+  let yolo = ''
+  let source = null
+  const decision = await resolveDelivery({ home, task, prUrl, project, signal })
+  if (decision.available) {
+    mode = decision.mode ?? ''
+    yolo = decision.yolo ?? ''
+    source = decision.deliverySource
+  } else {
+    const result = await runScript(home, 'fm-project-mode.sh', [project], { timeoutMs, signal })
+    if (result.code !== 0) {
+      return { allowed: false, reason: `project posture unreadable for ${project}`, mode: null, yolo: null, source: null }
+    }
+    ;[mode = '', yolo = ''] = combinedOutput(result).trim().split(/\s+/)
   }
-  const [mode = '', yolo = ''] = combinedOutput(result).trim().split(/\s+/)
   if (kind === 'pr') {
     const allowed = yolo === 'on' && (mode === 'no-mistakes' || mode === 'direct-PR')
     return {
       allowed,
-      reason: allowed ? null : `PR merge needs a no-mistakes/direct-PR project with yolo on (read ${mode} ${yolo})`,
+      reason: allowed ? null : `PR merge needs a no-mistakes/direct-PR delivery decision with yolo on (read ${mode} ${yolo}${source ? ` from ${source}` : ''})`,
       mode,
       yolo,
+      source,
     }
   }
   const allowed = yolo === 'on' && mode === 'local-only'
   return {
     allowed,
-    reason: allowed ? null : `local-only landing needs mode local-only with yolo on (read ${mode} ${yolo})`,
+    reason: allowed ? null : `local-only landing needs mode local-only with yolo on (read ${mode} ${yolo}${source ? ` from ${source}` : ''})`,
     mode,
     yolo,
+    source,
   }
 }
 
@@ -375,7 +392,26 @@ export async function reconcileTick({
     if (attempts >= loop.max_actions_per_tick) break
     const rule = loop.rules.find((candidate) => ruleMatches(candidate, item))
     if (rule === undefined) continue
-    const built = buildArgv(rule, item)
+    let deliveryValues = {}
+    if (rule.args.some((arg) => arg.includes('{delivery_mode}') || arg.includes('{yolo}'))) {
+      const decision = await resolveDelivery({
+        home,
+        task: item.id,
+        prUrl: item.pr_url,
+        project: rule.vars?.project,
+        signal,
+      })
+      if (!decision.available) {
+        report.skipped.push({ task: item.id, rule: rule.id, reason: `delivery decision unavailable: ${decision.error}` })
+        continue
+      }
+      deliveryValues = {
+        delivery_mode: decision.mode,
+        yolo: decision.yolo,
+        delivery_source: decision.deliverySource,
+      }
+    }
+    const built = buildArgv(rule, item, deliveryValues)
     if (built.missing !== undefined) {
       report.skipped.push({ task: item.id, rule: rule.id, reason: `missing value {${built.missing}}` })
       continue
@@ -393,7 +429,14 @@ export async function reconcileTick({
     }
     report.actions.push(action)
     if (!apply) continue
-    const authority = await mergeAuthority({ home, rule, script: rule.script, signal })
+    const authority = await mergeAuthority({
+      home,
+      rule,
+      script: rule.script,
+      task: item.id,
+      prUrl: item.pr_url,
+      signal,
+    })
     if (!authority.allowed) {
       action.outcome = 'skipped'
       action.reason = authority.reason

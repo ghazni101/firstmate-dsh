@@ -694,6 +694,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": "docs/delivery-decisions.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/dsh-native-architecture.md",
       "audience": "maintainer-architecture"
     },

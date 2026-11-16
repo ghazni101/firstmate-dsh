@@ -452,6 +452,7 @@ when the call names a home other than the session's. None takes a lease, because
 | `firstmate_native_run` | one allowlisted `bin/fm-*.sh` | Read-only scripts run directly; a mutating script requires a `task` and runs under that task's lease (taken for the call, or the caller's held `token`), exporting `FM_LEASE_HOME/TASK/TOKEN/SESSION/OWNER`. Session-lifecycle scripts are refused. |
 | `firstmate_native_reconcile` | (in-process loop tick) | One reconciliation tick; dry-run by default, `apply` executes authored rules under leases, `hint` delivers a follow-up when captain attention is needed. |
 | `firstmate_native_start` | `fm-fleet-snapshot.sh`, `fm-inbox.sh`, lease directory | Read-only native startup input: identity, readiness, backlog/task summary, held leases, queued durable wakes, and whether `state/.lock` merely exists. Never runs session-start and never takes the lock. |
+| `firstmate_native_delivery` | `fm-delivery.sh` | Resolve, read, write, clear, or list a per-PR/per-task delivery decision (no-mistakes vs direct delivery). Task-scoped writes hold the task lease. Owned by [`delivery-decisions.md`](delivery-decisions.md). |
 
 Shape of every result:
 
@@ -564,11 +565,15 @@ records or discarding unlanded work; it completes, or it reports.
 
 ### 6.4 Merge authority
 
-Merge authority comes from the **task's project posture**, checked while holding that task's
-lease:
+Merge authority comes from the **resolved delivery decision** for the task/PR, checked while
+holding that task's lease:
 
-- `config/project-mode` via `bin/fm-project-mode.sh` supplies the project's delivery mode and
-  `yolo` posture.
+- `bin/fm-delivery.sh resolve` supplies the effective mode and `yolo`: a per-PR record, then a
+  per-task record, then `bin/fm-project-mode.sh` over `data/projects.md` ([the full order and
+  record format](delivery-decisions.md)).
+- A per-PR decision can require the pipeline for one PR on a direct project, or skip it for one
+  PR on a gated project; the merge action follows the resolved decision, not the registry
+  alone.
 - A lease holder may merge only the task it holds, only when that task's recorded delivery
   mode and posture allow it, and only through the guarded merge scripts
   (`bin/fm-pr-merge.sh`, `bin/fm-merge-local.sh`).
@@ -715,6 +720,7 @@ ownership is the per-task fencing lease plus the narrow maintenance lease.
 | `state/.lease-<task>` one line `<actor>\t<pid>\t<epoch>` | `state/leases/<task>.lease` JSON record with token. |
 | One supervision host / daemon per home | Any number of peer sessions; one optional headless loop. |
 | Lock ownership gates mutating tools | Task lease token gates task mutations; read-only tools ungated. |
+| Project registry alone decides pipeline vs direct | Project registry is the default; a durable per-PR/per-task record overrides it ([delivery-decisions.md](delivery-decisions.md)). |
 | Watcher wake queue as the only supervision driver | Durable files; loop ticks; event hints are latency only. |
 | `fm_watch_*` arm owner | Phase 3 loop; watcher remains fallback. |
 

@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { apply } from '../index.js'
-import { acquireLease, inspectLease } from '../src/lease.js'
+import { acquireLease, inspectLease, listLeases } from '../src/lease.js'
 import {
   cleanup,
   emit,
@@ -52,7 +52,7 @@ test('the plugin is inert unless enabled', () => {
   assert.equal(context.listeners.size, 0)
 })
 
-test('enabling registers exactly the seven tools and the identity listeners', async () => {
+test('enabling registers exactly the eight tools and the identity listeners', async () => {
   const home = makeHome({ scripts: {
     'fm-bearings-snapshot.sh': STATUS_SCRIPT,
     'fm-tasks-axi.sh': TASKS_SCRIPT,
@@ -61,7 +61,7 @@ test('enabling registers exactly the seven tools and the identity listeners', as
   try {
     const surface = await boot({ home })
     assert.deepEqual(surface.tools.map((tool) => tool.name).sort(),
-      ['firstmate_native_inbox', 'firstmate_native_lease', 'firstmate_native_reconcile', 'firstmate_native_run', 'firstmate_native_start', 'firstmate_native_status', 'firstmate_native_tasks'])
+      ['firstmate_native_delivery', 'firstmate_native_inbox', 'firstmate_native_lease', 'firstmate_native_reconcile', 'firstmate_native_run', 'firstmate_native_start', 'firstmate_native_status', 'firstmate_native_tasks'])
     assert.ok(surface.listeners.has('agent/created'))
     assert.ok(surface.listeners.has('agent/disposed'))
     for (const tool of surface.tools) {
@@ -467,6 +467,77 @@ test('firstmate_native_start composes the digest without the fleet lock', async 
     await toolNamed(surface.tools, 'firstmate_native_lease').execute(
       { action: 'release', task: 'fm-a', token: lease.token },
       execFor(surface.agent),
+    )
+  } finally {
+    cleanup(home)
+  }
+})
+
+
+// --- Per-PR delivery decisions ---------------------------------------------
+
+/** Fake delivery CLI that echoes a decision and records writes. */
+const DELIVERY_SCRIPT = `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$FM_HOME/state/delivery.log"
+case "$1" in
+  resolve) printf 'mode=no-mistakes\nyolo=on\ndelivery_source=pr\nyolo_source=pr\ntask=fm-a\npr=\nshadowed=\nreason=\\n' ;;
+  list) printf 'task-fm-a delivery=no-mistakes yolo=inherit task=fm-a pr=\\n' ;;
+  *) printf 'recorded\\n' ;;
+esac
+`
+
+test('firstmate_native_delivery resolves, writes, and lists decisions', async () => {
+  const home = makeHome({ scripts: { 'fm-delivery.sh': DELIVERY_SCRIPT } })
+  try {
+    const surface = await boot({ home })
+    const tool = toolNamed(surface.tools, 'firstmate_native_delivery')
+    const resolved = await tool.execute({ action: 'resolve', task: 'fm-a', project: 'demo' }, execFor(surface.agent))
+    assert.equal(resolved.ok, true)
+    assert.equal(resolved.fields.mode, 'no-mistakes')
+    assert.equal(resolved.fields.delivery_source, 'pr')
+    const set = await tool.execute({
+      action: 'set', task: 'fm-a', mode: 'no-mistakes', yolo: 'off', reason: 'gate it',
+    }, execFor(surface.agent))
+    assert.equal(set.ok, true)
+    const log = readFileSync(join(home, 'state', 'delivery.log'), 'utf8')
+    assert.match(log, /set --task fm-a --mode no-mistakes --yolo off --reason gate it/)
+    const listed = await tool.execute({ action: 'list' }, execFor(surface.agent))
+    assert.equal(listed.ok, true)
+    assert.match(listed.text, /task-fm-a delivery=no-mistakes/)
+    // A task write is a task mutation, so it released the lease it took.
+    assert.deepEqual(listLeases({ home }).filter((lease) => lease.live), [])
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('firstmate_native_delivery validates its arguments', async () => {
+  const home = makeHome({ scripts: { 'fm-delivery.sh': DELIVERY_SCRIPT } })
+  try {
+    const surface = await boot({ home })
+    const tool = toolNamed(surface.tools, 'firstmate_native_delivery')
+    await assert.rejects(tool.execute({ action: 'resolve' }, execFor(surface.agent)), /task or pr is required/)
+    await assert.rejects(tool.execute({ action: 'set', task: 'fm-a' }, execFor(surface.agent)), /mode is required/)
+    await assert.rejects(
+      tool.execute({ action: 'set', task: 'fm-a', mode: 'no-mistakes', yolo: 'maybe' }, execFor(surface.agent)),
+      /yolo must be on, off, or inherit/,
+    )
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('firstmate_native_delivery refuses a task write another session holds', async () => {
+  const home = makeHome({ scripts: { 'fm-delivery.sh': DELIVERY_SCRIPT } })
+  try {
+    acquireLease({ home, task: 'fm-a', identity: makeIdentity(home, 'other-session') })
+    const surface = await boot({ home })
+    await assert.rejects(
+      toolNamed(surface.tools, 'firstmate_native_delivery').execute(
+        { action: 'set', task: 'fm-a', mode: 'no-mistakes' },
+        execFor(surface.agent),
+      ),
+      /contention:/,
     )
   } finally {
     cleanup(home)
