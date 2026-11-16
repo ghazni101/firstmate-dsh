@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Firstmate native supervisor",
+    "description": "Task-scoped Firstmate supervision on DeepSeek Harness: session and home identity, read-only fleet tools, and per-task leases with fencing tokens."
+  }
+}

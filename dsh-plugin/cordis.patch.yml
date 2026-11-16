@@ -1,0 +1,5 @@
+- insert:
+    - id: firstmate-native
+      name: '@local/dsh-plugin-firstmate-native'
+      config:
+        enabled: false

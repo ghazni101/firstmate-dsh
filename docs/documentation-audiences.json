@@ -692,6 +692,18 @@
     {
       "path": ".agents/skills/validation-supervision/SKILL.md",
       "audience": "agent-runtime"
+    },
+    {
+      "path": "docs/dsh-native-architecture.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/plans/2026-11-16-dsh-native-overhaul-handoff.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "dsh-plugin/README.md",
+      "audience": "operator-current"
     }
   ]
 }

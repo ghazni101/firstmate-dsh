@@ -1,0 +1,31 @@
+{
+  "name": "@local/dsh-plugin-firstmate-native",
+  "version": "0.2.0",
+  "private": true,
+  "description": "DSH-native Firstmate supervisor skeleton: session and home identity, read-only fleet tools, follow-up transport, and N-owner per-task leases with fencing tokens.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./lease": "./src/lease.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "src",
+    "bin",
+    "lib",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

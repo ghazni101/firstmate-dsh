@@ -105,6 +105,20 @@
 # this task right now - retry after the lease clears".
 FM_LEASE_REFUSE_EXIT=6
 FM_LEASE_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
+# The native (DSH) seam: a home that opted in with config/dsh-native-lease has
+# its task ownership verified by the per-task lease instead of the two-actor
+# lock-bound contract below. The library is inert and side-effect free in every
+# other home (bin/fm-native-lib.sh owns the contract).
+# A torn checkout (the library updated before its sibling landed) must not break
+# every lease consumer, so a missing seam degrades to the legacy path only.
+if [ -r "$FM_LEASE_LIB_DIR/fm-native-lib.sh" ]; then
+  # shellcheck source=bin/fm-native-lib.sh
+  . "$FM_LEASE_LIB_DIR/fm-native-lib.sh"
+else
+  fm_native_lease_enabled() { return 1; }
+  fm_native_lease_guard() { printf 'error: native lease seam is missing beside %s\n' "$FM_LEASE_LIB_DIR" >&2; exit 6; }
+  fm_native_lease_release() { return 0; }
+fi
 FM_LEASE_GUARD_LOCK=
 
 fm_lease_lock_helpers() {
@@ -266,6 +280,10 @@ fm_lease_clear_stale() {
 fm_lease_guard() {
   local task=$1 action=$2 actor lock lease_actor
   fm_lease_valid_id "$task" || return 0
+  if fm_native_lease_enabled; then
+    fm_native_lease_guard "$task" "$action"
+    return 0
+  fi
   actor=$(fm_lease_actor) || exit "$FM_LEASE_REFUSE_EXIT"
   case "${PI_CODING_AGENT:-}:${FM_SUPERVISION_ACTOR:-}" in
     true:*|*:main|*:branch) ;;
@@ -297,6 +315,10 @@ fm_lease_guard() {
 # Idempotent so callers can use it unconditionally from existing EXIT cleanup.
 fm_lease_guard_release() {
   local lock=$FM_LEASE_GUARD_LOCK
+  if fm_native_lease_enabled; then
+    fm_native_lease_release
+    return 0
+  fi
   [ -n "$lock" ] || return 0
   FM_LEASE_GUARD_LOCK=
   fm_lock_release "$lock"
@@ -322,6 +344,10 @@ fm_lease_away_relocated() {
 # without the flag the action is never relocated in any posture.
 fm_lease_forbid_branch() {
   local action=$1 relocatable=${2:-} actor
+  # The native design has no branch actor: one session is one peer owner.
+  if fm_native_lease_enabled; then
+    return 0
+  fi
   actor=$(fm_lease_actor) || exit "$FM_LEASE_REFUSE_EXIT"
   [ "$actor" = branch ] || return 0
   if [ "$relocatable" = --away-relocated ] && fm_lease_away_relocated; then
