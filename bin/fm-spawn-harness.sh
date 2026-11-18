@@ -91,25 +91,6 @@ omp_model_validate() { # <omp-bin> <model> [<profile>]
 # sign-in prompt can never block the spawn before any pane exists. An
 # unreachable listing establishes nothing (harness-adapters
 # model-and-effort.md) and launches unvalidated with a notice.
-agy_model_validate() {  # <agy-bin> <model>
-  local bin=$1 model=$2 listing rc=0 bound=${FM_AGY_MODELS_TIMEOUT:-15}
-  case "$bound" in ''|*[!0-9]*|0*) bound=15 ;; esac
-  [ -n "$model" ] && [ "$model" != default ] || return 0
-  listing=$(fm_run_timed "$bound" "$bin" models 2>/dev/null < /dev/null) || rc=$?
-  if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
-    if [ "$rc" -eq 124 ]; then
-      echo "notice: 'agy models' did not answer within ${bound}s; launching with --model '$model' unvalidated" >&2
-    else
-      echo "notice: 'agy models' listing is unreachable (exit $rc); launching with --model '$model' unvalidated" >&2
-    fi
-    return 0
-  fi
-  if printf '%s\n' "$listing" | awk '{print $1}' | grep -qxF -- "$model"; then
-    return 0
-  fi
-  echo "error: agy model '$model' is not listed by 'agy models'; choose a listed id or omit --model" >&2
-  return 1
-}
 
 # kiro pre-launch model validation. `kiro-cli chat --agent-engine v2
 # --list-models -f json` (kiro-cli 2.21.4) prints
@@ -129,31 +110,6 @@ agy_model_validate() {  # <agy-bin> <model>
 # all - a renamed field, or an empty catalog - also establishes nothing about
 # whether the model exists, so it takes the same unvalidated-launch notice; only
 # a listing that parses and omits the requested id is unsupported evidence.
-kiro_model_validate() {  # <kiro-bin> <model>
-  local bin=$1 model=$2 listing ids rc=0 bound=${FM_KIRO_MODELS_TIMEOUT:-15}
-  case "$bound" in ''|*[!0-9]*|0*) bound=15 ;; esac
-  [ -n "$model" ] && [ "$model" != default ] || return 0
-  listing=$(fm_run_timed "$bound" "$bin" chat --agent-engine v2 --list-models -f json 2>/dev/null < /dev/null) || rc=$?
-  if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
-    if [ "$rc" -eq 124 ]; then
-      echo "notice: 'kiro-cli --list-models' did not answer within ${bound}s; launching with --model '$model' unvalidated" >&2
-    else
-      echo "notice: 'kiro-cli --list-models' listing is unreachable (exit $rc); launching with --model '$model' unvalidated" >&2
-    fi
-    return 0
-  fi
-  ids=$(printf '%s' "$listing" | grep -oE '"model_id"[[:space:]]*:[[:space:]]*"[^"]+"' \
-    | sed 's/.*:[[:space:]]*"//;s/"$//')
-  if [ -z "$ids" ]; then
-    echo "notice: 'kiro-cli --list-models' listing carries no model_id; launching with --model '$model' unvalidated" >&2
-    return 0
-  fi
-  if printf '%s\n' "$ids" | grep -qxF -- "$model"; then
-    return 0
-  fi
-  echo "error: kiro model '$model' is not listed by 'kiro-cli --list-models'; choose a listed model_id or omit --model" >&2
-  return 1
-}
 
 # kiro's hook commands are single-token absolute paths, so a hook path carrying
 # whitespace or a shell-special character cannot be delivered as one token under
@@ -164,17 +120,6 @@ kiro_model_validate() {  # <kiro-bin> <model>
 # worktree or pane exists, and name the path. The physical resolution is what
 # gets embedded, so that is what is checked; an unresolvable state dir falls
 # back to the configured string.
-kiro_hook_path_validate() {  # <state-dir> <id>
-  local state=$1 id=$2 real
-  real=$(cd "$state" 2>/dev/null && pwd -P) || real=$state
-  [ -n "$real" ] || real=$state
-  case "$real/$id.kiro-home" in
-    *[[:space:]\'\"\\\$\`\;\&\|\<\>\(\)\*\?\[\]\{\}\!]*)
-      echo "error: kiro hook scripts would live under '$real/$id.kiro-home', whose path contains whitespace or a shell-special character; kiro hook commands must be a single unquoted token, so point FM_HOME or FM_STATE_OVERRIDE at a path free of both" >&2
-      return 1 ;;
-  esac
-  return 0
-}
 
 # The Claude task-worker channel statement: the launch brief and the Firstmate
 # instruction inbox are first-party, everything else keeps the model's normal
@@ -663,24 +608,6 @@ fi
 if [ "$HERMES_PROFILE_SET" -eq 1 ] && [ "$HARNESS" != hermes ]; then
   echo "error: --hermes-profile requires --harness hermes" >&2
   exit 1
-fi
-if [ "$HARNESS" = hermes ]; then
-  # shellcheck source=/dev/null
-  . "$SCRIPT_DIR/fm-hermes-lib.sh"
-  fm_hermes_managed_check || exit 1
-  HERMES_BIN=$(command -v hermes) || { echo 'error: hermes executable not found on PATH' >&2; exit 1; }
-  if [ "$RELAUNCH" -eq 1 ] && [ "$HERMES_PROFILE_SET" -eq 0 ] && [ "$RELAUNCH_PRIOR_HARNESS" = hermes ]; then
-    HERMES_PROFILE=$(fm_meta_get "$RELAUNCH_META" hermes_profile)
-    HERMES_HOME=$(fm_meta_get "$RELAUNCH_META" hermes_home)
-    export HERMES_HOME
-  fi
-  if [ -n "$MODEL" ] && [ "$MODEL" != default ]; then
-    echo 'error: Hermes model selection belongs to the selected profile; omit --model or use default' >&2
-    exit 1
-  fi
-  [ -z "$EFFORT" ] || echo "notice: Hermes reasoning is profile-owned; effort=$EFFORT is recorded but not passed" >&2
-  HERMES_PROFILE_HOME=$(fm_hermes_profile_home "$HERMES_BIN" "$HERMES_PROFILE") || exit 1
-  fm_hermes_gateway_check "$HERMES_PROFILE_HOME" "${HERMES_PROFILE:-${HERMES_PROFILE_HOME##*/}}" || exit 1
 fi
 
 # config/crew-exclude-tools (header above): refuse before worker provisioning

@@ -14,81 +14,8 @@ secondmate_registry_value() {
   secondmate_registry_field "$DATA/secondmates.md" "$1" "$2"
 }
 
-resolve_kimi_binary() {
-  local candidate dir fallback
-  candidate=$(command -v kimi 2>/dev/null || true)
-  if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-    case "$candidate" in
-    /*)
-      printf '%s\n' "$candidate"
-      return 0
-      ;;
-    *)
-      dir=$(cd "$(dirname "$candidate")" 2>/dev/null && pwd -P) || dir=
-      if [ -n "$dir" ]; then
-        printf '%s/%s\n' "$dir" "$(basename "$candidate")"
-        return 0
-      fi
-      ;;
-    esac
-  fi
-  fallback="${HOME:-}/.kimi-code/bin/kimi"
-  if [ -n "${HOME:-}" ] && [ -x "$fallback" ]; then
-    printf '%s\n' "$fallback"
-    return 0
-  fi
-  echo "error: kimi executable not found; searched PATH for 'kimi' and fallback '$fallback'" >&2
-  return 1
-}
 
-resolve_muse_binary() {
-  local candidate dir
-  candidate=$(command -v muse 2>/dev/null || true)
-  if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-    case "$candidate" in
-    /*)
-      printf '%s\n' "$candidate"
-      return 0
-      ;;
-    *)
-      dir=$(cd "$(dirname "$candidate")" 2>/dev/null && pwd -P) || dir=
-      if [ -n "$dir" ]; then
-        printf '%s/%s\n' "$dir" "$(basename "$candidate")"
-        return 0
-      fi
-      ;;
-    esac
-  fi
-  echo "error: muse executable not found on PATH; install Muse Code or select a different verified harness" >&2
-  return 1
-}
 
-resolve_rovo_binary() {
-  local candidate dir fallback
-  candidate=$(command -v rovo 2>/dev/null || true)
-  if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-    case "$candidate" in
-    /*)
-      printf '%s\n' "$candidate"
-      return 0
-      ;;
-    *)
-      dir=$(cd "$(dirname "$candidate")" 2>/dev/null && pwd -P) || dir=
-      if [ -n "$dir" ]; then
-        printf '%s/%s\n' "$dir" "$(basename "$candidate")"
-        return 0
-      fi
-      ;;
-    esac
-  fi
-  fallback="${HOME:-}/.local/bin/rovo"
-  if [ -n "${HOME:-}" ] && [ -x "$fallback" ]; then
-    printf '%s\n' "$fallback"
-    return 0
-  fi
-  echo "error: rovo executable not found; searched PATH for 'rovo' and fallback '$fallback'" >&2
-  return 1
-}
 
 # muse_credential_present: 0 when a launched muse pane can reach its provider
 # without an interactive login. muse offers exactly two credential paths
@@ -99,33 +26,7 @@ resolve_rovo_binary() {
 # on an OAuth device-code prompt ("Sign in at this page ... Waiting for
 # approval...") waiting for a human who is not there, which would look to
 # supervision like a wedged worker rather than a missing credential.
-muse_worker_meta_api_key_present() {
-  local session worker_env
-  if [ "$LAUNCH_ENV_ENABLED" = 1 ]; then
-    case $'\n'"$LAUNCH_ENV_NAMES"$'\n' in
-    *$'\nMETA_API_KEY\n'*) ;;
-    *) return 1 ;;
-    esac
-  fi
-  [ "$BACKEND" = tmux ] || return 1
-  if [ -n "${TMUX:-}" ]; then
-    fm_backend_source tmux >/dev/null 2>&1 || return 1
-    session=$(fm_backend_tmux_own_session 2>/dev/null) || return 1
-  else
-    tmux has-session -t firstmate 2>/dev/null || return 1
-    session=firstmate
-  fi
-  worker_env=$(tmux show-environment -t "$session" META_API_KEY 2>/dev/null) || return 1
-  case "$worker_env" in
-  META_API_KEY=?*) return 0 ;;
-  esac
-  return 1
-}
 
-muse_credential_present() {
-  local auth=$1
-  [ -s "$auth" ] || muse_worker_meta_api_key_present
-}
 
 # relaunch_resume_args: the launch arguments that keep a RELAUNCH bound to the
 # agent session this endpoint's runtime already reports, so the runtime's own
@@ -408,19 +309,3 @@ json_escape() {
 # task's home, matching BRIEF_REAL's own resolution: the brief dir (covers
 # brief.md/launch-brief.md/report.md), the steering inbox directory (covers
 # every steer and its handled/ acknowledgement), and the status file itself.
-rovo_config_override_flag() {
-  local effort=$1 data_dir=$2 state_dir=$3 id=$4
-  local data_real state_real agent_json paths_json config_json
-  data_real=$(cd "$data_dir" && pwd -P) || return 1
-  state_real=$(cd "$state_dir" && pwd -P) || return 1
-  agent_json=
-  case "$effort" in
-  low | medium | high | max) agent_json="\"agent\":{\"efficiencyLevel\":\"$(json_escape "$effort")\"}," ;;
-  esac
-  paths_json=$(printf '"%s","%s","%s"' \
-    "$(json_escape "$data_real/$id")" \
-    "$(json_escape "$state_real/$id.inbox")" \
-    "$(json_escape "$state_real/$id.status")")
-  config_json="{${agent_json}\"toolPermissions\":{\"allowedExternalPaths\":[$paths_json]}}"
-  printf -- '--config-override %s ' "$(shell_quote "$config_json")"
-}

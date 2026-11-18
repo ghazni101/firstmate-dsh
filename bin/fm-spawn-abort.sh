@@ -20,35 +20,12 @@ spawn_fresh_commit_rollback() {
   return 1
 }
 
-parse_orca_worktree_result() {
-  local raw=$1 rest
-  ORCA_WORKTREE_ID=${raw%%$'\t'*}
-  if [ "$raw" = "$ORCA_WORKTREE_ID" ]; then
-    WT=
-    ORCA_TERMINAL=
-    return 1
-  fi
-  rest=${raw#*$'\t'}
-  WT=${rest%%$'\t'*}
-  if [ "$rest" != "$WT" ]; then
-    ORCA_TERMINAL=${rest#*$'\t'}
-  else
-    ORCA_TERMINAL=
-  fi
-}
 
 # Non-forced unlink arbitration for a delivered Orca source-mode launch file:
 # the pane unlinks it before launching the worker and refuses when that unlink
 # fails, so exactly one side's unlink succeeds. Returns 0 when this spawn removed
 # it (the worker is refused), 1 when the pane already had, and 2 when the file
 # could not be removed.
-spawn_orca_reclaim_launch_file() {
-  rm -- "$SPAWN_STAGED_LAUNCH_FILE" 2>/dev/null && return 0
-  if [ -e "$SPAWN_STAGED_LAUNCH_FILE" ] || [ -L "$SPAWN_STAGED_LAUNCH_FILE" ]; then
-    return 2
-  fi
-  return 1
-}
 
 spawn_abort_cleanup() {
   local status=$?
@@ -177,21 +154,6 @@ spawn_abort_cleanup() {
     T3CODE_HOME_ENV=0
     fm_backend_t3code_home_env_cleanup "$PROJ_ABS" \
       || echo "warning: could not remove the T3 environment this spawn wrote into $PROJ_ABS for $ID; remove it before the home runs again" >&2
-  fi
-  if [ "$T3CODE_LEASED" = 1 ] && [ -n "${WT:-}" ]; then
-    T3CODE_LEASED=0
-    rm -f "$WT/.claude/settings.local.json" 2>/dev/null || true
-    # Only a CLAUDE.local.md this spawn wrote: the channel install refuses one
-    # already in the slot, and that one stays as found.
-    [ "$T3CODE_CLAUDE_CHANNEL_WRITTEN" != 1 ] || rm -f "$WT/CLAUDE.local.md" 2>/dev/null || true
-    if ! "$SCRIPT_DIR/fm-t3code-codex-env.sh" cleanup "$WT" \
-      || [ -e "$WT/.claude/settings.local.json" ] \
-      || { [ "$T3CODE_CLAUDE_CHANNEL_WRITTEN" = 1 ] && [ -e "$WT/CLAUDE.local.md" ]; }; then
-      echo "warning: could not remove the T3 environment files this spawn wrote into $WT for $ID, so it stays leased; remove them, then run 'treehouse return --force $WT' from $PROJ_ABS" >&2
-    else
-      (cd "$PROJ_ABS" && treehouse return --force "$WT") >/dev/null 2>&1 \
-        || echo "warning: could not return the leased worktree $WT for $ID; run 'treehouse return --force $WT' from $PROJ_ABS" >&2
-    fi
   fi
   if [ "$SPAWN_TASK_LOCK_HELD" = 1 ]; then
     SPAWN_TASK_LOCK_HELD=0
