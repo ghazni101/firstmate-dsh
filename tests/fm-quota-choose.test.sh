@@ -193,17 +193,17 @@ fi
 ok "help renders the complete header only"
 
 # 1. First candidate with positive effective quota.
-out=$(call_choose --snapshot "$LAB/captured.json" --candidate kimi:default --candidate codex:model:codex_bengalfox --candidate claude:claude-3-5-sonnet)
+out=$(call_choose --snapshot "$LAB/captured.json" --candidate omp:openai-codex/codex_bengalfox --candidate omp:openai-codex/codex_bengalfox --candidate claude:claude-3-5-sonnet)
 [ "$out" = "claude claude-3-5-sonnet" ] || fail "first positive: expected 'claude claude-3-5-sonnet', got '$out'"
 ok "first positive candidate wins"
 
 # 2. Exhausted provider is skipped.
-out=$(call_choose --snapshot "$LAB/captured.json" --candidate kimi:default --candidate claude:claude-3-5-sonnet)
+out=$(call_choose --snapshot "$LAB/captured.json" --candidate omp:openai-codex/codex_bengalfox --candidate claude:claude-3-5-sonnet)
 [ "$out" = "claude claude-3-5-sonnet" ] || fail "exhausted skip: expected 'claude claude-3-5-sonnet', got '$out'"
 ok "exhausted provider is skipped"
 
 # 3. No candidates have positive quota.
-if out=$(call_choose --snapshot "$LAB/captured.json" --candidate kimi:default 2>/dev/null); then
+if out=$(call_choose --snapshot "$LAB/captured.json" --candidate omp:openai-codex/codex_bengalfox 2>/dev/null); then
   fail "no positive: expected exit 1, got exit 0 with '$out'"
 fi
 [ "$out" = "none" ] || fail "no positive: expected 'none', got '$out'"
@@ -215,7 +215,7 @@ out=$(call_choose --snapshot "$LAB/captured.json" claude:claude-3-5-sonnet)
 ok "positional candidates work"
 
 # 5. A model-specific exhausted scope bounds a healthy all-models scope.
-if out=$(call_choose --snapshot "$LAB/captured.json" --candidate codex:model:codex_bengalfox 2>/dev/null); then
+if out=$(call_choose --snapshot "$LAB/captured.json" --candidate omp:openai-codex/codex_bengalfox 2>/dev/null); then
   fail "specific scope: expected exit 1, got exit 0 with '$out'"
 fi
 [ "$out" = "none" ] || fail "specific scope: expected 'none', got '$out'"
@@ -239,8 +239,8 @@ fi
 [ "$err" = "error: omp quota mapping covers only the openai-codex and claude-bridge prefixes: default" ] || fail "bare omp candidate returned: $err"
 ok "omp without a mapped prefix fails closed"
 
-out=$(call_choose --snapshot "$LAB/captured.json" --candidate codex:default)
-[ "$out" = "codex default" ] || fail "default scope: expected provider-wide quota, got '$out'"
+out=$(call_choose --snapshot "$LAB/captured.json" --candidate omp:openai-codex/codex_other)
+[ "$out" = "omp openai-codex/codex_other" ] || fail "default scope: expected provider-wide quota, got '$out'"
 ok "default model uses provider-wide quota"
 
 out=$(call_choose --snapshot "$LAB/captured.json" --candidate claude:claude-3-5-sonnet)
@@ -253,10 +253,10 @@ fi
 [ "$err" = "error: unknown harness: bogus" ] || fail "unknown harness returned: $err"
 ok "unknown harness fails closed"
 
-if err=$(call_choose --snapshot "$LAB/captured.json" --candidate claude:default --candidate rovo:default 2>&1); then
+if err=$(call_choose --snapshot "$LAB/captured.json" --candidate claude:default --candidate muse:default 2>&1); then
   fail "trailing unsupported harness was hidden by an earlier selection"
 fi
-[ "$err" = "error: unknown harness: rovo" ] || fail "trailing unsupported harness returned: $err"
+[ "$err" = "error: unknown harness: muse" ] || fail "trailing unsupported harness returned: $err"
 
 if err=$(call_choose --snapshot "$LAB/captured.json" --candidate claude:default --candidate 'claude:' 2>&1); then
   fail "trailing empty model was hidden by an earlier selection"
@@ -543,27 +543,6 @@ fi
 [ "$out" = "none" ] || fail "provider-level unknown quota returned: $out"
 ok "provider-level unknown quota is not positive"
 
-jq '.providers += [{"provider":"meta","windows":[],"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":25,"runway":{"status":"through_reset"}}]}}]' \
-  "$LAB/captured.json" > "$MUSE_POSITIVE"
-out=$(call_choose --snapshot "$MUSE_POSITIVE" --candidate muse:default)
-[ "$out" = "muse default" ] || fail "supported Muse candidate returned: $out"
-ok "Muse candidate is accepted"
-
-jq '.providers += [{"provider":"meta","windows":[],"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":0,"runway":{"status":"exhausted_now"}}]}}]' \
-  "$LAB/captured.json" > "$MUSE_EXHAUSTED"
-if out=$(call_choose --snapshot "$MUSE_EXHAUSTED" --candidate muse:default 2>/dev/null); then
-  fail "Muse candidate dispatched with exhausted Meta quota"
-fi
-[ "$out" = "none" ] || fail "exhausted Meta quota returned: $out"
-ok "Muse uses Meta quota"
-
-jq '.providers += [{"provider":"agy","windows":[],"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":25,"runway":{"status":"through_reset"}}]}}]' \
-  "$LAB/captured.json" > "$AGY_POSITIVE"
-if err=$(call_choose --snapshot "$AGY_POSITIVE" --candidate agy:default 2>&1); then
-  fail "legacy quota chooser unexpectedly accepted Agy"
-fi
-printf '%s\n' "$err" | grep -F 'unknown harness: agy' >/dev/null || fail "legacy Agy rejection changed: $err"
-ok "Agy remains resolver-only"
 
 jq '.providers += [.providers[] | select(.provider == "claude")]' "$LAB/captured.json" > "$DUPLICATE"
 if err=$(call_choose --snapshot "$DUPLICATE" --candidate claude:default 2>&1); then
@@ -664,37 +643,14 @@ cat > "$SCHEMA6" <<'JSON'
   ]
 }
 JSON
-out=$(call_choose --snapshot "$SCHEMA6" --candidate codex:default --candidate cursor:default)
+out=$(call_choose --snapshot "$SCHEMA6" --candidate omp:openai-codex/codex_other --candidate cursor:default)
 [ "$out" = "cursor default" ] || fail "schema 6 snapshot returned: $out"
 ok "native Codex never infers an account from a Pi lane"
 
-SCHEMA6_NATIVE="$LAB/schema6-native.json"
-jq '
-  .providers |= map(if .provider == "codex" then
-    .quotaSemantics.effectiveAvailability |= map(.effectivePercentRemaining = 0 | .runway.status = "exhausted_now")
-    else . end) |
-  (.providers[] | select(.accountKey == "openai-codex-work")) as $account |
-  .providers += [($account | .accountKey = "default"),
-    ($account | .accountKey = "codex-home" |
-      .quotaSemantics.effectiveAvailability |= map(.effectivePercentRemaining = 80 | .runway.status = "through_reset"))]
-' "$SCHEMA6" > "$SCHEMA6_NATIVE"
-for model in default gpt-5.6-sol; do
-  out=$(call_choose --snapshot "$SCHEMA6_NATIVE" --candidate "codex:$model" --candidate cursor:default)
-  [ "$out" = "codex $model" ] || fail "native Codex did not select codex-home for $model: $out"
-done
-jq '.providers |= reverse' "$SCHEMA6_NATIVE" > "$LAB/schema6-reversed.json"
-out=$(call_choose --snapshot "$LAB/schema6-reversed.json" --candidate codex:default --candidate cursor:default)
-[ "$out" = "codex default" ] || fail "native Codex selection depended on row order: $out"
-
-jq '.providers |= map(select(.provider != "codex" or .accountKey != "default") |
-  if .accountKey == "codex-home" then .accountKey = "default" else . end)' "$SCHEMA6_NATIVE" > "$LAB/schema6-default.json"
-out=$(call_choose --snapshot "$LAB/schema6-default.json" --candidate codex:default --candidate cursor:default)
-[ "$out" = "codex default" ] || fail "native Codex did not fall back to the default row: $out"
-ok "native Codex binds to codex-home before default, independently of model and row order"
 
 jq '.schemaVersion = 5 | .providers |= unique_by(.provider) | del(.providers[].accountKey)' "$SCHEMA6" > "$SCHEMA5_PAIR"
-out=$(call_choose --snapshot "$SCHEMA5_PAIR" --candidate codex:default --candidate cursor:default)
-[ "$out" = "codex default" ] || fail "schema 5 pair snapshot returned: $out"
+out=$(call_choose --snapshot "$SCHEMA5_PAIR" --candidate omp:openai-codex/codex_other --candidate cursor:default)
+[ "$out" = "omp openai-codex/codex_other" ] || fail "schema 5 pair snapshot returned: $out"
 ok "the same path still selects from a schema 5 snapshot by provider alone"
 
 jq 'del(.providers[1].accountKey)' "$SCHEMA6" > "$SCHEMA6_KEYLESS"
@@ -725,7 +681,7 @@ attention[1]{provider,accountKey,scope,kind,detail,remedy}:
 help[1]:
   Run `quota-axi --full` for windows, pace, reserve, and account evidence
 TOON
-out=$(call_choose --snapshot "$SCHEMA6_TOON" --candidate claude:default --candidate codex:default --candidate cursor:default)
+out=$(call_choose --snapshot "$SCHEMA6_TOON" --candidate claude:default --candidate omp:openai-codex/codex_other --candidate cursor:default)
 [ "$out" = "cursor default" ] || fail "schema 6 TOON snapshot returned: $out"
 ok "schema 6 TOON with the accountKey column is accepted"
 
