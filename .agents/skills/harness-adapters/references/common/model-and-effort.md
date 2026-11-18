@@ -7,7 +7,7 @@ Add `references/common/dispatch.md` for configured profile precedence.
 
 `../../../bin/fm-spawn.sh` accepts concrete `--harness`, `--model`, and `--effort` values selected at intake; scripts never parse natural-language dispatch rules.
 The tool reference records verified flags, accepted values, omission behavior, and discovery for pane-backed launches.
-For T3 Code, resolve both axes through the [provider catalog contract](../../../../../docs/t3code-backend.md#provider-instances-and-models) before selecting a profile.
+For T3 Code, resolve both axes through the provider catalog contract before selecting a profile.
 
 Effort precedence is a per-task captain instruction, then applicable dispatch profile or secondmate pin, then the fallback below.
 Never replace either higher-precedence value.
@@ -20,7 +20,7 @@ Never select `max` through this fallback; only an explicit per-task or standing 
 
 The explicit native `ultra` value follows the model-scoped refusal contract in `../../../bin/fm-harness.sh validate-native-effort`; it is never silently omitted or mapped to a Pi level.
 [`configuration.md`](../../../../../docs/configuration.md#crew-dispatch-profiles-configcrew-dispatchjson) owns backend-specific refusal or omission behavior for other effort values, including harnesses with no verified interactive effort flag.
-Polytoken uses its [model-scoped selectable-reference contract](../harness/polytoken.md) instead of record-and-omit.
+Polytoken uses its model-scoped selectable-reference contract instead of record-and-omit.
 
 ## Harness and provider identity
 

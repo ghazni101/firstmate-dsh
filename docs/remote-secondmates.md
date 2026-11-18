@@ -31,7 +31,7 @@ Provisioning checks any available supported backend; launch checks the selected 
   As a result, the agent's endpoint survives every disconnection the primary's supervision depends on.
 - A remote Rex endpoint requires a persistent rex server started with `rex server start`, which is a detached daemon no SSH session owns.
   An ephemeral `rex server run --exit-empty` server exits when its last session or control connection disappears, so it can never satisfy remote readiness.
-- [Rex's server-stop limits](rex-backend.md#active-limits) explain session restoration and agent recovery.
+- Rex's server-stop limits explain session restoration and agent recovery.
 - Local second mates are unaffected and keep their ordinary backend and session selection.
   So do the workers a remote second mate supervises inside its own home.
 
@@ -703,7 +703,7 @@ It refuses while any of these holds:
 - A routed reply remains unresolved.
 
 Herdr retirement closes only the retiring secondmate's panes or `2ndmate-<id>` workspace in its code root's remote session, never the shared session or a sibling's workspace or panes.
-Rex retirement follows the [recorded-block and empty-session cleanup contract](rex-backend.md#cleanup-and-the-absence-proof), never stopping the shared server.
+Rex retirement follows the recorded-block and empty-session cleanup contract, never stopping the shared server.
 SSH exit 255 preserves both the route and local records because completion is unknown.
 `--force` remains the explicit discard path and requires the same captain authority as local secondmate discard.
 

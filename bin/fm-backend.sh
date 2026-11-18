@@ -451,7 +451,7 @@ fm_backend_source() {  # <name>
   # word-split an unquoted expansion, so a space-separated string is one path.
   case "$name" in
     herdr)
-      set -- fm-composer-lib.sh fm-transition-lib.sh fm-agent-process-lib.sh fm-proc-lib.sh fm-gemini-lib.sh fm-hermes-process-lib.sh
+      set -- fm-composer-lib.sh fm-transition-lib.sh fm-agent-process-lib.sh fm-proc-lib.sh
       ;;
     *)
       return 1

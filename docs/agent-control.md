@@ -42,7 +42,7 @@ Claude exposes no lifecycle acknowledgement for a manual interrupt, so delivery 
 On T3 Code the backend's native interrupt is the acknowledgement: T3's own run wait decides `cancel=confirmed`, `not-running`, or `unconfirmed` for every harness.
 Devin emits no lifecycle hook for cancellation either, so after an armed interrupt the control plane invalidates the interrupted turn's busy record to `unknown` with `cancel=unconfirmed`; that invalidation is a conservative loss of knowledge, never a fabricated idle.
 Hermes uses double Escape and refuses interrupt unless its composer is proven empty, because that chord discards an unsent draft.
-Its native end hook settles a cancelled turn; [the Hermes reference](../.agents/skills/harness-adapters/references/harness/hermes.md) owns the supported lifecycle limits.
+Its native end hook settles a cancelled turn; the Hermes reference owns the supported lifecycle limits.
 Cortex Code is the exception to both: its `Stop` hook fires on an Escape interrupt, so one Escape cancels the turn and the hook closes the busy record itself, with no invalidation and no arming gate; an Escape on an idle Cortex composer does nothing.
 Devin's double Escape also opens its `/revert` picker on an idle agent, where Enter reverts file changes, so its second press is sent only after the first renders a running turn's armed hint and never sooner than the adapter's press gap.
 An interrupt whose first press shows no running turn stops there and reports `cancel=not-running`, leaving busy state untouched; a picker a mistimed press opened is closed with one Escape and reported as `revert-picker=dismissed`, and `exit` refuses to type into an open picker.
@@ -58,7 +58,7 @@ For a typed exit, `exit` reads the composer's state before typing the exit comma
 `exit` also refuses, naming the dialog as `blocked on a prompt`, when the screen shows a recognised dialog that a further Enter would answer, whether the dialog was open before the exit command was typed or the submitting Enter opened it; it sends no Escape and chooses no option, so closing the dialog is left to the operator.
 A stopped agent whose pane still shows the dialog text is not refused.
 [`fm_composer_blocking_dialog`](../bin/fm-composer-lib.sh) owns the recognised set, which today is only Claude's background-task exit picker; [its verification record](verification/runtime-backends.md#claude-background-task-exit-picker) lists the dialogs that are not covered.
-T3 Code has no composer and its `/mcp` tools offer no session stop, so `exit` refuses there before sending anything ([`t3code-backend.md`](t3code-backend.md#current-lifecycle-and-safety)).
+T3 Code has no composer and its `/mcp` tools offer no session stop, so `exit` refuses there before sending anything (`t3code-backend.md`).
 
 **Teardown and discard are not verbs and will not become verbs.**
 `exit` stops an agent and preserves everything else.
@@ -124,13 +124,13 @@ An unreachable endpoint can still hold the live agent a rebind would duplicate, 
 - **Rex can prove it.** Rex never reuses a session, window, or block id, so a structured not-found for the recorded block from the server the task was created on proves the block is gone.
   The record carries that server's endpoint (`rex_server=`), and the recheck refuses unless the server this process reaches reports the same endpoint; it normally lets the CLI start a stopped personal server before checking the block.
   [Remote second-mate readiness](remote-secondmates.md#repair-with---fix) owns the exception that prevents this autostart for remote control.
-  [Rex's server-stop limits](rex-backend.md#active-limits) distinguish a restored shell from a missing block.
-  A block that is still there is classified from its process view, so `dead` is adopted and `alive` refuses ([`docs/rex-backend.md`](rex-backend.md) "Cleanup and the absence proof").
+  Rex's server-stop limits distinguish a restored shell from a missing block.
+  A block that is still there is classified from its process view, so `dead` is adopted and `alive` refuses (`docs/rex-backend.md` "Cleanup and the absence proof").
   Rex's passive reads never start a server, so a stopped Rex server reads `unreadable` rather than `missing`; a Rex `unreadable` therefore goes through this recheck too, and still refuses unless the recheck settles it.
 - **tmux cannot.** `list-windows -a` describes only the tmux server the *current process* addresses (its `TMUX_TMPDIR`/socket), and a task record carries no socket identity for its endpoint.
   A different but running server would answer "not anywhere" about a window it was never able to see, so a server-wide read cannot tell a destroyed window from one on a server this process cannot address.
   There is no read available that closes that gap, so tmux always refuses - for a renamed session, a moved window, a foreign socket, and a dead server alike.
-- **T3 Code refuses `exit` before this proof.** Its [native status table](t3code-backend.md#restart-and-liveness-behavior) owns absence and unreadability, including an archived thread whose active run is still draining.
+- **T3 Code refuses `exit` before this proof.** Its native status table owns absence and unreadability, including an archived thread whose active run is still draining.
   T3 Code still cannot reclaim the task because a thread keeps its conversation, so no fresh agent can replace it and `relaunch` refuses before this proof can authorize a replacement.
 
 Every transient or self-contradicting read stays `unreadable` or `ambiguous` and still refuses, so a momentary backend failure can never be mistaken for absence.

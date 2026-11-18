@@ -9,7 +9,7 @@ Exact task chronology, branch names, temporary homes, local paths, process ids, 
 ## Polytoken worker lifecycle
 
 Verified on 2026-10-14 with Polytoken 0.9.0 on macOS arm64 using the tmux worker path.
-[Polytoken verification](polytoken.md) owns the commands, session-model proof, and lifecycle output; its credentialed live guard refreshes the evidence.
+Polytoken verification owns the commands, session-model proof, and lifecycle output; its credentialed live guard refreshes the evidence.
 This does not verify a Polytoken primary, secondmate, or native Herdr pane.
 
 ## Harness detection precedence
@@ -140,7 +140,7 @@ Pi and pi-signed 0.82.0 were reverified on 2026-07-27 through real isolated `fm-
 ### Agent liveness name sources
 
 Hermes Agent v0.21.7 was verified as a tmux worker on Linux on 2026-11-02: native Node TUI / Python module argv yielded `alive`, and the tool-side harness detector returned `hermes`.
-[Hermes verification](hermes.md) owns the dated native hook, composer, profile-safety, and lifecycle evidence.
+Hermes verification owns the dated native hook, composer, profile-safety, and lifecycle evidence.
 Refresh it with `FM_HERMES_SIGNALS_LIVE=1 FM_HERMES_LIVE_HOME="$throwaway_root" bash bin/fm-test-run.sh tests/fm-hermes-signals-live-e2e.test.sh`.
 
 The earlier record that every harness is observed under its own `#{pane_current_command}` no longer holds and has been replaced by the per-harness evidence below.
@@ -172,15 +172,15 @@ That is the evidence for treating any single process name as a surface under ven
 
 The crewmate-only Muse Code 0.1.0-R708.1 adapter was verified separately on 2026-08-05 against tmux on macOS arm64.
 Its installed `muse-bin-0.1.0-R708.1` foreground identity classified `alive`, while `musescore`, `amuse`, `muse-binary`, and `muse-bind` remained ambiguous in the portable regression.
-[`muse.md`](muse.md#process-identity) owns the artifact identity and launcher evidence for that verification.
+`muse.md` owns the artifact identity and launcher evidence for that verification.
 
 The crewmate/scout-only Command Code 1.74.1 adapter was verified on 2026-10-05 against tmux 3.7c and a Herdr 0.9.3 lab session on Linux x86_64.
 Its node process sets its title to `command-code`, the anchored foreground identity that classified `alive` on both backends, while `command-code-helper` remained ambiguous in the portable regression.
-[`commandcode.md`](commandcode.md) owns that evidence, and `FM_COMMANDCODE_SIGNALS_LIVE=1 bin/fm-test-run.sh tests/fm-commandcode-signals-live-e2e.test.sh` refreshes it.
+`commandcode.md` owns that evidence, and `FM_COMMANDCODE_SIGNALS_LIVE=1 bin/fm-test-run.sh tests/fm-commandcode-signals-live-e2e.test.sh` refreshes it.
 
 The crewmate/scout-only Rovo CLI 202609.1.2 adapter added `*rovo*` to the same glob family as `*grok*`/`*kimi*` in the shared process-name classifier (now `fm_agent_process_classify_name` in `bin/fm-agent-process-lib.sh`), and was relaunched live under tmux 3.6a in an isolated private socket.
 `#{pane_current_command}` reported the truncated on-disk binary name `atlassian_cli_r` - macOS's 15-char `comm` truncation cuts `atlassian_cli_rovodev` off just before the `rovo` substring begins, the same truncation-volatility class codex/kimi's own patch-release name drift shows above - while the foreground ps-based `comm` correctly reported `rovo`, so `fm_backend_tmux_agent_state` returned `alive` through that primary source; the two-independent-name-sources design is exactly why the truncated title does not break the verdict.
-[`rovo.md`](rovo.md#backend-liveness-tmux-verified-live-herdr-placement-verified-live-with-a-herdr-side-agent-detection-gap) owns the fuller record, including the busy/interrupt/exit facts captured in that same live tmux session and the herdr agent-detection gap found when herdr placement was verified live in an isolated lab session.
+`rovo.md` owns the fuller record, including the busy/interrupt/exit facts captured in that same live tmux session and the herdr agent-detection gap found when herdr placement was verified live in an isolated lab session.
 
 Bounded observed output:
 
@@ -378,7 +378,7 @@ The refusal is reached only through a close that could not do its job, and each 
 | orca | 0, silent | 1 when a missing CLI means no close was attempted; 0 for a close command that failed after the CLI accepted it |
 | zellij | 0, silent | 0, not yet distinguishable |
 | cmux | 0, silent | 0, not yet distinguishable |
-| tern | 0, silent | 1 when its inventory re-read cannot run, the block moved to another session, its tab no longer carries the task's scoped title, or it is still listed after the close; portable fixtures only (`tests/fm-backend-tern.test.sh`), contract in [tern-backend.md](../tern-backend.md) |
+| tern | 0, silent | 1 when its inventory re-read cannot run, the block moved to another session, its tab no longer carries the task's scoped title, or it is still listed after the close; portable fixtures only (`tests/fm-backend-tern.test.sh`), contract in tern-backend.md |
 | herdr | 0, silent | 0 from this arm; `bin/fm-teardown.sh` gates every Herdr record removal on `fm_backend_herdr_endpoint_confirmed_gone` instead |
 
 The three arms that still report 0 need a presence re-read taken after their own close, and the close-then-read timing that re-read depends on cannot be established without the real Zellij, Orca, and cmux binaries.
@@ -393,7 +393,7 @@ Two bounds of the refusal are known and deliberately not closed here.
 That is the only close where continuing is actually reachable: the worktree is already returned by then and nothing after it needs the backend that could not close, so `--force` - the operator's existing authority to discard a task's records - can mean something there.
 A forced run still prints the full diagnosis naming the backend, the target, and that the close failed, so what may survive is never silent.
 It states what `--force` authorizes rather than what will have happened, because the later inactive-reconcile delivery gate can still stop it with every record retained.
-T3 Code uses the [native cleanup path](../t3code-backend.md#current-lifecycle-and-safety) instead.
+T3 Code uses the native cleanup path instead.
 
 The Orca close refuses under `--force` too.
 The step immediately after it removes the Orca worktree through the same CLI whose absence is the only thing that arm ever reports, so a forced continue would die there having removed nothing while claiming the records were already gone.
@@ -2041,7 +2041,7 @@ Real captures verified these active distinctions:
 - Grok dark truecolor placeholders are ghost content, while bright truecolor typed input remains pending.
 - On a kiro pane only, a near-achromatic truecolor run up to `FM_COMPOSER_GHOST_GRAY_LUMA_MAX` is ghost content, while a chromatic glyph at similar luminance stays real; every other harness keeps the shared ceiling, so Claude's grey slash-command input stays typed input.
 - On a kiro pane only, a 256-colour index is luminance-tested as ghost content inside the 232-255 greyscale ramp, whose RGB is fixed by definition; every other index, and every index on another harness, is not tested at all.
-- On a real Herdr 0.9.5 pane running kiro-cli 2.35.1, the idle composer reads `empty` when the caller names `kiro` and `pending` otherwise, so the harness must be named for every kiro composer read; [Kiro CLI adapter verification](kiro.md#2026-10-29-re-verification-on-kiro-cli-2351) owns the run.
+- On a real Herdr 0.9.5 pane running kiro-cli 2.35.1, the idle composer reads `empty` when the caller names `kiro` and `pending` otherwise, so the harness must be named for every kiro composer read; Kiro CLI adapter verification owns the run.
 - A bare shell prompt has no safe agent-composer container and is unknown.
 - Codex 0.154's idle braille starfield rows are composer furniture, with the dated Herdr evidence and refresh command in [Composer classification matrix](#composer-classification-matrix).
 
@@ -2490,7 +2490,7 @@ $ rex --autostart=false api call server.status | jq .api_revision
 ```
 
 The evidence below used scratch sessions labeled `fm-test-*` on the personal Rex server, before private-server isolation; its transcripts are not the current test procedure.
-[`tests/rex-test-safety.sh`](../../tests/rex-test-safety.sh) owns the current isolation contract.
+`tests/rex-test-safety.sh` owns the current isolation contract.
 Whether `session.create` changes the attached app remains unverified; follow the private-server isolation contract above rather than probing the live server.
 
 Current active CLI findings:
@@ -2629,7 +2629,7 @@ ok - muse (Muse Code 1.4.11 (1.4.11-R6667.1)): the same idle screen read cursorl
 ok - real rex: no state-changing call left the test sessions and every other session is byte-identical
 ```
 
-Use the [Rex regression entry points](../rex-backend.md#regression-entry-points) to refresh this record after a Rex upgrade, and the opt-in live composer guard after any tool upgrade.
+Use the Rex regression entry points to refresh this record after a Rex upgrade, and the opt-in live composer guard after any tool upgrade.
 
 ### Remote second mate durability on Linux
 

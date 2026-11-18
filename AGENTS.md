@@ -73,7 +73,7 @@ Treat `data/captain.md` as the domain-local record of captain preferences, optio
 - Its header is the single owner of composed commands, ordering, and digest contents.
 - `bin/fm-supervision-instructions.sh` renders the emitted supervision block from `docs/supervision-protocols/`.
 - Do not reimplement it by separately running its bootstrap, initial wake-drain, or deferred-network components.
-- Run-tier harness surfaces run this command for you at session open while the rest only nudge it, so confirm the digest is present in this session and run it yourself when it is not; `docs/sessionstart-nudge.md` owns adapter tiers, source routing, and compatibility.
+- The dsh plugin exposes a read-only native session-start tool and otherwise nudges you to run this command, so confirm the digest is present in this session and run it yourself when it is not; `docs/sessionstart-nudge.md` owns source routing and compatibility.
 
 Read the complete digest once and trust it as this turn's startup and recovery input.
 If the harness shows only a preview and persists the full output to a file, read that file before acting.
@@ -89,7 +89,7 @@ Load `session-start-recovery` when the digest reports unfinished checks, actiona
 ## 4. Harness and runtime dispatch
 
 - Load `harness-adapters` before every spawn or recovery and before trust handling, skill invocation, interrupt, exit, resume, or adapter verification.
-- The verified harnesses are `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, `kimi`, `cursor`, `omp`, and `agy`, plus `muse`, `gemini`, `rovo`, `devin`, `commandcode` (Command Code), `polytoken`, `cortex`, `kiro`, and `hermes` for crewmates and scouts only; never dispatch on an unverified adapter.
+- Firstmate runs only on dsh and herdr is the only runtime backend; the verified worker harnesses are `claude`, `cursor`, `omp`, and `pi`; never dispatch on an unverified adapter.
 - If static `config/crew-harness` or `config/secondmate-harness` names an unverified adapter, report it and fall back only to a verified adapter rather than launching it.
 - Only the captain chooses or changes a worker account pin or declared account list (`config/claude-account`, `config/pi-account`, `config/claude-accounts`), so on a pin refusal report the needed login and never edit or remove the file to unblock a spawn.
 

@@ -45,7 +45,7 @@ Before dispatching an agent-driven contribution, follow the [Firstmate role and 
   Everything personal to one captain's fleet (`.env`, `data/`, `state/`, `config/`, `projects/`, `.no-mistakes/`) is gitignored; never commit it.
   The root `.tasks.toml` is tracked `tasks-axi` config for `data/backlog.md`; compatible `tasks-axi` is the default backend for routine backlog mutations, with the compatibility definition owned by [`docs/configuration.md`](docs/configuration.md) ("Backlog backend").
   A local `config/backlog-backend=manual` opt-out forces firstmate's routine backlog updates to hand-editing and stays gitignored; validated secondmate handoffs still delegate through `tasks-axi mv`.
-  A local `config/backend` file stays gitignored; [runtime backend configuration](docs/configuration.md#runtime-backend-configbackend--fm_backend) owns supported values, selection, and limits.
+  A local `config/backend` file stays gitignored; runtime backend configuration owns supported values, selection, and limits.
   It does not make `data/` tracked.
 - Shell helpers in `bin/` are plain bash.
   Each starts with a usage header comment; keep it accurate when you change behavior.
@@ -133,7 +133,7 @@ Where a case's assertion is not about the timeout itself, give that window headr
 Supervision host and Stop-hook hand-back waits are the exception: use `wait_until_deadline` (a 60s wall-clock budget well above the loaded hand-back cost) so a timeout dumps `host.out`, `hook.out`/`hook.err`, the supervision-host log, health file, and a process tree.
 Tests that need a real optional backend or an explicit opt-in (real herdr/zellij/cmux/paseo/rex/tern/hc smoke tests, the live Pi regression) skip themselves and print the tool or environment gate needed to enable them, so the portable suite remains safe on machines without those tools.
 The complete [`tests/fm-watch-triage-pause.test.sh`](tests/fm-watch-triage-pause.test.sh) suite requires compatible `tasks-axi` on `PATH`, as specified in [Backlog backend](docs/configuration.md#backlog-backend-taskstoml--configbacklog-backend).
-[`tests/rex-test-safety.sh`](tests/rex-test-safety.sh) owns the real-Rex suites' private-server isolation and capability gates.
+`tests/rex-test-safety.sh` owns the real-Rex suites' private-server isolation and capability gates.
 The [Herdr backend guide](docs/herdr-backend.md#destructive-lab-safety) owns the lane's isolation boundary, while [runtime backend verification](docs/verification/runtime-backends.md#herdr) owns active empirical evidence; live harness credential tests remain opt-in.
 
 ## Questions

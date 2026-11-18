@@ -98,27 +98,13 @@ if [ -z "$HARNESS" ]; then
 fi
 
 case "$HARNESS" in
-  hermes)
-    echo 'error: hermes is a crewmate/scout adapter only; primary supervision is unsupported' >&2
-    exit 1 ;;
-  claude|codex|opencode|pi|grok|cursor|omp|agy) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
-  pi-signed) SNIPPET="$DOC_DIR/pi.md" ;;
+  claude|pi|cursor|omp) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
   *) HARNESS=unknown; SNIPPET="$DOC_DIR/unknown.md" ;;
 esac
 [ -f "$SNIPPET" ] || SNIPPET="$DOC_DIR/unknown.md"
-CODEX_PARK=0
-if [ "$HARNESS" = codex ]; then
-  if [ -x "$SCRIPT_DIR/fm-codex-stop-park.sh" ] && "$SCRIPT_DIR/fm-codex-stop-park.sh" --capable; then
-    CODEX_PARK=1
-  else
-    SNIPPET="$DOC_DIR/codex-checkpoint.md"
-  fi
-fi
-HOST_SNIPPET=
-grok_arm='bin/fm-watch-arm.sh'
 case "$HARNESS" in
-  claude|cursor|opencode|omp|grok|codex|agy)
-    # shellcheck source=/dev/null
+  claude|cursor|omp)
+    # shellcheck source=bin/fm-supervision-engine-lib.sh
     . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
     if fm_supervision_host_enabled "$CONFIG" "$HARNESS"; then
       HOST_SNIPPET="$DOC_DIR/supervision-host.md"
@@ -230,21 +216,8 @@ repair_line() {
         printf '%s%s%s%s%s%s\n' "$prefix" 'repair a missing or failed watcher cycle with the omp tool fm_watch_arm_omp, or restart omp inside this home so ' "$omp_turnend_ext" ' and ' "$omp_ext" ' auto-load from .omp/extensions/ (use -e with both paths only when starting omp from another directory).'
       fi
       ;;
-    opencode)
-      printf '%s%s\n' "$prefix" 'repair missing watcher supervision by letting the OpenCode TUI plugin arm after idle; use bin/fm-watch-arm.sh only as a manual recovery probe if the plugin reports failure.'
-      ;;
-    grok)
-      printf '%s%s%s%s\n' "$prefix" 'repair missing watcher supervision with ' "$grok_arm" ' as its own Grok tracked background task, never shell &.'
-      ;;
     cursor)
       printf '%s%s\n' "$prefix" 'watcher supervision is owned by the stop-hook park; inspect the hook registration and watcher startup path before ending the turn.'
-      ;;
-    agy)
-      if [ -n "$HOST_SNIPPET" ]; then
-        printf '%s%s\n' "$prefix" 'supervision is owned by the Stop-hook park (.agents/hooks.json -> bin/fm-turnend-guard-agy.sh running the supervision host); inspect the hook registration and supervision host startup path before ending the turn.'
-      else
-        printf '%s%s\n' "$prefix" 'watcher supervision is owned by the Stop-hook park (.agents/hooks.json -> bin/fm-turnend-guard-agy.sh); inspect the hook registration and watcher startup path before ending the turn.'
-      fi
       ;;
     *)
       printf '%s%s\n' "$prefix" 'repair missing watcher supervision according to the session-start block for this harness; do not use shell &.'
@@ -257,30 +230,14 @@ ordinary_wake_line() {
     claude)
       printf '%s\n' '- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
       ;;
-    codex)
-      if [ "$CODEX_PARK" -eq 1 ]; then
-        printf '%s\n' '- Ordinary wake: the Codex Stop hook (bin/fm-codex-stop-park.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
-      else
-        printf '%s\n' '- Ordinary wake: take the next foreground bin/fm-watch-checkpoint.sh checkpoint as directed below.'
-      fi
-      ;;
-    pi|pi-signed)
+    pi)
       printf '%s\n' '- Ordinary wake: the Pi extension already owns watcher continuity; do not arm another cycle.'
       ;;
     omp)
       printf '%s\n' '- Ordinary wake: the omp extension already owns watcher continuity; do not arm another cycle.'
       ;;
-    opencode)
-      printf '%s\n' '- Ordinary wake: the OpenCode TUI plugin already owns watcher continuity; do not arm manually.'
-      ;;
-    grok)
-      printf '%s%s%s\n' '- Ordinary wake: re-arm exactly one ' "$grok_arm" ' Grok tracked background task as directed below.'
-      ;;
     cursor)
       printf '%s\n' '- Ordinary wake: the stop-hook park (bin/fm-turnend-guard-cursor.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
-      ;;
-    agy)
-      printf '%s\n' '- Ordinary wake: the Stop-hook park (bin/fm-turnend-guard-agy.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
       ;;
     *)
       printf '%s\n' '- Ordinary wake: follow the continuation in the harness protocol below; do not use shell &.'
