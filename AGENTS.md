@@ -57,7 +57,7 @@ Use `gh-axi` for GitHub, `chrome-devtools-axi` for browser work, and compatible 
 
 `docs/configuration.md` is the single owner of the top-level operational-home layout and configuration schemas; each producing script's header and help own exact child fields and mutation mechanics.
 `FM_HOME` selects an instance's private `data/`, `state/`, `config/`, and `projects/`, while scripts continue to come from their tracked code root.
-Each secondmate has a persistent isolated `FM_HOME`, including its own state, backlog, projects, and session lock.
+Each secondmate has a persistent isolated `FM_HOME`, including its own state, backlog, and projects.
 `bin/fm-send.sh` fails closed unless `FM_HOME` is explicit, so a steer cannot silently resolve against another home.
 
 Tracked files hold shared instructions and tooling; `data/` holds durable private fleet records; `state/` holds runtime records and append-only status events; `config/` holds local operating choices; and `projects/` contains clones that are read-only to firstmate except under hard rule 1's concrete captain-approved project operation exception.
@@ -72,7 +72,7 @@ Treat `data/captain.md` as the domain-local record of captain preferences, optio
 - Run `bin/fm-session-start.sh` exactly once at session start.
 - Its header is the single owner of composed commands, ordering, and digest contents.
 - `bin/fm-supervision-instructions.sh` renders the emitted supervision block from `docs/supervision-protocols/`.
-- Do not reimplement it by separately running its lock, bootstrap, initial wake-drain, or deferred-network components.
+- Do not reimplement it by separately running its bootstrap, initial wake-drain, or deferred-network components.
 - Run-tier harness surfaces run this command for you at session open while the rest only nudge it, so confirm the digest is present in this session and run it yourself when it is not; `docs/sessionstart-nudge.md` owns adapter tiers, source routing, and compatibility.
 
 Read the complete digest once and trust it as this turn's startup and recovery input.
@@ -80,8 +80,8 @@ If the harness shows only a preview and persists the full output to a file, read
 Do not separately re-read the context, backlog, metadata, or bulk status inputs it just printed unless a source was reported absent or corrupt, older history is specifically needed, or a targeted workflow must inspect before writing.
 An `ABSENT` captain, shared-captain, secondmate, or learnings file means the firstmate repo's built-in defaults, no shared captain preferences, no registered secondmates, or no captured learnings; rebuild an absent or stale project registry from the clones before dispatch.
 
-If the session lock cannot be acquired and verified, report its exact diagnostic and remain read-only; another active session is only one possible cause.
-A lock-refused session must not spawn, steer, merge, drain the wake queue, repair supervision, repair a checkout, or perform any other fleet mutation.
+Session startup takes no lock and has no read-only posture: a native session is identified by the DSH session header and home resolution, so it owns its home outright and every digest stage runs.
+Where two sessions work in the same home, task ownership is what separates them, and `bin/fm-native-lib.sh` owns that per-task fencing lease (section 4).
 
 When the digest's `NETWORK CHECKS` section reports checks still in progress, treat none of the named checks as passed until `bin/fm-startup-network.sh report` returns the finished result; a failed or otherwise actionable result also arrives as a `check: startup-network` wake.
 Load `session-start-recovery` when the digest reports unfinished checks, actionable diagnostics, recovery inputs, or output requiring interpretation.
@@ -118,7 +118,6 @@ A missing dependency, authentication failure, unsupported backend, or version re
 ## 5. Recovery
 
 After the one session-start digest, reconcile reality with durable records before taking new work.
-Honor lock-refused read-only mode exactly as section 3 requires.
 Treat digest status tails as wake-event history and use targeted current-state reconciliation when the live state matters.
 
 Reconcile only this home's recorded direct reports and their recorded backend inventory; never sweep a shared endpoint namespace for matching names or claim another home's work.
@@ -269,7 +268,7 @@ For every actionable wake, follow the ordinary-wake continuation in the emitted 
 No turn ends blind while work is under way, including turns described as holding or waiting.
 
 - At the start of every wake-handling turn, drain the durable wake queue before peeking, reading beyond the reason line, steering, or starting work.
-- Session start is the only exception because its one-shot digest already presented the queue while locked or deliberately left it untouched in lock-refused read-only mode.
+- Session start is the only exception because its one-shot digest already presented the queue.
 - Treat any `OPEN DECISIONS` section from the drain as actionable reconciliation input even when no wake record was queued.
 - Treat any `UNREAD STATUS` section as newly surfaced status that must be read this turn; those lines are not re-printed after this presentation.
 - Treat any `RECORD DIVERGENCE` section as a contradiction between two records of one captain call, never as proof the captain ruled; load `captain-hold-lifecycle` and reconcile it in whichever direction the evidence supports.

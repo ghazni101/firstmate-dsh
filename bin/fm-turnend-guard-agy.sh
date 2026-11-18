@@ -27,8 +27,8 @@
 #   - Stand down in crewmate/scout linked worktrees (fm_primary_scope_matches).
 #   - Pass through non-normal terminationReason values (anything non-empty
 #     other than NO_TOOL_CALL) with {} without parking.
-#   - Verify session-lock ownership via bin/fm-session-lock-lib.sh so a
-#     read-only or foreign session never steals supervision.
+#   - Verify this firing runs under a harness process (bin/fm-proc-lib.sh) so a
+#     caged command or a stray shell never parks or arms supervision.
 #   - At executionNum == the loop ceiling (default 180, overridable via
 #     FM_AGY_TURNEND_LOOP_CEILING) with supervision still needed, return one
 #     loud ceiling notice; past the ceiling, pass through with {}.
@@ -68,8 +68,8 @@ continue_turn() {  # <reason>
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-proc-lib.sh
+. "$SCRIPT_DIR/fm-proc-lib.sh"
 # shellcheck source=bin/fm-supervision-engine-lib.sh
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
 
@@ -86,13 +86,6 @@ fi
 
 EXEC_NUM=$(printf '%s' "$PAYLOAD" | jq -r 'if (.executionNum | type) == "number" then (.executionNum | floor | tostring) else "" end' 2>/dev/null || true)
 
-if ! fm_session_lock_owned_by_self "$STATE"; then
-  LOCK_PID=$(cat "$STATE/.lock" 2>/dev/null || true)
-  fm_session_pid_valid "$LOCK_PID" || allow_stop
-  fm_harness_pid_alive "$LOCK_PID" && allow_stop
-  "$SCRIPT_DIR/fm-lock.sh" >/dev/null 2>&1 || allow_stop
-  fm_session_lock_owned_by_self "$STATE" || allow_stop
-fi
 
 # Away mode owns the watcher and its own triage; never park and never wake.
 [ -e "$STATE/.afk" ] && allow_stop
@@ -146,9 +139,9 @@ while [ "$attempt" -lt "$ARM_ATTEMPTS" ]; do
   fi
   ARM_PID=$!
   while kill -0 "$ARM_PID" 2>/dev/null; do
-    # Stand down when a newer Stop claimed the baton, the session lock moved,
-    # or away mode started and its daemon now owns the watcher.
-    if ! park_still_ours || ! fm_session_lock_owned_by_self "$STATE" || [ -e "$STATE/.afk" ]; then
+    # Stand down when a newer Stop claimed the baton or away mode started and
+    # its daemon now owns the watcher.
+    if ! park_still_ours || [ -e "$STATE/.afk" ]; then
       allow_stop
     fi
     if [ "$PARK_TIMEOUT" -gt 0 ] && [ "$waited" -ge "$PARK_TIMEOUT" ]; then

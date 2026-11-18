@@ -26,8 +26,6 @@ REPORT="$ROOT/bin/fm-branch-report.sh"
 # shellcheck disable=SC2034 # read by the sourcing fm-supervision-host*.test.sh files
 DISPATCH="$ROOT/bin/fm-branch-dispatch.mjs"
 CONTRACT="$ROOT/bin/fm-afk-contract.sh"
-# shellcheck disable=SC2034 # read by the sourcing fm-supervision-host*.test.sh files
-LEASE="$ROOT/bin/fm-lease.sh"
 
 command -v node >/dev/null 2>&1 || { printf 'skip: node absent\n'; exit 0; }
 command -v perl >/dev/null 2>&1 || { printf 'skip: perl absent\n'; exit 0; }
@@ -39,11 +37,9 @@ FAKE_CLAUDE="$FAKEBIN/claude"
 
 # The stub engine. It records its environment and arguments, then acts like a
 # branch turn through the real scripts according to $FM_HOME/stub-mode:
-#   handle      drain, claim the task's lease, report, acknowledge, release
+#   handle      drain, report, acknowledge
 #   captain     the same as handle, but report verdict captain naming the rows
 #               the drain presented
-#   hold-lease  the same, but leave the lease held (the host must release it),
-#               logging its check line while held
 #   return      handle, but the captain returns (the record is archived) before
 #               the turn ends
 #   return-silent the same, but the routine outcome is silent
@@ -106,12 +102,10 @@ verdict=routine
 [ "$mode" != go-away ] || verdict=captain
 case "$mode" in
   fail) exit 3 ;;
-  handle|captain|captain-close-before-return|held|captain-held|hold-lease|hold-marker|return|return-silent|return-fail|return-fail-silent|return-many|return-lookup-fail|return-first|noack|emptyresult|go-away)
+  handle|captain|captain-close-before-return|held|captain-held|hold-marker|return|return-silent|return-fail|return-fail-silent|return-many|return-lookup-fail|return-first|noack|emptyresult|go-away)
     case "$mode" in held|captain-held) read -r _ < "$FM_HOME/stub-release" ;; esac
     [ "$mode" != return-first ] || "$FM_REPO/bin/fm-afk-contract.sh" archive >> "$FM_HOME/engine-return.log" 2>&1
     [ "$mode" != go-away ] || "$FM_REPO/bin/fm-afk-contract.sh" enter --words 'gone mid-turn' >> "$FM_HOME/engine-return.log" 2>&1
-    "$FM_REPO/bin/fm-lease.sh" claim "$task" >> "$FM_HOME/engine-lease.log" 2>&1
-    [ "$mode" != hold-lease ] || "$FM_REPO/bin/fm-lease.sh" check "$task" >> "$FM_HOME/engine-lease.log" 2>&1
     if [ "$mode" = captain ] || [ "$mode" = captain-held ] \
       || [ "$mode" = captain-close-before-return ]; then
       "$FM_REPO/bin/fm-branch-report.sh" --task "$task" --verdict captain \
@@ -149,7 +143,6 @@ case "$mode" in
       done
       ;;
     esac
-    [ "$mode" = hold-lease ] || "$FM_REPO/bin/fm-lease.sh" release "$task" >> "$FM_HOME/engine-lease.log" 2>&1
     case "$mode" in
       return|return-silent|return-fail|return-fail-silent|return-many|return-lookup-fail) "$FM_REPO/bin/fm-afk-contract.sh" archive >> "$FM_HOME/engine-return.log" 2>&1 ;;
     esac
@@ -266,7 +259,7 @@ git init -q "$MIRROR_ROOT"
 : > "$MIRROR_ROOT/AGENTS.md"
 ln -s "$ROOT/bin" "$MIRROR_ROOT/bin"
 
-# Run the host under the fake harness that holds the home's session lock.
+# Run the host under the fake harness that is the home's session.
 # Every hook payload in $home/mirror-seed.* is first written to the dialog
 # mirror by that same session, as its prompt and Stop hooks would.
 start_host() {  # <home> [park options...]
@@ -274,7 +267,6 @@ start_host() {  # <home> [park options...]
   shift
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     MIRROR_ROOT="$MIRROR_ROOT" "$FAKE_CLAUDE" -c '
-      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       rm -f "$FM_HOME/host.rc"
       for seed in "$FM_HOME"/mirror-seed.*; do
@@ -484,8 +476,8 @@ start_hook_session() {  # <home>
   local home=$1
   FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" \
     PATH="$home/fakebin:$PATH" "$FAKE_CLAUDE" -c '
-      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      printf "%s\n" "$$" > "$FM_HOME/session-pid"
       for seed in "$FM_HOME"/mirror-seed.*; do
         [ -f "$seed" ] || continue
         "$FM_HOME/bin/fm-host-mirror.sh" hook claude < "$seed"
@@ -852,15 +844,13 @@ main_drain_and_ack() {  # <home>
 
 
 # One main session across several parks, as a primary's arm owner runs the host
-# again at each turn end: the session lock stays this one fake harness, so the
-# host's per-session state (the latch, the engine conversation) carries
-# across its parks; the mirror seeds are written before each park, as in
-# start_host.
+# again at each turn end: the session stays this one fake harness, so the host's
+# per-session state (the latch, the engine conversation) carries across its
+# parks; the mirror seeds are written before each park, as in start_host.
 start_session() {  # <home>
   local home=$1
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     MIRROR_ROOT="$MIRROR_ROOT" "$FAKE_CLAUDE" -c '
-      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       while [ ! -e "$FM_HOME/session.stop" ] && [ -d "$FM_HOME" ] \
         && kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null; do

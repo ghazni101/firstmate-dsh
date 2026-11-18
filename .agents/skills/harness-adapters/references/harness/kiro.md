@@ -49,7 +49,7 @@ Treat any auth prompt or refusal as a credential blocker under `../../../../../A
 
 Detected by ancestry alone: `../../../../../bin/fm-harness.sh` matches the anchored process name `kiro-cli`, never `*kiro*`.
 No environment marker is promoted, and kiro does not clear an inherited `CLAUDECODE`, so the spawn clears foreign markers at the launch boundary and the ancestry arm decides.
-kiro is deliberately absent from the primary-capable session-lock vocabulary in `../../../../../bin/fm-session-lock-lib.sh`, where the other crewmate-only adapters are also absent: a crewmate-only adapter must never own a home session lock.
+kiro is deliberately absent from the primary-capable vocabulary in `../../../../../bin/fm-proc-lib.sh`, where the other crewmate-only adapters are also absent: a crewmate-only adapter never owns a home.
 
 ## Worker busy state and turn end
 

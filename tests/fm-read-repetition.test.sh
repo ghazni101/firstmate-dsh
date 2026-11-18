@@ -311,14 +311,13 @@ check("normal native reads are independent and argument order does not create a 
   assert.equal(h.complete({ limit: 20, offset: 1, path: "file" }, "same", {}, "read").block, true);
 });
 
-check("primary ownership requires exact root, primary PID marker, session namespace and lock ancestry", () => {
+check("primary ownership requires exact root, primary PID marker and session namespace", () => {
   const encoded = `--${root.slice(1).replaceAll("/", "-")}--`;
   const ctx: any = { cwd: root, sessionManager: { getCwd: () => root, getSessionDir: () => `/private-agent/sessions/${encoded}` } };
   const files: Record<string, string> = {
-    "/private-state/.lock": "400\n", "/private-state/.pi-turnend-extension-loaded": "sha256:test\n500\n",
-    "/proc/500/status": "Name:\tpi\nPPid:\t400\n",
+    "/private-state/.pi-turnend-extension-loaded": "sha256:test\n500\n",
   };
-  const opts = { root, home: root, platform: "linux" as const, state: "/private-state", agentDir: "/private-agent", pid: 500, env: {}, parentPid: (pid: number) => pid === 500 ? 400 : 1, read: (path: string) => {
+  const opts = { root, home: root, platform: "linux" as const, state: "/private-state", agentDir: "/private-agent", pid: 500, env: {}, read: (path: string) => {
     if (!(path in files)) throw new Error("absent fixture"); return files[path];
   } };
   assert.equal(primaryOwnsContext(ctx, opts), true);
@@ -329,9 +328,7 @@ check("primary ownership requires exact root, primary PID marker, session namesp
   assert.equal(primaryOwnsContext(ctx, { ...opts, home: "/tmp" }), false); // secondmate
   assert.equal(primaryOwnsContext({ ...ctx, cwd: "/tmp" }, opts), false);
   assert.equal(primaryOwnsContext({ ...ctx, sessionManager: { ...ctx.sessionManager, getSessionDir: () => `${root}/state/branch-session` } }, opts), false);
-  files["/private-state/.lock"] = "999\n";
-  assert.equal(primaryOwnsContext(ctx, opts), false);
-  delete files["/private-state/.lock"];
+  delete files["/private-state/.pi-turnend-extension-loaded"];
   assert.equal(primaryOwnsContext(ctx, opts), false);
   const foreign = harness({ owned: false });
   for (let i = 0; i < 6; i++) foreign.complete();

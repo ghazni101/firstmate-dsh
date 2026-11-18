@@ -2,12 +2,12 @@
 # Opt-in credentialed Claude live regression for the Stop-owned auto-arm
 # (bin/fm-claude-stop-autoarm.sh + bin/fm-turnend-guard.sh --claude).
 # Proves, against the real installed Claude Code and the real tracked hook
-# registration: a fresh session with in-flight work, no watcher, and a stale
-# session lock receives the full session-start digest through the tracked
-# SessionStart hook; session start reclaims the dead owner; at least two
-# tokenless auto-arm and rewake cycles then complete with zero model-issued arm
-# commands; and the cooperative guard consumes no forced continuation while the
-# hook's launch is healthy.
+# registration: a fresh native session with in-flight work and no watcher
+# receives the full session-start digest through the tracked SessionStart hook,
+# with this session's harness process recorded as the identity anchor; at least
+# two tokenless auto-arm and rewake cycles then complete with zero model-issued
+# arm commands; and the cooperative guard consumes no forced continuation while
+# the hook's launch is healthy.
 # The project and FM_HOME are isolated; Claude keeps using its existing managed
 # authentication. No live fleet home, worktree, or session is touched.
 # shellcheck disable=SC2016 # the model, not this test shell, reads the prompt text
@@ -28,7 +28,6 @@ fail() {
 LAB="$ROOT/.claude-autoarm-live-e2e.$$"
 PROJECT="$LAB/project"
 HOME_DIR="$LAB/fmhome"
-LIVE_OWNER_HOME="$LAB/live-owner-home"
 TRANSCRIPT="$LAB/claude.jsonl"
 CLAUDE_VERSION=$(claude --version)
 
@@ -45,8 +44,8 @@ cp -R "$ROOT/bin/." "$PROJECT/bin/"
 cp "$ROOT/.claude/settings.json" "$PROJECT/.claude/settings.json"
 # The lab keeps the real tracked .claude/settings.json SessionStart run hook,
 # Stop guard, and asyncRewake auto-arm registration.
-# The only local hook records model-issued Bash calls without acquiring the
-# session lock or otherwise changing lifecycle behavior.
+# The only local hook records model-issued Bash calls without changing
+# lifecycle behavior.
 cat > "$PROJECT/.claude/settings.local.json" <<'JSON'
 {
   "hooks": {
@@ -72,9 +71,6 @@ chmod +x "$PROJECT/bin/tool-logger.sh"
 
 mkdir -p "$HOME_DIR/state" "$HOME_DIR/config" "$HOME_DIR/data"
 printf 'project=fixture\nwindow=fixture\nbackend=tmux\n' > "$HOME_DIR/state/task.meta"
-# A numeric pid above the supported OS pid range is a demonstrably dead prior
-# harness owner under fm_harness_pid_alive, matching the reproduced incident.
-printf '9999999\n' > "$HOME_DIR/state/.lock"
 
 # Rapid-death arm fixture: started plus an immediate actionable reason, the
 # exact spent-Stop edge shape. Runs 1-2 close actionable; run 3 closes clean so
@@ -141,14 +137,14 @@ DIGEST_EVENTS=$(jq -c --arg heading "SESSION START - $HOME_DIR" '
 [ "$(printf '%s' "$DIGEST_EVENTS" | jq -s 'length')" = 1 ] \
   || fail "expected exactly one SessionStart hook_response carrying the session-start digest"
 DIGEST=$(printf '%s' "$DIGEST_EVENTS" | jq -r '.stdout')
-printf '%s' "$DIGEST" | grep -q '^lock acquired: harness pid [0-9][0-9]*$' \
-  || fail "SessionStart hook digest lacks the stale-lock reclaim"
+printf '%s' "$DIGEST" | grep -q '^harness process [0-9][0-9]*$' \
+  || fail "SessionStart hook digest lacks this session's harness process identity"
 ! printf '%s' "$DIGEST" | grep -q '^●  STARTUP TRUNCATED - ' \
   || fail "SessionStart hook digest was truncated"
 printf '%s' "$DIGEST" | grep -q '^The digest above is complete for this session start\.' \
   || fail "SessionStart hook digest lacks its completion marker"
-[ "$(cat "$HOME_DIR/state/.lock" 2>/dev/null)" != 9999999 ] \
-  || fail "session start did not reclaim the stale dead-owner lock"
+[ ! -e "$HOME_DIR/state/.lock" ] \
+  || fail "a native session start created a legacy session lock"
 if [ -f "$HOME_DIR/state/tool-calls.log" ]; then
   ! grep -q 'fm-watch-arm.sh' "$HOME_DIR/state/tool-calls.log" \
     || fail "model issued an arm command despite Stop-owned continuity: $(cat "$HOME_DIR/state/tool-calls.log")"
@@ -168,26 +164,4 @@ grep -q "^epoch=.* claude_session=$SESSION_ID\$" "$HOME_DIR/state/.claude-autoar
   || fail "auto-arm epoch ledger must record the Stop payload's session $SESSION_ID: $(sed -n '1p' "$HOME_DIR/state/.claude-autoarm-epoch")"
 [ ! -e "$HOME_DIR/state/.claude-autoarm.lock" ] || fail "auto-arm owner lock was left behind"
 
-# Live-owner negative control: a separate supported-harness process owns a
-# second isolated home while another Stop hook fires from the same primary
-# project. The competing hook must not replace the session lock, arm, write an
-# epoch, or rewake.
-FAKE_CLAUDE="$LAB/claude"
-ln -s /bin/bash "$FAKE_CLAUDE"
-mkdir -p "$LIVE_OWNER_HOME/state" "$LIVE_OWNER_HOME/config"
-printf 'project=fixture\n' > "$LIVE_OWNER_HOME/state/task.meta"
-"$FAKE_CLAUDE" -c 'sleep 3; :' &
-LIVE_OWNER_PID=$!
-printf '%s\n' "$LIVE_OWNER_PID" > "$LIVE_OWNER_HOME/state/.lock"
-LIVE_OWNER_RC=0
-printf '%s\n' '{"session_id":"live-owner-control"}' \
-  | FM_HOME="$LIVE_OWNER_HOME" FM_ROOT_OVERRIDE="$PROJECT" "$FAKE_CLAUDE" -c '"$FM_ROOT_OVERRIDE/bin/fm-claude-stop-autoarm.sh"' \
-      >"$LAB/live-owner.out" 2>"$LAB/live-owner.err" || LIVE_OWNER_RC=$?
-[ "$LIVE_OWNER_RC" -eq 0 ] || fail "competing Stop hook returned $LIVE_OWNER_RC while another live session owned the home"
-[ "$(cat "$LIVE_OWNER_HOME/state/.lock")" = "$LIVE_OWNER_PID" ] || fail "competing Stop hook replaced the live session owner"
-[ ! -e "$LIVE_OWNER_HOME/state/arm-ran" ] || fail "competing Stop hook armed while another live session owned the home"
-[ ! -e "$LIVE_OWNER_HOME/state/.claude-autoarm-epoch" ] || fail "competing Stop hook wrote an epoch while another live session owned the home"
-[ ! -s "$LAB/live-owner.out" ] && [ ! -s "$LAB/live-owner.err" ] || fail "competing Stop hook produced a rewake while another live session owned the home"
-wait "$LIVE_OWNER_PID"
-
-printf 'ok - Claude %s live E2E reclaimed a stale session lock through session start, completed two tokenless Stop-owned rewake cycles, and preserved the competing-live-owner boundary\n' "$CLAUDE_VERSION"
+printf 'ok - Claude %s live E2E recorded its harness identity through session start and completed two tokenless Stop-owned rewake cycles\n' "$CLAUDE_VERSION"

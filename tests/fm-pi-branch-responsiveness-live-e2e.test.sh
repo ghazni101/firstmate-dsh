@@ -64,12 +64,11 @@ append_outcome() {
     || fail "could not seed the outcome store"
 }
 
-# Pi is launched through this script so the session lock names the pi process
-# itself, which is what makes the extension the lock owner in the lab.
+# A home with no legacy record is the session's native home, so the extension
+# is the owner without any launch-side lock write.
 cat > "$LAB/launch.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
-printf '%s\n' "$$" > "$FM_STATE_OVERRIDE/.lock"
 cd "$LAB_PROJECT" || exit 1
 exec "$@"
 SH
@@ -171,7 +170,6 @@ wait_for_pane_text() {
 run_arm() {
   local label=$1 load_extension=$2 seed_rows=$3 expect=$4 out=""
   "$TMUX" -L "$SOCKET" kill-session -t "$SESSION" 2>/dev/null || true
-  rm -f "$HOME_DIR/state/.lock"
   local -a pi_args
   pi_args=(pi -ns -np -nc --no-themes --offline --approve --session-dir "$SESSION_DIR")
   if [ "$load_extension" = yes ]; then

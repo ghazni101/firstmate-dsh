@@ -6,7 +6,7 @@
 #
 # The hook runs hermetically as a descendant of a fake `codex`: a compiled
 # stand-in that stays alive as the session's harness ancestor, so the real
-# ancestry walk, session-lock ownership check, and version gate all run. It
+# ancestry walk, harness-identity check, and version gate all run. It
 # forks bash on the impl script written below, which answers `--version`
 # with FM_FAKE_CODEX_VERSION, records `queue` deliveries in the home's
 # queue.log (exiting FM_FAKE_CODEX_QUEUE_RC), and otherwise runs bash. A plain
@@ -16,7 +16,7 @@
 #
 # Each case runs its hooks from one driver script under one fake codex, the
 # way every hook of a real session shares one Codex process, and that process
-# holds the fixture home's session lock. The arm, session start, and turn-end
+# is the fixture home's session harness. The arm, session start, and turn-end
 # guard are per-suite fixtures in a fixture checkout, so no real watcher arm,
 # digest, model, or fleet state is touched; the watcher and host cases run the
 # real scripts against a private home.
@@ -136,18 +136,17 @@ make_home() {  # <name> <opted-in|plain>
   printf '%s\n' "$home"
 }
 
-# Run driver text under one fake codex that holds the home's session lock.
+# Run driver text under one fake codex that is the home's session harness.
 # PARK, PAYLOAD, and SESSION_ID are available to the driver.
 under_codex() {  # <home> <driver> [VAR=VAL ...]
   local home=$1 driver=$2
   shift 2
   env FM_HOME="$home" PARK="$PARK" PAYLOAD="$PAYLOAD" SESSION_ID="$SESSION_ID" "$@" \
-    "$FAKE_CODEX" -c 'printf "%s\n" "$PPID" > "$FM_HOME/state/.lock"
-'"$driver"
+    "$FAKE_CODEX" -c "$driver"
 }
 
 # The driver line that registers SESSION_ID the way a native SessionStart
-# does, bound to the lock-holding codex.
+# does, bound to the codex harness process.
 REGISTER='printf "%s\n%s\n" "$SESSION_ID" "$PPID" > "$FM_HOME/state/.codex-park-session"
 '
 
@@ -486,9 +485,11 @@ test_host_quiet_boundary_retains_the_watcher() {
   env FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
     FM_SUPERVISION_HOST_PRIMARY=codex FM_SUPERVISION_HOST_PARK_SECONDS=2 FM_CODEX_MODEL_FREE_PARK=1 \
     FM_WARM_COMPACT_TICK=2 CLAUDE_CONFIG_DIR="$home/claude" FM_SUPERVISION_ENGINE_CLAUDE_BIN="$home/engine-stub" \
-    "$FAKE_CODEX" -c 'printf "%s\n" "$PPID" > "$FM_HOME/state/.lock"
-      printf "%s\n" "$$" > "$FM_HOME/host.pid"
-      exec "$1" park' _ "$ROOT/bin/fm-supervision-host.sh" > "$home/host.out" 2> "$home/host.err" &
+    "$FAKE_CODEX" -c 'printf "%s\n" "$$" > "$FM_HOME/host.pid"
+      . "$2/bin/fm-wake-lib.sh"
+      . "$2/bin/fm-supervision-engine-lib.sh"
+      fm_supervision_host_main_key "$FM_HOME/state" > "$FM_HOME/main-key" || :
+      exec "$1" park' _ "$ROOT/bin/fm-supervision-host.sh" "$ROOT" > "$home/host.out" 2> "$home/host.err" &
   i=0
   until [ -s "$home/host.pid" ] && [ -s "$home/state/.watch.lock/pid" ]; do
     i=$((i + 1)); [ "$i" -lt 200 ] || fail "the host never started its watcher: $(cat "$home/host.out" "$home/host.err")"
@@ -501,9 +502,7 @@ test_host_quiet_boundary_retains_the_watcher() {
     i=$((i + 1)); [ "$i" -lt 150 ] || fail "the host never logged a quiet boundary: $(cat "$home/host.out")"
     sleep 0.1
   done
-  key=$(FM_HOME="$home" bash -c '. "$1"; . "$2"; fm_supervision_host_main_key "$3"' _ \
-    "$ROOT/bin/fm-wake-lib.sh" "$ROOT/bin/fm-supervision-engine-lib.sh" "$home/state") \
-    || fail "fixture: no main-session key"
+  key=$(cat "$home/main-key" 2>/dev/null) || fail "fixture: no main-session key"
   printf 'engine=claude\nmodel=sonnet\nsession=warm-sess\nkey=%s\nturns=1\nconversation_cost=0\nended=%s\n' \
     "$key" $(($(date +%s) - 600)) > "$home/state/.supervision-host-engine"
   printf 'prompt\n' > "$home/state/.supervision-host-prompt"

@@ -47,12 +47,12 @@
 #   FM_TRACE_CONTEXT        env override: 1/on/true/yes enables, any other
 #                           non-empty value disables, and unset OR empty defers
 #                           to the file.
-#   Each locked home session resolves these inputs once into
+#   Each home session resolves these inputs once into
 #   state/.trace-context-effective. The record is atomically published through a
-#   same-directory temporary file and bound to state/.lock; a failed publication
-#   cannot reactivate a stale on decision. Every spawn reads only that frozen
-#   on/off value, so later config and environment edits take effect only after a
-#   new home session starts.
+#   same-directory temporary file and bound to the owning session's identity, so
+#   a failed publication cannot reactivate a stale on decision. Every spawn
+#   reads only that frozen on/off value, so later config and environment edits
+#   take effect only after a new home session starts.
 #   At launch, the primary propagates config/trace-context into the secondmate
 #   home (FM_INHERITABLE_CONFIG in bin/fm-config-inherit-lib.sh) and passes its
 #   frozen on/off decision into the new process as a non-empty FM_TRACE_CONTEXT
@@ -137,37 +137,23 @@ fm_trace_context_enabled() {  # <config-dir>
   [ -f "$config_dir/trace-context" ]
 }
 
-# Echo the lock pid that owns the effective-state file's home, or fail when the
-# adjacent session lock is absent or malformed. Binding the decision to this
-# token makes a prior session's record inactive even if publication cannot
-# replace or remove that stale file.
-fm_trace_context_session_lock() {  # <effective-state-file>
-  local effective_file=$1 state_dir lock_pid
-  state_dir=${effective_file%/*}
-  [ "$state_dir" = "$effective_file" ] && state_dir=.
-  # Grouped so the stderr redirect is in place BEFORE the input redirect is
-  # attempted: an absent lock is an ordinary silent "not locked" answer, and a
-  # trailing 2>/dev/null on the bare read would still leak the open failure.
-  { IFS= read -r lock_pid < "$state_dir/.lock"; } 2>/dev/null || return 1
-  case "$lock_pid" in
-    '' | *[!0-9]*) return 1 ;;
-  esac
-  [ "$lock_pid" -gt 1 ] || return 1
-  printf '%s' "$lock_pid"
-}
+# The effective-state record: "<session-owner> <on|off>", published atomically by
+# the session start that resolved it (bin/fm-session-start.sh) and read by every
+# spawn. Binding it to the owning session makes a prior session's record
+# inactive in a later one even when publication cannot replace the stale file.
+# The owner is that session's harness process (bin/fm-proc-lib.sh); a caller
+# that can identify no session passes nothing, and then the record stands,
+# because an unidentified shell is no evidence of a different session.
 
-fm_trace_context_session_start() {  # <config-dir> <effective-state-file>
-  local config_dir=$1 effective_file=$2 value=off lock_pid tmp
-  lock_pid=$(fm_trace_context_session_lock "$effective_file") || {
-    rm -f "$effective_file" 2>/dev/null || true
-    return 0
-  }
+fm_trace_context_session_start() {  # <config-dir> <effective-state-file> [<owner-pid>]
+  local config_dir=$1 effective_file=$2 owner=${3:-} value=off tmp
+  case "$owner" in *[!0-9]*) owner= ;; esac
   fm_trace_context_enabled "$config_dir" && value=on
   tmp=$(mktemp "$effective_file.tmp.XXXXXX" 2>/dev/null) || {
     rm -f "$effective_file" 2>/dev/null || true
     return 0
   }
-  if ! printf '%s %s\n' "$lock_pid" "$value" > "$tmp" 2>/dev/null \
+  if ! printf '%s %s\n' "$owner" "$value" > "$tmp" 2>/dev/null \
     || ! mv -f "$tmp" "$effective_file" 2>/dev/null; then
     rm -f "$tmp" 2>/dev/null || true
     rm -f "$effective_file" 2>/dev/null || true
@@ -175,16 +161,15 @@ fm_trace_context_session_start() {  # <config-dir> <effective-state-file>
   return 0
 }
 
-fm_trace_context_session_effective() {  # <effective-state-file>
-  local effective_file=$1 current_lock recorded_lock='' value='' extra=''
-  current_lock=$(fm_trace_context_session_lock "$effective_file") || {
-    printf '%s' off
-    return 0
-  }
+fm_trace_context_session_effective() {  # <effective-state-file> [<owner-pid>]
+  local effective_file=$1 current=${2:-} recorded='' value='' extra=''
+  case "$current" in *[!0-9]*) current= ;; esac
   if [ -f "$effective_file" ] && [ ! -L "$effective_file" ]; then
-    IFS=' ' read -r recorded_lock value extra < "$effective_file" 2>/dev/null || true
+    IFS=' ' read -r recorded value extra < "$effective_file" 2>/dev/null || true
   fi
-  if [ "$recorded_lock" = "$current_lock" ] && [ "$value" = on ] && [ -z "$extra" ]; then
+  if [ -n "$current" ] && [ "$recorded" != "$current" ]; then
+    printf '%s' off
+  elif [ "$value" = on ] && [ -z "$extra" ]; then
     printf '%s' on
   else
     printf '%s' off

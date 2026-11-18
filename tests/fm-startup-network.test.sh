@@ -10,13 +10,13 @@
 #     which is what would strand a session-open hook behind the worker
 #   - a durable acknowledgement after harvest prints a finished result suppresses
 #     the wake, while an unacknowledged result always produces one
-#   - mutating sweeps are refused when the fleet lock no longer names the session
-#     that requested them, and the refusal is reported rather than silent
+#   - mutating sweeps are refused when the session that requested them is no
+#     longer alive, and the refusal is reported rather than silent
 #   - the aggregate bound turns a wedged sweep into an actionable line
 #   - an abandoned `running` record is reported as needing a rerun rather than
 #     staying "in progress" forever
 #   - phase-aware single-flight: a covering worker is reused, while a later
-#     locked request supersedes an in-flight probe-only worker
+#     mutating request supersedes an in-flight probe-only worker
 #   - a publish lock a live process holds past the budget ends the worker with a
 #     failed-rerun record instead of an unbounded wait
 set -u
@@ -177,12 +177,11 @@ test_start_returns_without_holding_the_callers_stdout() {
   IFS='|' read -r home root log <<EOF
 $rec
 EOF
-  printf '%s\n' $$ > "$home/state/.lock"
 
   started=$(date +%s)
   # Command substitution reads to EOF, exactly like a hook harvesting hook output.
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=10 \
-    run_stage "$home" "$root" start --locked 1 --harvest-pid $$ >/dev/null
+    run_stage "$home" "$root" start --mutating 1 --harvest-pid $$ >/dev/null
   elapsed=$(( $(date +%s) - started ))
 
   [ "$elapsed" -lt 4 ] || fail "start blocked for ${elapsed}s behind a 10s worker"
@@ -205,12 +204,11 @@ test_harvest_acknowledgement_suppresses_the_wake_and_no_claim_produces_it() {
   IFS='|' read -r home root log <<EOF
 $rec
 EOF
-  printf '%s\n' $$ > "$home/state/.lock"
 
   sleep 30 &
   claimant=$!
   FM_SESSION_START_TIMEOUT=15 FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_OUT='acknowledged result' \
-    run_stage "$home" "$root" start --locked 0 --harvest-pid "$claimant"
+    run_stage "$home" "$root" start --mutating 0 --harvest-pid "$claimant"
   run_stage "$home" "$root" wait 30 >/dev/null || fail "the claimed worker never published"
   worker_pid=$(sed -n 's/^pid=//p' "$home/state/.startup-network.status")
   output=$(run_stage "$home" "$root" harvest --pid "$claimant")
@@ -235,13 +233,13 @@ EOF
   # below owns the separate "a clean success never wakes" contract.
   assert_absent "$home/state/.startup-network.claim" "harvest did not release its own claim"
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_OUT='MISSING: some-tool (install: brew install some-tool)' \
-    run_stage "$home" "$root" run --locked 0
+    run_stage "$home" "$root" run --mutating 0
   assert_grep 'check	startup-network' "$home/state/.wake-queue" \
     "an unclaimed actionable result never reached the wake queue"
 
   : > "$home/state/.wake-queue"
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_OUT='MISSING: some-tool (install: brew install some-tool)' \
-    run_stage "$home" "$root" start --locked 0 --harvest-pid 999999999
+    run_stage "$home" "$root" start --mutating 0 --harvest-pid 999999999
   run_stage "$home" "$root" wait 30 >/dev/null || fail "the dead-claim worker never published"
   wait_for_startup_network_wake "$home" || fail "the dead-claim worker never settled delivery"
   assert_grep 'check	startup-network' "$home/state/.wake-queue" \
@@ -262,7 +260,7 @@ EOF
   # silent (test_a_successful_result_never_queues_a_wake owns that case).
   FM_SESSION_START_TIMEOUT=4 FM_FAKE_BOOTSTRAP_LOG="$log" \
     FM_FAKE_BOOTSTRAP_OUT='MISSING: some-tool (install: brew install some-tool)' \
-    run_stage "$home" "$root" start --locked 0 --harvest-pid "$claimant"
+    run_stage "$home" "$root" start --mutating 0 --harvest-pid "$claimant"
   run_stage "$home" "$root" wait 30 >/dev/null || fail "the crash-window worker never published"
   kill -0 "$claimant" 2>/dev/null \
     || fail "the claimant died before the worker published"
@@ -288,7 +286,7 @@ EOF
   claimant=$!
 
   FM_SESSION_START_TIMEOUT=4 FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_OUT='unpublishable result' \
-    run_stage "$home" "$root" start --locked 0 --harvest-pid "$claimant"
+    run_stage "$home" "$root" start --mutating 0 --harvest-pid "$claimant"
   run_stage "$home" "$root" wait 30 >/dev/null || fail "the report-publication failure never settled"
   state=$(sed -n 's/^state=//p' "$home/state/.startup-network.status")
   [ "$state" = failed ] || fail "a report-publication failure was published as $state"
@@ -324,7 +322,7 @@ EOF
   sleep 10 &
   claimant=$!
   FM_SESSION_START_TIMEOUT=4 FM_FAKE_BOOTSTRAP_LOG="$log" \
-    run_stage "$home" "$root" start --locked 0 --harvest-pid "$claimant"
+    run_stage "$home" "$root" start --mutating 0 --harvest-pid "$claimant"
   run_stage "$home" "$root" wait 30 >/dev/null || fail "the unclaimed successful worker never published"
   kill "$claimant" 2>/dev/null || true
   wait "$claimant" 2>/dev/null || true
@@ -343,7 +341,7 @@ EOF
   # quiet as a fully silent success.
   FM_FAKE_BOOTSTRAP_LOG="$log" \
     FM_FAKE_BOOTSTRAP_OUT='BOOTSTRAP_INFO: fixture completed benign work' \
-    run_stage "$home" "$root" run --locked 0
+    run_stage "$home" "$root" run --mutating 0
   [ ! -s "$home/state/.wake-queue" ] \
     || fail "a BOOTSTRAP_INFO-only success queued a main-blocking wake: $(cat "$home/state/.wake-queue")"
   report=$(run_stage "$home" "$root" report)
@@ -366,7 +364,7 @@ EOF
   claimant=$!
   FM_SESSION_START_TIMEOUT=4 FM_FAKE_BOOTSTRAP_LOG="$log" \
     FM_FAKE_BOOTSTRAP_OUT='MISSING: some-tool (install: brew install some-tool)' \
-    run_stage "$home" "$root" start --locked 0 --harvest-pid "$claimant"
+    run_stage "$home" "$root" start --mutating 0 --harvest-pid "$claimant"
   run_stage "$home" "$root" wait 30 >/dev/null || fail "the unclaimed actionable worker never published"
   kill "$claimant" 2>/dev/null || true
   wait "$claimant" 2>/dev/null || true
@@ -386,7 +384,6 @@ test_deferred_invalid_secondmate_markers_queue_durable_findings() {
     IFS='|' read -r home root log <<EOF
 $rec
 EOF
-    printf '%s\n' $$ > "$home/state/.lock"
     if [ "$kind" = malformed ]; then
       printf '../other-home\n' > "$home/.fm-secondmate-home"
     else
@@ -395,7 +392,7 @@ EOF
       ln -s "$target" "$home/.fm-secondmate-home"
     fi
 
-    FM_FAKE_BOOTSTRAP_LOG="$log" run_stage "$home" "$root" run --locked 1
+    FM_FAKE_BOOTSTRAP_LOG="$log" run_stage "$home" "$root" run --mutating 1
     assert_grep $'check\tinactive-reconcile-diagnostic:invalid-secondmate-home\t' "$home/state/.wake-queue" \
       "$kind marker finding was swallowed by the deferred startup stage"
     report=$(run_stage "$home" "$root" report)
@@ -416,32 +413,41 @@ EOF
   pass "fm-startup-network: deferred invalid secondmate markers produce durable wakes"
 }
 
-# The worker outlives the command that launched it. If another session took the
-# lock meanwhile, running the mutating sweeps would sweep underneath that
-# session, so they are refused - and the refusal is reported, not silent.
-test_mutating_sweeps_are_refused_when_the_lock_changed_hands() {
-  local rec home root log report
-  rec=$(new_world lock-changed)
+# The worker outlives the command that launched it, so mutation authority is the
+# requesting session's own liveness, re-proven just before the sweeps: a session
+# that is still running owns them, and one that has died leaves only the probe.
+# The refusal is reported, not silent, and it happens for a caller that names a
+# dead requester exactly as it does for a worker whose requester went away.
+test_mutation_authority_follows_the_requesting_session() {
+  local rec home root log report status generation
+  rec=$(new_world requester-authority)
   IFS='|' read -r home root log <<EOF
 $rec
 EOF
-  printf '222222\n' > "$home/state/.lock"
+  status="$home/state/.startup-network.status"
 
-  FM_FAKE_BOOTSTRAP_LOG="$log" run_stage "$home" "$root" run --locked 1 --lock-pid 111111
-  assert_grep 'network=only detect_only=1' "$log" \
-    "the worker ran mutating sweeps for a lock it no longer held"
-  report=$(run_stage "$home" "$root" report)
-  assert_contains "$report" "NETWORK_CHECKS: the recorded fleet lock holder changed after these were requested" \
-    "the downgrade to a read-only probe was not reported"
-
-  # A detached start captures the lock itself and may run the mutating phase.
-  : > "$log"
-  printf '%s\n' $$ > "$home/state/.lock"
-  FM_FAKE_BOOTSTRAP_LOG="$log" run_stage "$home" "$root" start --locked 1 --harvest-pid $$
-  run_stage "$home" "$root" wait 30 >/dev/null || fail "the lock-authorized worker never published"
+  # A live requesting session authorizes the mutating sweeps.
+  FM_FAKE_BOOTSTRAP_LOG="$log" run_stage "$home" "$root" run --mutating 1
   assert_grep 'network=only detect_only=0' "$log" \
-    "the worker refused sweeps for the very session that still holds the lock"
-  pass "fm-startup-network: manual callers cannot forge mutation authority"
+    "a live requester did not authorize the mutating sweeps"
+
+  # The same request naming a dead session runs only the read-only probe, and
+  # the downgrade is reported in the durable record.
+  : > "$log"
+  generation=dead-requester
+  FM_FAKE_BOOTSTRAP_LOG="$log" PATH="$root/bin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    STATUS="$status" GENERATION="$generation" SESSION_PID=999999999 \
+    bash -c '
+      printf "state=running\npid=%s\nstarted=%s\nmutating=1\nphases=probe,sweeps\ngeneration=%s\nsession_pid=%s\n" \
+        "$$" "$(date +%s)" "$GENERATION" "$SESSION_PID" > "$STATUS"
+      exec "$1" run --mutating 1 --session-pid "$SESSION_PID" --generation "$GENERATION"
+    ' _ "$root/bin/fm-startup-network.sh"
+  assert_grep 'network=only detect_only=1' "$log" \
+    "the worker ran mutating sweeps for a session that was no longer running"
+  report=$(run_stage "$home" "$root" report)
+  assert_contains "$report" "NETWORK_CHECKS: the session that requested these checks is no longer running" \
+    "the downgrade to a read-only probe was not reported: $report"
+  pass "fm-startup-network: mutation authority follows the requesting session's liveness"
 }
 
 # The unbounded per-call network work is exactly what could wedge a startup. The
@@ -452,17 +458,16 @@ test_the_stage_bound_is_reported_not_swallowed() {
   IFS='|' read -r home root log <<EOF
 $rec
 EOF
-  printf '%s\n' $$ > "$home/state/.lock"
 
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=20 FM_STARTUP_NETWORK_TIMEOUT=2 \
-    run_stage "$home" "$root" start --locked 1 --harvest-pid $$
+    run_stage "$home" "$root" start --mutating 1 --harvest-pid $$
   run_stage "$home" "$root" harvest --pid $$ >/dev/null
   FM_STARTUP_NETWORK_TIMEOUT=2 run_stage "$home" "$root" wait 10 >/dev/null \
     || fail "the bounded worker never settled"
   report=$(run_stage "$home" "$root" report)
   assert_contains "$report" "NETWORK_CHECKS: hit the 2s bound before finishing" \
     "a wedged deferred stage was not reported: $report"
-  assert_contains "$report" "fm-startup-network.sh run --locked 1" \
+  assert_contains "$report" "fm-startup-network.sh run --mutating 1" \
     "the timeout line did not say how to rerun the stage"
   wait_for_startup_network_wake "$home" || fail "the timed-out worker never settled delivery"
   assert_grep 'check	startup-network' "$home/state/.wake-queue" \
@@ -482,7 +487,7 @@ EOF
 state=running
 pid=999999999
 started=$(date +%s)
-locked=1
+mutating=1
 phases=probe,sweeps
 EOF
 
@@ -498,7 +503,7 @@ EOF
 state=running
 pid=$$
 started=$(( $(date +%s) - 400 ))
-locked=1
+mutating=1
 phases=probe,sweeps
 EOF
   assert_contains "$(FM_STARTUP_NETWORK_TIMEOUT=10 run_stage "$home" "$root" report)" \
@@ -507,33 +512,32 @@ EOF
   pass "fm-startup-network: an abandoned run reports as needing a rerun, never as in progress forever"
 }
 
-test_locked_start_is_not_satisfied_by_an_inflight_probe() {
+test_mutating_start_is_not_satisfied_by_an_inflight_probe() {
   local rec home root log waited=0
-  rec=$(new_world probe-then-locked)
+  rec=$(new_world probe-then-mutating)
   IFS='|' read -r home root log <<EOF
 $rec
 EOF
-  printf '%s\n' $$ > "$home/state/.lock"
   printf '../other-home\n' > "$home/.fm-secondmate-home"
 
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=6 \
-    run_stage "$home" "$root" start --locked 0 --harvest-pid $$
+    run_stage "$home" "$root" start --mutating 0 --harvest-pid $$
   while ! grep -Fq 'detect_only=1' "$log" 2>/dev/null && [ "$waited" -lt 50 ]; do
     sleep 0.1
     waited=$((waited + 1))
   done
   assert_grep 'network=only detect_only=1' "$log" \
-    "the probe-only worker was not in flight before the locked request"
+    "the probe-only worker was not in flight before the mutating request"
 
   FM_FAKE_BOOTSTRAP_LOG="$log" \
-    run_stage "$home" "$root" start --locked 1 --harvest-pid $$
+    run_stage "$home" "$root" start --mutating 1 --harvest-pid $$
   run_stage "$home" "$root" wait 30 >/dev/null \
-    || fail "the locked request never published"
+    || fail "the mutating request never published"
   assert_grep 'network=only detect_only=0' "$log" \
-    "the in-flight probe-only worker suppressed the locked sweeps"
+    "the in-flight probe-only worker suppressed the mutating sweeps"
   assert_grep $'check\tinactive-reconcile-diagnostic:invalid-secondmate-home\t' "$home/state/.wake-queue" \
-    "the in-flight probe-only worker suppressed the locked inactive scan"
-  pass "fm-startup-network: locked requests supersede in-flight probe-only workers"
+    "the in-flight probe-only worker suppressed the mutating inactive scan"
+  pass "fm-startup-network: mutating requests supersede in-flight probe-only workers"
 }
 
 # Two session opens in quick succession must not run the same mutating sweeps
@@ -544,13 +548,12 @@ test_start_is_single_flight() {
   IFS='|' read -r home root log <<EOF
 $rec
 EOF
-  printf '%s\n' $$ > "$home/state/.lock"
 
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=6 \
-    run_stage "$home" "$root" start --locked 1 --harvest-pid $$
+    run_stage "$home" "$root" start --mutating 1 --harvest-pid $$
   await_worker_record "$home"
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=6 \
-    run_stage "$home" "$root" start --locked 1 --harvest-pid $$
+    run_stage "$home" "$root" start --mutating 1 --harvest-pid $$
   run_stage "$home" "$root" wait 40 >/dev/null || fail "the worker never published"
 
   runs=$(grep -c 'network=only' "$log" || true)
@@ -570,15 +573,14 @@ pid=999999999
 started=1
 finished=2
 rc=0
-locked=0
+mutating=0
 phases=probe
 generation=old
-lock_pid=
 EOF
   printf 'old result\n' > "$home/state/.startup-network.report"
 
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=5 \
-    run_stage "$home" "$root" start --locked 0 --harvest-pid $$
+    run_stage "$home" "$root" start --mutating 0 --harvest-pid $$
   report=$(run_stage "$home" "$root" harvest --pid $$)
   assert_contains "$report" "IN PROGRESS" \
     "harvest exposed the previous generation after a new start returned: $report"
@@ -588,65 +590,27 @@ EOF
   pass "fm-startup-network: start atomically reserves the generation harvest observes"
 }
 
-test_new_lock_owner_does_not_reuse_the_previous_owners_worker() {
-  local rec home root log generation_one generation_two next_owner
+test_new_session_does_not_reuse_the_previous_sessions_worker() {
+  local rec home root log generation_one generation_two
   rec=$(new_world owner-handoff)
   IFS='|' read -r home root log <<EOF
 $rec
 EOF
-  printf '%s\n' $$ > "$home/state/.lock"
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=6 \
-    run_stage "$home" "$root" start --locked 1 --harvest-pid $$
+    run_stage "$home" "$root" start --mutating 1 --harvest-pid $$
   generation_one=$(sed -n 's/^generation=//p' "$home/state/.startup-network.status")
 
-  next_owner=$(/bin/ps -o ppid= -p $$ | tr -d ' ')
-  printf '%s\n' "$next_owner" > "$home/state/.lock"
-  FM_FAKE_HARNESS_PID_OVERRIDE="$next_owner" FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=1 \
-    run_stage "$home" "$root" start --locked 1 --harvest-pid $$
+  # A second session is a different harness process: launch this start from its
+  # own wrapper shell and have the ps stand-in report that pid as the harness.
+  (
+    FM_FAKE_HARNESS_PID_OVERRIDE=$BASHPID FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=1 \
+      run_stage "$home" "$root" start --mutating 1 --harvest-pid $$
+  )
   generation_two=$(sed -n 's/^generation=//p' "$home/state/.startup-network.status")
   [ "$generation_one" != "$generation_two" ] \
-    || fail "the new lock owner reused the previous owner's generation"
-  run_stage "$home" "$root" wait 30 >/dev/null || fail "the new owner's generation never published"
-  pass "fm-startup-network: a new lock owner gets a distinct worker generation"
-}
-
-test_lock_takeover_stays_read_only_while_a_sweep_holds_the_lease() {
-  local rec home root log next_owner new_owner out rc started elapsed waited=0
-  rec=$(new_world sweep-lease)
-  IFS='|' read -r home root log <<EOF
-$rec
-EOF
-  printf '%s\n' $$ > "$home/state/.lock"
-  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=6 \
-    run_stage "$home" "$root" start --locked 1 --harvest-pid $$
-  while [ ! -s "$log" ] && [ "$waited" -lt 50 ]; do
-    sleep 0.1
-    waited=$((waited + 1))
-  done
-  [ -s "$log" ] || fail "the mutating sweep never started"
-
-  next_owner=$(/bin/ps -o ppid= -p $$ | tr -d ' ')
-  started=$(date +%s)
-  rc=0
-  out=$(PATH="$root/bin:$PATH" FM_FAKE_HARNESS_PID="$next_owner" \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$root/bin/fm-lock.sh" 2>&1) || rc=$?
-  elapsed=$(( $(date +%s) - started ))
-  [ "$rc" -ne 0 ] || fail "lock takeover succeeded while the prior sweep was mutating"
-  [ "$elapsed" -lt 4 ] || fail "lock takeover blocked ${elapsed}s behind deferred network work"
-  assert_contains "$out" "operate read-only" \
-    "a lease-blocked takeover did not fail closed to read-only: $out"
-  [ "$(cat "$home/state/.lock")" = "$$" ] \
-    || fail "the lease-blocked takeover replaced the prior owner"
-
-  run_stage "$home" "$root" wait 30 >/dev/null || fail "the leased sweep never settled"
-  out=$(PATH="$root/bin:$PATH" FM_FAKE_HARNESS_PID="$next_owner" \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$root/bin/fm-lock.sh" 2>&1) \
-    || fail "lock takeover still failed after the sweep released its lease"
-  new_owner=$(cat "$home/state/.lock")
-  assert_contains "$out" "lock acquired: harness pid $new_owner" \
-    "the fleet lock did not record the harness owner reported by acquisition"
-  [ "$new_owner" != "$$" ] || fail "the prior harness still owned the lock after takeover"
-  pass "fm-startup-network: fleet-lock takeover cannot overlap a mutating sweep"
+    || fail "the new session reused the previous session's generation"
+  run_stage "$home" "$root" wait 30 >/dev/null || fail "the new session's generation never published"
+  pass "fm-startup-network: a new session gets a distinct worker generation"
 }
 
 # Every record carries a start offset from ONE origin, so the artifact reads as a
@@ -699,11 +663,10 @@ test_timings_are_published_and_only_the_on_demand_report_prints_them() {
   IFS='|' read -r home root log <<EOF
 $rec
 EOF
-  printf '%s\n' $$ > "$home/state/.lock"
 
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_OUT='sweep finding' \
     FM_FAKE_TIMING_PHASE=fleet-sync FM_FAKE_TIMING_DETAIL=dotfiles-private \
-    run_stage "$home" "$root" run --locked 1
+    run_stage "$home" "$root" run --mutating 1
 
   assert_present "$home/state/.startup-network.timings" \
     "a finished run published no timing record"
@@ -737,12 +700,11 @@ test_a_bounded_run_still_publishes_the_timings_it_managed_to_record() {
   IFS='|' read -r home root log <<EOF
 $rec
 EOF
-  printf '%s\n' $$ > "$home/state/.lock"
 
   FM_STARTUP_NETWORK_TIMEOUT=1 FM_SESSION_START_TIMEOUT=2 \
     FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=20 \
     FM_FAKE_TIMING_PHASE=secondmate-liveness FM_FAKE_TIMING_DETAIL='mate-a@host-one' \
-    run_stage "$home" "$root" run --locked 1
+    run_stage "$home" "$root" run --mutating 1
 
   [ "$(sed -n 's/^state=//p' "$home/state/.startup-network.status")" = timeout ] \
     || fail "the bounded run did not record itself as timed out"
@@ -763,12 +725,11 @@ test_the_timing_artifact_cannot_carry_a_command_line_or_forge_records() {
   IFS='|' read -r home root log <<EOF
 $rec
 EOF
-  printf '%s\n' $$ > "$home/state/.lock"
 
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_TIMING_PHASE=secondmate-sync \
     FM_FAKE_TIMING_DETAIL="ssh -i /key host	v1	forged	0	9999
 GITHUB_TOKEN=ghp_supersecretvalue" \
-    run_stage "$home" "$root" run --locked 1
+    run_stage "$home" "$root" run --mutating 1
 
   assert_no_grep 'ghp_supersecretvalue' "$home/state/.startup-network.timings" \
     "the timing artifact carried a credential-shaped value through"
@@ -811,7 +772,7 @@ EOF
   rc=0
   fm_run_timed 15 env PATH="$root/bin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
     FM_STARTUP_NETWORK_TIMEOUT=2 FM_SESSION_START_TIMEOUT=2 FM_FAKE_BOOTSTRAP_LOG="$log" \
-    "$root/bin/fm-startup-network.sh" run --locked 0 >/dev/null 2>&1 || rc=$?
+    "$root/bin/fm-startup-network.sh" run --mutating 0 >/dev/null 2>&1 || rc=$?
   took=$(( $(date +%s) - began ))
   [ "$rc" -ne 124 ] || fail "the worker was still waiting on the held publish lock 15s past a 2s budget"
   [ "$rc" -ne 0 ] || fail "the worker reported success without ever taking the publish lock"
@@ -822,7 +783,7 @@ EOF
   report=$(run_stage "$home" "$root" report)
   assert_contains "$report" "still held by pid $holder" \
     "the failed record did not name the process holding the lock: $report"
-  assert_contains "$report" "fm-startup-network.sh run --locked 0" \
+  assert_contains "$report" "fm-startup-network.sh run --mutating 0" \
     "the failed record did not say how to rerun the stage"
   assert_grep 'check	startup-network' "$home/state/.wake-queue" \
     "a worker that gave up on the lock did not surface to the agent"
@@ -834,7 +795,7 @@ EOF
   rm -f "$home/state/.wake-queue" "$log"
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=2 FM_FAKE_BOOTSTRAP_OUT='PROBE_RAN' \
     FM_STARTUP_NETWORK_TIMEOUT=10 FM_SESSION_START_TIMEOUT=2 \
-    run_stage "$home" "$root" start --locked 0 --harvest-pid 999999999
+    run_stage "$home" "$root" start --mutating 0 --harvest-pid 999999999
   await_worker_record "$home"
   worker=$(sed -n 's/^pid=//p' "$home/state/.startup-network.status")
   waited=0
@@ -867,14 +828,13 @@ test_a_report_publication_failure_is_failed_and_still_wakes
 test_a_successful_result_never_queues_a_wake
 test_an_actionable_successful_result_still_queues_a_wake
 test_deferred_invalid_secondmate_markers_queue_durable_findings
-test_mutating_sweeps_are_refused_when_the_lock_changed_hands
+test_mutation_authority_follows_the_requesting_session
 test_the_stage_bound_is_reported_not_swallowed
 test_an_abandoned_run_reads_as_needing_a_rerun
-test_locked_start_is_not_satisfied_by_an_inflight_probe
+test_mutating_start_is_not_satisfied_by_an_inflight_probe
 test_start_is_single_flight
 test_start_reserves_its_generation_before_returning
-test_new_lock_owner_does_not_reuse_the_previous_owners_worker
-test_lock_takeover_stays_read_only_while_a_sweep_holds_the_lease
+test_new_session_does_not_reuse_the_previous_sessions_worker
 test_records_share_one_origin_so_offsets_form_a_timeline
 test_timings_are_published_and_only_the_on_demand_report_prints_them
 test_a_bounded_run_still_publishes_the_timings_it_managed_to_record

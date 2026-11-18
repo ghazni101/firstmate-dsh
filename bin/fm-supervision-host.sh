@@ -137,14 +137,15 @@
 # lets a turn that starts before the boundary finish after it.
 #
 # OWNERSHIP. Before activation, every successor cycle, and every engine turn
-# the host proves this session still holds the fleet lock
-# (bin/fm-session-lock-lib.sh) and, when launched by the auto-arm, that the
+# the host proves the session that launched it is still alive
+# (bin/fm-proc-lib.sh) and, when launched by the auto-arm, that the
 # auto-arm generation it serves (FM_SUPERVISION_HOST_AUTOARM_GEN owned by
 # FM_SUPERVISION_HOST_OWNER_PID) is still current; otherwise it stands down
 # with a "supervision-host:" line and leaves the decision to its owner; a
 # host that stands down before activation leaves the owner's host record,
 # processes, arms, and leases alone. The engine runs with
-# FM_SUPERVISION_ACTOR=branch, the session-lock holder as FM_LEASE_HOLDER_PID,
+# FM_SUPERVISION_ACTOR=branch, the session's harness process as
+# FM_LEASE_HOLDER_PID,
 # the primary's harness pin, and this turn's report id, so every guarded
 # script applies the same partition, leases, and away relocation it applies to
 # the Pi branch. At activation the host stops anything a crashed predecessor
@@ -200,8 +201,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-proc-lib.sh
+. "$SCRIPT_DIR/fm-proc-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-supervision-engine-lib.sh
@@ -363,10 +364,6 @@ branch_env() {  # <command...>: run with the branch actor identity
   FM_SUPERVISION_ACTOR=branch "$@"
 }
 
-release_branch_leases() {
-  branch_env "$SCRIPT_DIR/fm-lease.sh" release-actor --actor branch >/dev/null 2>&1 || true
-}
-
 # Stop whatever a predecessor host left running, then take the record. The
 # auto-arm admits one generation at a time, so a predecessor still alive here
 # was superseded (its owner died or went stale) or crashed mid-cleanup.
@@ -419,7 +416,6 @@ activate() {
     fi
   fi
   printf 'host\t%s\t%s\n' "$HOST_PID" "$(identity_of "$HOST_PID")" > "$HOST_RECORD" || return 1
-  release_branch_leases
 }
 
 # Stop a running engine turn: TERM the bounded process, whose watchdog passes
@@ -458,7 +454,6 @@ cleanup() {
     "$SCRIPT_DIR/fm-wake-grant.sh" release "$GEN" >/dev/null 2>&1 || true
     "$SCRIPT_DIR/fm-wake-grant.sh" deactivate "$HOST_PID" "$GEN" >/dev/null 2>&1 || true
   fi
-  release_branch_leases
   rm -f "$TURN_FILE" "$ENGINE_PID_FILE" 2>/dev/null || true
   for f in "$TURN_RESULT" "$TURN_ERRORS"; do
     case "$f" in "$STATE"/.supervision-host-*) rm -f "$f" 2>/dev/null || true ;; esac
@@ -487,7 +482,6 @@ retire_arm() {  # <pid> <output-file>
 }
 
 host_still_owner() {
-  fm_session_lock_owned_by_self "$STATE" || return 1
   [ -n "$AUTOARM_GEN" ] || return 0
   fm_autoarm_ledger_read "$STATE" || return 1
   [ "$FM_AUTOARM_GEN" = "$AUTOARM_GEN" ] && [ "$FM_AUTOARM_OWNER" = "$AUTOARM_OWNER" ] \
@@ -1144,7 +1138,7 @@ handle_wake() {  # <reason-lines>
     [ -z "${FM_STATE_OVERRIDE:-}" ] || export FM_STATE_OVERRIDE
     [ -z "${FM_CONFIG_OVERRIDE:-}" ] || export FM_CONFIG_OVERRIDE
     export FM_SUPERVISION_ACTOR=branch
-    FM_LEASE_HOLDER_PID=$(sed -n '1p' "$STATE/.lock" 2>/dev/null)
+    FM_LEASE_HOLDER_PID=$(fm_harness_ancestry_pid 2>/dev/null || true)
     export FM_LEASE_HOLDER_PID
     export FM_SUPERVISION_PRIMARY_HARNESS="$PRIMARY"
     export FM_BRANCH_REPORT_TURN="$turn"
@@ -1157,7 +1151,6 @@ handle_wake() {  # <reason-lines>
   rc=$?
   ENGINE_SUBSHELL=
   ENGINE_RUNNING=0
-  release_branch_leases
   # shellcheck disable=SC2086 # rows is a space-separated list of sequence numbers.
   unacked=$(fm_wake_rows_queued $rows) || unacked=$rows
   unacked=$(printf '%s\n' "$unacked" | awk 'NF { printf "%s%s", sep, $1; sep = " " }')

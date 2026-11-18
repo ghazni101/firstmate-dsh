@@ -237,7 +237,7 @@ Each note is appended to the transcript as its own system-notice row, which Clau
 Silent routine outcomes show nothing.
 The mod checks the outcome store's display tail copy and the host's latch file every 3 seconds, so a note can land a few seconds after its outcome.
 On the first tail read in a session, it replays unprocessed captain outcomes and unread visible routine outcomes from the bounded copy, showing at most the newest 20 notes with a count of older due notes within that copy.
-A home whose outcome store predates the copy gains one at its next locked session start, even while away; if the copy first appears after the mod starts, the replay still uses the read and processed markers captured when the session started.
+A home whose outcome store predates the copy gains one at its next session start, even while away; if the copy first appears after the mod starts, the replay still uses the read and processed markers captured when the session started.
 On later reads, if the copy skips sequence numbers since the last seen outcome, one line counts the missing outcomes.
 The display copy's row and byte bounds are owned by [`fm-branch-outcome.sh`](../bin/fm-branch-outcome.sh); older outcomes and oversized rows cannot always be displayed by the mod, while the outcome store and main's delivery remain authoritative.
 Claude Code keeps each note in the session as a display-only entry and restores it on `claude --continue`, so the mod remembers in its own plugin store how far each session has followed the outcomes, and a resumed session replays only outcomes it has not shown.

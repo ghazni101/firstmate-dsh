@@ -95,27 +95,17 @@ The turn-end guard needs that strict check because it fires at the turn boundary
 At that boundary the auto-arm is bringing a fresh watcher up for the upcoming idle period.
 The guard cooperates with that arm rather than trusting a beacon left by the cycle that just ended.
 
-### Foreign session-lock owner
+### Session identity
 
-When an active home instead has a session lock that the current session does not own and the shared `fm_session_lock_pid_blocks_reclaim` verdict refuses to reclaim, the Claude guard emits a read-only ownership diagnostic and allows the turn to end safely.
+A session is its own home's owner, so the guard has no foreign owner to defer to: the fleet session lock and its read-only posture are gone (`docs/dsh-native-architecture.md` section 8).
+What the guard binds to instead is this session's own harness process, `fm_harness_ancestry_pid` in `bin/fm-proc-lib.sh`, which is the process a durable record keys that session to.
 
-Ownership is the shared `fm_session_lock_owned_by_self` verdict in `bin/fm-session-lock-lib.sh`.
-The current session owns the lock when either of these holds:
+That process is the whole proof: a background Claude session keeps owning its own supervision after the transient helper chain between its hooks and its harness process is recycled, because the durable records are keyed to the harness process rather than to any one hook.
 
-- The recorded pid is a member of the current session's contiguous harness ancestry.
-- The trusted Claude session id recorded beside the lock in `state/.lock-session` matches this hook's own environment while the recorded pid is still a live harness.
+A Claude session that cannot identify a harness process cannot arm or repair the home, so blocking it would create an unbounded loop.
+The identified session remains responsible for restoring supervision.
 
-That second signal keeps a background Claude session owning its own lock after the transient helper chain between its hooks and its recorded owner is recycled.
-The library's header owns the trust gate (`CLAUDE_PID` must be a Claude-shaped member of the current run).
-`bin/fm-lock.sh` owns the sidecar and the line-1 anchor it records for such a session.
-
-A Claude session that does not own the lock cannot arm or repair the home without stealing the live owner's lock, so blocking it would create an unbounded loop.
-The lock-owning session remains responsible for restoring supervision.
-
-The exception has these limits:
-
-- Malformed, absent, dead, or ancestry-uncertain lock records do not satisfy this Claude-specific exception and retain the ordinary guard behavior.
-- A missing or mismatched sidecar or an untrusted id adds nothing to the verdict, so a live owner outside the ancestry still takes this exit exactly as before.
+The exception has one limit: an unreadable or absent harness ancestry does not satisfy it and retains the ordinary guard behavior.
 
 ### Pull-warning verdict by supervision model
 
@@ -129,7 +119,7 @@ Under the Claude Stop auto-arm model a beacon fresh within grace is healthy even
 A stale beacon is still healthy while `fm_autoarm_midturn_healthy` in `bin/fm-wake-lib.sh` proves a Claude rewake explains the mid-turn gap.
 That proof requires both of these:
 
-- The rewake is bound to the current recovery generation and live session-lock owner.
+- The rewake is bound to the current recovery generation and to a live session.
 - No later watcher beacon or exhausted-failure marker supersedes it.
 
 The tolerance holds because that session's turn-end will re-arm.
@@ -152,7 +142,7 @@ That ownership proof is `fm_extension_owns_supervision` in `bin/fm-wake-lib.sh`.
 It accepts either the Pi pair (`fm_pi_extension_owns_supervision`) or the omp pair (`fm_omp_extension_owns_supervision`).
 The proof requires all of these:
 
-- Both primary extensions of one family must be recorded in their state markers at their current on-disk builds by the process named in `state/.lock`.
+- Both primary extensions of one family must be recorded in their state markers at their current on-disk builds by this session's harness process.
 - That process must still be alive.
 - Pi's watcher marker must additionally name an active generation rather than a retiring handoff.
 
@@ -325,8 +315,6 @@ Claude runs the guard with `--claude`, which ignores `stop_hook_active` and coop
 Claude Code sets `stop_hook_active=true` on every stop after any stop-hook continuation, including `asyncRewake` rewakes.
 Under the default one-shot behavior, that re-opened the 2026-07-21 blind window.
 
-Before the Claude cooperative budget can re-block a Stop, the guard checks for a live foreign session-lock owner and takes the same safe diagnostic exit described under "Guard predicates" ([foreign session-lock owner](#foreign-session-lock-owner)).
-
 The Claude mode waits up to `FM_CLAUDE_AUTOARM_SYNC_WAIT_MS` (default 800 milliseconds).
 It allows the stop when any of these holds:
 
@@ -342,7 +330,7 @@ The ledger is `state/.claude-autoarm-epoch`:
 - Its epoch sequence is a monotonic claim generation.
 - Line 1 records the claim and terminal outcome.
 - Line 2 records the claiming process's mandatory pid-identity.
-- Line 3, on an arming entry that recorded `owner_session_id`, records the session-lock identity of the holder the claim was taken under, including the tagged `win:<pid>` identity used by Windows/Git Bash.
+- Line 3, on an arming entry that recorded one, records the identity of the harness process the claim was taken under, including the tagged `win:<pid>` form used by Windows/Git Bash.
 
 `fm_autoarm_claim_open` and `fm_autoarm_claim_next` in `bin/fm-wake-lib.sh` own the format contract.
 
@@ -351,21 +339,21 @@ A claim is open while all of these hold:
 - Its outcome is `arming`.
 - Its owner pid is alive.
 - Its recorded identity successfully recomputes and matches that pid.
-- Its owner is still reachable by its session: it descends from the numeric pid in `state/.lock`, or, for a tagged Windows holder outside the local process table, its recorded `owner_session_id` matches the trusted session id in `state/.lock-session` while the session-lock identity recorded on entry line 3 still recomputes from that lock's holder.
+- Its owner is still reachable by its session: it descends from the session's harness process, or, for a tagged Windows pid outside the local process table, the harness-process identity recorded on entry line 3 still recomputes for that session's current one.
 - It is not stuck.
 
 The guard classifies an owner as stuck when the entry and the watcher beacon are both older than the guard grace.
 A healthy hours-long foregrounded cycle keeps the beacon beating.
 An unconfirmed startup follows the [arm backstop and safe-interruption contract](watcher-continuity.md#startup-interruption-window), not an unconditional arming deadline.
-A missing or unusable lock means no session can receive a rewake, so such a claim is never open.
+A session with no identifiable harness process can receive no rewake, so such a claim is never open.
 The reachability test is what makes an open claim deliverable: a hook whose session exited mid-cycle stays alive with no parent to receive its exit 2, so deferring to it would leave the replacement session deaf until a captain turn.
-The session-id signal is the second one the claiming hook's own admission accepts, so a background session whose bridge is recycled mid-cycle - breaking the ancestry to its still-live lock owner - keeps its live claim instead of being double-armed.
-Pinning that signal to the session-lock identity recorded at claim time is what keeps a resumed session, which carries the same conversation id in a new process, from reading its own dead predecessor's orphan as open - a reused pid number or reissued Windows pid is a different identity, so it does not match.
-An orphan fails both signals: it no longer descends from the replacement's lock pid, and its recorded lock-holder identity is the dead session's.
+The payload's session id is the second signal the claiming hook's own admission accepts, so a background session whose bridge is recycled mid-cycle - breaking the ancestry to its still-live harness process - keeps its live claim instead of being double-armed.
+Pinning that signal to the harness-process identity recorded at claim time is what keeps a resumed session, which carries the same conversation id in a new process, from reading its own dead predecessor's orphan as open - a reused pid number or reissued Windows pid is a different identity, so it does not match.
+An orphan fails both signals: it no longer descends from the replacement's harness process, and its recorded identity is the dead session's.
 An entry from a build before these fields existed records neither and falls back to descent alone.
 
 The auto-arm also records the Stop payload's `session_id` on line 1 as `claude_session`, which later writes of that generation keep, and a firing from another Claude session does not find that claim open.
-Claude delivers a hook's exit-2 rewake to the session that launched the hook, so a claim taken before Claude continued the conversation under a new session id, as a backgrounded session's `--fork-session` resume does, can only wake a conversation that no longer runs, even while its owner still descends from the lock-holding front end.
+Claude delivers a hook's exit-2 rewake to the session that launched the hook, so a claim taken before Claude continued the conversation under a new session id, as a backgrounded session's `--fork-session` resume does, can only wake a conversation that no longer runs, even while its owner still descends from the session's front end.
 A claim or a payload with no session id is judged as before, and so is every check the guard itself makes, because it names no session.
 
 Anything else lets the next Stop-owned firing take the next generation and arm.
@@ -413,10 +401,9 @@ The auto-arm itself rechecks the healthy watcher predicate and retries a bounded
 
 The foreground arm legitimately follows a healthy watcher until its next wake.
 The hook catches HUP, TERM, and INT from host timeout or teardown.
-If the producing session no longer matches the lock's process identity and recorded session id, the hook records `session-ended` and exits 0 silently without creating a failure notice.
-The existing trusted-session ownership proof preserves that match across a verified same-session lock re-anchor.
+If the producing session no longer matches its recorded harness-process identity and session id, the hook records `session-ended` and exits 0 silently without creating a failure notice.
 While that session remains current, interruptions use the ordinary failure progression, including its notice deduplication, attended-alarm limits, and the [attended exhaustion decision](#attended-fail-open).
-An interruption notice carries the producing session's lock-holder identity and recorded session id, which are rechecked under the auto-arm owner lock before committing the failure.
+An interruption notice carries the producing session's harness-process identity and recorded session id, which are rechecked under the auto-arm owner lock before committing the failure.
 Before taking its first generation, a replacement that no longer matches that session clears the interrupted episode's notice, attended alarm, and block budget, so its first genuine failure can notify even if a process number and executable path are reused.
 Empty legacy markers and ordinary failure notices retain their existing behavior.
 Claude drops that exit 2 when it terminated the hook at the configured timeout itself, so a park that outlives the timeout ends without a rewake (`bin/fm-claude-stop-autoarm.sh` header).
@@ -434,7 +421,6 @@ The block budget is charged by two rules:
 That second rule still bounds an inert auto-arm when a hook never fires or fails before its generation claim and therefore leaves the ledger frozen at its last outcome.
 Charging only epoch changes let the count freeze with that ledger, so the remaining inert-hook cases could re-block without limit and make the attended fail-open unreachable.
 `budget_account_current_epoch` in `bin/fm-turnend-guard.sh` owns the rule.
-A live foreign session-lock owner takes the earlier diagnostic safe exit instead and never reaches this budget path.
 Whenever both coordination locks are needed, positive auto-arm recovery, the terminal check, and the auto-arm's attended-alarm commit acquire the auto-arm owner lock before the budget lock.
 
 #### Attended fail-open
@@ -545,7 +531,6 @@ The next `stop` claim therefore makes an older park that is still running stand 
 The lock is never held while the arm is sleeping, while the hook is polling, or while output is prepared.
 
 The park revalidates session ownership while polling and again inside the final commit section.
-It deliberately does not hold the fleet session lock across output, because an awaited hook must not block home-wide session acquisition.
 The remaining microsecond takeover window can produce at most one harmless wake that drains the durable queue.
 Without those records an older park still running after the next `stop` could leak one process and one stale duplicate wake.
 
@@ -565,7 +550,7 @@ It polls the child every `FM_AGY_PARK_POLL` seconds (default 2) and waits on it 
 - A non-actionable close beside a verified healthy watcher, a host that stood down, or a fleet that no longer needs supervision resets `state/.turnend-blocks`, emits `{}`, and lets the turn end cleanly.
 - A park that cannot establish a cycle after two bounded attempts delegates to `bin/fm-turnend-guard.sh --agy` for a bounded 3-block repair nag before failing open.
 
-Before parking, the hook stands down with `{}` in crewmate or scout linked worktrees, passes through non-normal termination reasons, and verifies session-lock ownership so a foreign session never steals supervision.
+Before parking, the hook stands down with `{}` in crewmate or scout linked worktrees and passes through non-normal termination reasons.
 When `executionNum` reaches the loop ceiling (`FM_AGY_TURNEND_LOOP_CEILING`, default 180) while supervision is still needed, it returns one ceiling notice instead of parking; past the ceiling it emits `{}`.
 Each invocation publishes a unique claim in `state/.agy-park-owner` and yields cleanly with `{}` if a newer Stop hook supersedes this park while waiting.
 
@@ -602,7 +587,7 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 - Main and secondmate primary scope.
 - Child-worktree exclusion.
 - `FM_HOME` and `FM_STATE_OVERRIDE` precedence.
-- The live-lock and fresh-beacon guard predicate.
+- The watcher-lock and fresh-beacon guard predicate.
 - The cooperative `--claude` open-generation claim wait.
 - Monotonic failed-epoch progression.
 - Bounded attended fail-open.
@@ -639,7 +624,7 @@ It also covers true-reason banner wording and reason-keyed episode dedup survivi
 - The bounded repair nag and its reset.
 - The nested loop bounds.
 - Supersession.
-- Away-mode and lock-ownership inertness.
+- Away-mode and session-ownership inertness.
 - Pi-host stand-down without Cursor identity and continued parking when `PI_CODING_AGENT` leaks alongside `CURSOR_AGENT` or `CURSOR_INVOKED_AS`.
 - Child-worktree exclusion.
 - That the adapter never exits 2.

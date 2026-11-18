@@ -72,7 +72,8 @@
 #
 # Readiness checks (check prints "ok <name>: ..." or "fail <name>: ..."):
 #   primary       window main is alive, in the lab home, which is a primary
-#                 checkout, and the lab session lock names a live process.
+#                 checkout, and the lab records a live session from its own
+#                 completed session start.
 #   probe         the primary answered the probe with its nonce (the model is
 #                 accepted and a whole turn ran).
 #   trust         Claude: the lab home carries registered trust.
@@ -81,16 +82,16 @@
 #                 fm-host-mirror.sh verified claude and fm-host-mirror.sh check
 #                 pass, and the mirror holds a captain and a main entry.
 #   extensions    Pi: the watcher, turn-end guard, and branch extensions are
-#                 loaded by the process holding the lab session lock, at the
+#                 loaded by the lab session's own process, at the
 #                 current on-disk builds.
 #   host          Claude: with --expect-host yes (the default on Claude unless
 #                 --supervision-host off) the supervision host runs; with no,
 #                 none runs. Skipped when the lab has no mate or worker, since
 #                 an empty fleet arms nothing.
-#   watcher       a live watcher with a fresh beacon holds this home's lock
-#                 (skipped on an empty fleet).
-#   mate          --mate: its window is alive and its own session lock names a
-#                 live process, so it got past trust into its charter. With
+#   watcher       a live watcher with a fresh beacon holds this home's watcher
+#                 lock (skipped on an empty fleet).
+#   mate          --mate: its window is alive and its own session start recorded
+#                 a live session, so it got past trust into its charter. With
 #                 --supervision-host off, its inherited flag and disabled host
 #                 gate are also required.
 #   worker        --worker: its current crew state is paused on the gate.
@@ -248,8 +249,8 @@ check_primary() {
   gitdir=$(real_dir "$(git -C "$LAB" rev-parse --absolute-git-dir 2>/dev/null)")
   common=$(cd "$LAB" && real_dir "$(git rev-parse --git-common-dir 2>/dev/null)")
   [ -n "$gitdir" ] && [ "$gitdir" = "$common" ] || { echo "fail primary: the lab home is not a primary checkout"; return 1; }
-  pid=$(sed -n 1p "$LAB/state/.lock" 2>/dev/null)
-  pid_alive "$pid" || { echo "fail primary: the lab session lock names no live process (session start has not run)"; return 1; }
+  pid=$(sed -n 1p "$LAB/state/.session-start-complete" 2>/dev/null)
+  pid_alive "$pid" || { echo "fail primary: the lab records no live session (session start has not completed)"; return 1; }
   echo "ok primary: $HARNESS pid $pid in $LAB"
 }
 
@@ -301,20 +302,21 @@ check_mirror() {
 }
 
 check_extensions() {
-  local pair source marker phase version out=""
+  local pair source marker phase version session_pid out=""
+  session_pid=$(sed -n 1p "$LAB/state/.session-start-complete" 2>/dev/null)
   for pair in fm-primary-pi-watch.ts:.pi-watch-extension-loaded:active fm-primary-turnend-guard.ts:.pi-turnend-extension-loaded; do
     source=${pair%%:*}; marker=${pair#*:}; phase=${marker#*:}; marker=${marker%%:*}
     [ "$phase" != "$marker" ] || phase=
     # shellcheck disable=SC2016 # Expanded by the inner shell.
     version=$(FM_HOME="$LAB" bash -c '. "$1/bin/fm-wake-lib.sh" && fm_pi_extension_version "$1/.pi/extensions/$2"' _ "$LAB" "$source" 2>/dev/null)
     # shellcheck disable=SC2016 # Expanded by the inner shell.
-    FM_HOME="$LAB" bash -c '. "$1/bin/fm-wake-lib.sh" && fm_pi_extension_loaded "$1/state/$2" "$3" "$1/state/.lock" "$4"' \
-      _ "$LAB" "$marker" "$version" "$phase" 2>/dev/null \
-      || { echo "fail extensions: $source is not loaded at its current build by the lock holder"; return 1; }
+    FM_HOME="$LAB" bash -c '. "$1/bin/fm-wake-lib.sh" && fm_pi_extension_loaded "$1/state/$2" "$3" "$4" "$5"' \
+      _ "$LAB" "$marker" "$version" "$session_pid" "$phase" 2>/dev/null \
+      || { echo "fail extensions: $source is not loaded at its current build by the session"; return 1; }
     out="$out ${source%.ts}"
   done
-  [ "$(sed -n 1p "$LAB/state/.pi-branch-extension-loaded" 2>/dev/null)" = "$(sed -n 1p "$LAB/state/.lock" 2>/dev/null)" ] \
-    || { echo "fail extensions: fm-branch-supervision.ts is not loaded by the lock holder"; return 1; }
+  [ "$(sed -n 1p "$LAB/state/.pi-branch-extension-loaded" 2>/dev/null)" = "$session_pid" ] \
+    || { echo "fail extensions: fm-branch-supervision.ts is not loaded by the session"; return 1; }
   echo "ok extensions:$out fm-branch-supervision"
 }
 
@@ -345,8 +347,8 @@ check_watcher() {
 check_mate() {
   local pid gate_rc
   window_alive mate || { echo "fail mate: the $MATE_ID window is not running"; return 1; }
-  pid=$(sed -n 1p "$ROOT/mate/state/.lock" 2>/dev/null)
-  pid_alive "$pid" || { echo "fail mate: the mate holds no session lock yet (wedged before its charter?)"; return 1; }
+  pid=$(sed -n 1p "$ROOT/mate/state/.session-start-complete" 2>/dev/null)
+  pid_alive "$pid" || { echo "fail mate: the mate records no live session yet (wedged before its charter?)"; return 1; }
   if [ "$HOST_OFF" = yes ]; then
     [ -f "$ROOT/mate/config/supervision-host-off" ] \
       || { echo "fail mate: the inherited supervision-host-off flag is missing"; return 1; }

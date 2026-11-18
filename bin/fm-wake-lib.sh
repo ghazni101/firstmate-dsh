@@ -35,13 +35,13 @@ _fm_wake_require_timeout() {
   . "$FM_WAKE_LIB_DIR/fm-timeout-lib.sh"
 }
 
-# Load the session-lock identity owner only for the auto-arm claim helpers,
-# which read the trusted session id beside state/.lock. Sourcing it eagerly
-# would pull harness identity machinery into every wake-library consumer.
-_fm_wake_require_session_lock() {
-  command -v fm_session_lock_recorded_session_id >/dev/null 2>&1 && return 0
-  # shellcheck source=bin/fm-session-lock-lib.sh
-  . "$FM_WAKE_LIB_DIR/fm-session-lock-lib.sh"
+# Load the process-fact owner only for the auto-arm claim helpers, which bind a
+# generation to the session's harness process. Sourcing it eagerly would pull
+# the process tables into every wake-library consumer.
+_fm_wake_require_proc_lib() {
+  command -v fm_harness_ancestry_pid >/dev/null 2>&1 && return 0
+  # shellcheck source=bin/fm-proc-lib.sh
+  . "$FM_WAKE_LIB_DIR/fm-proc-lib.sh"
 }
 
 # Pass a variable name to capture this frame's pid without forking it in $().
@@ -327,21 +327,20 @@ fm_pi_extension_version() {
   fi
 }
 
-# fm_pi_extension_loaded <marker> <expected-version> <session-lock> [active]
+# fm_pi_extension_loaded <marker> <expected-version> <session-pid> [active]
 # True when <marker> records <expected-version> and names the session process in
-# <session-lock>, i.e. the session holding this home loaded exactly this build.
+# <session-pid>, i.e. the session holding this home loaded exactly this build.
 # The Pi watcher marker additionally carries its generation phase. Requiring
 # `active` rejects the handoff marker a retiring generation leaves behind, so a
 # running Pi process whose replacement did not load the watcher extension can
 # never vouch for an unheld watcher lock with stale load evidence.
-fm_pi_extension_loaded() {
-  local marker=$1 expected_version=$2 lock=$3 required_phase=${4:-} marker_version marker_pid lock_pid owner
-  [ -f "$marker" ] && [ -f "$lock" ] && [ -n "$expected_version" ] || return 1
+fm_pi_extension_loaded() {  # <marker> <expected-version> <session-pid> [phase]
+  local marker=$1 expected_version=$2 session_pid=$3 required_phase=${4:-} marker_version marker_pid owner
+  [ -f "$marker" ] && [ -n "$expected_version" ] && [ -n "$session_pid" ] || return 1
   marker_version=$(sed -n '1p' "$marker")
   marker_pid=$(sed -n '2p' "$marker")
-  lock_pid=$(sed -n '1p' "$lock")
   [ -n "$marker_pid" ] || return 1
-  [ "$marker_version" = "$expected_version" ] && [ "$marker_pid" = "$lock_pid" ] || return 1
+  [ "$marker_version" = "$expected_version" ] && [ "$marker_pid" = "$session_pid" ] || return 1
   [ -z "$required_phase" ] && return 0
   owner=$(sed -n '3p' "$marker")
   case "$owner" in
@@ -357,8 +356,8 @@ fm_pi_extension_loaded() {
 
 # fm_pi_extension_owns_supervision <state> <root>
 # True when a LIVE Pi session owns supervision continuity for this home: both
-# primary extensions are loaded at their current on-disk builds by the process
-# recorded in this home's session lock, and that process is still alive.
+# primary extensions are loaded at their current on-disk builds by this session's
+# harness process (fm_harness_ancestry_pid), and that process is still alive.
 # Requiring the turn-end guard extension too is deliberate - it is the structural
 # backstop that catches a cycle the watch extension failed to restore, so a home
 # missing it has no benign hand-off to tolerate.
@@ -372,8 +371,8 @@ fm_pi_extension_owns_supervision() {
 # The omp (Oh My Pi) primary's proof, keyed on its own two tracked extensions
 # under .omp/extensions/ and their own state markers. It is a separate proof on
 # purpose: omp must never inherit the Pi tolerance by accident, and a Pi home
-# never satisfies the omp markers. Both proofs bind to the pid in state/.lock,
-# so a session on one harness cannot vouch for a home held by the other.
+# never satisfies the omp markers. Both proofs bind to the session's harness
+# process, so a session on one harness cannot vouch for a home held by the other.
 fm_omp_extension_owns_supervision() {
   fm_extension_pair_owns_supervision "$1" "$2/.omp/extensions" \
     "fm-primary-omp-watch.ts:.omp-watch-extension-loaded" \
@@ -389,9 +388,11 @@ fm_extension_owns_supervision() {
 }
 
 fm_extension_pair_owns_supervision() {  # <state> <extension-dir> <source:marker[:phase]>...
-  local state=$1 dir=$2 lock session_pid pair source rest marker phase version
+  local state=$1 dir=$2 session_pid pair source rest marker phase version
   shift 2
-  lock="$state/.lock"
+  _fm_wake_require_proc_lib
+  session_pid=$(fm_harness_ancestry_pid 2>/dev/null || true)
+  [ -n "$session_pid" ] || return 1
   for pair in "$@"; do
     source=${pair%%:*}
     rest=${pair#*:}
@@ -399,21 +400,13 @@ fm_extension_pair_owns_supervision() {  # <state> <extension-dir> <source:marker
     phase=
     [ "$marker" = "$rest" ] || phase=${rest#*:}
     version=$(fm_pi_extension_version "$dir/$source") || return 1
-    fm_pi_extension_loaded "$state/$marker" "$version" "$lock" "$phase" || return 1
+    fm_pi_extension_loaded "$state/$marker" "$version" "$session_pid" "$phase" || return 1
   done
-  session_pid=$(sed -n '1p' "$lock" 2>/dev/null)
   # A Windows-tagged holder is outside this process table, so kill -0 cannot
-  # see it. Only a win:-shaped value loads the session-lock library, so a POSIX
-  # home's verdict stays exactly the local liveness test below.
+  # see it. Only a win:-shaped value takes the tagged branch; a POSIX home's
+  # verdict stays exactly the local liveness test below.
   case "$session_pid" in
     win:*)
-      if ! command -v fm_harness_pid_alive >/dev/null 2>&1; then
-        # An analysis boundary, as in fm-lease-lib.sh: the session-lock library
-        # is linted in its own right, and following it here would re-analyze it
-        # for every consumer of this widely sourced library.
-        # shellcheck source=/dev/null
-        . "$FM_WAKE_LIB_DIR/fm-session-lock-lib.sh"
-      fi
       fm_session_pid_valid "$session_pid" || return 1
       fm_harness_pid_alive "$session_pid"
       return
@@ -487,15 +480,15 @@ fm_afk_mode() {
 # because the watcher only runs between turns. A stale beacon is still healthy
 # while fm_autoarm_midturn_healthy proves a Claude auto-arm generation
 # explains the gap (a rewake bound to the current recovery generation and
-# live session lock), because turn-end re-arms.
+# live harness process), because turn-end re-arms.
 # Without that proof a stale or absent beacon is a genuine lapse.
 # extension: a live identity-matched watcher is the ordinary healthy state, but a
-# genuinely unheld lock is also healthy while the beacon is fresh AND a live Pi
-# session provably owns continuity (fm_extension_owns_supervision: the Pi or the
-# omp extension pair, whichever the lock-owning session recorded) - that is the
+# genuinely unheld watcher lock is also healthy while the beacon is fresh AND a
+# live Pi session provably owns continuity (fm_extension_owns_supervision: the Pi
+# or the omp extension pair, as the session's own markers record) - that is the
 # extension's own tear-down-and-respawn hand-off, which it retries and escalates
-# itself. A lock with any recorded pid remains down if the strict health check fails.
-# Without ownership proof an unheld lock is down exactly as before, so an unloaded,
+# itself. A watcher lock with any recorded pid remains down if the strict health check fails.
+# Without ownership proof an unheld watcher lock is down exactly as before, so an unloaded,
 # version-drifted, or exited Pi session still alarms immediately, and a cycle the
 # extension never restores still alarms once the beacon passes grace.
 # persistent: require a live identity-matched watcher with a fresh beacon
@@ -2164,9 +2157,8 @@ fm_failure_episode_reset() {
 #   - The CURRENT claim is the ledger's latest entry: line 1 begins with the
 #     "epoch=N owner_pid=P outcome=O updated_at=T" record. A "rewake" outcome
 #     also records "session_pid=S recovery_generation=G", binding that
-#     handling turn to its live session-lock owner and watcher recovery episode.
-#     A same-session re-anchor of state/.lock moves S with lock line 1
-#     (fm_autoarm_rekey_session). A claim taken by a Stop firing whose payload
+#     handling turn to the harness process it ran under and the watcher recovery
+#     episode. A claim taken by a Stop firing whose payload
 #     named its Claude session also records "claude_session=C", which every
 #     later owned write of that generation keeps.
 #     Line 2 is the claiming process's pid-identity, the same identity every other
@@ -2175,24 +2167,19 @@ fm_failure_episode_reset() {
 #     (continuity falls to the synchronous guard), and the identity is read
 #     from the ledger entry alone - never substituted from any lock - so a
 #     reused pid can never authenticate someone else's stale entry. Line 3 of an
-#     arming entry that recorded owner_session_id is the session-lock identity
-#     of the holder the claim was taken under, read by the session-lock bridge
-#     when the holder is a tagged Windows pid.
+#     arming entry that recorded owner_lock_identity is the identity of the
+#     harness process the claim was taken under, read when that process is a
+#     tagged Windows pid outside the local process table.
 #   - A claim is OPEN (fm_autoarm_claim_open) while its outcome is "arming",
 #     its owner pid is alive, its recorded identity successfully recomputes
-#     and matches that pid, its owner is still REACHABLE by its session -
-#     either it DESCENDS from the numeric session-lock pid (state/.lock line 1)
-#     or, for a tagged Windows session-lock pid that is outside the local
-#     process table, its recorded owner_session_id matches the trusted session
-#     id beside that lock (state/.lock-session) WHILE the recorded pid-identity
-#     of the lock holder it claimed under (entry line 3) still recomputes from
-#     the lock's current holder pid. A missing or malformed lock means no
-#     session can receive a rewake. The id signal is the second one
-#     the claiming hook's own admission accepts (fm_session_lock_owned_by_self),
-#     so a background session whose bridge is recycled mid-cycle keeps its live
-#     claim; pinning it to the recorded lock-holder identity is what keeps a
-#     resumed session - same conversation id, new process - from reading its own
-#     dead predecessor's orphan as open, even when that new process reuses the
+#     and matches that pid, its owner is still REACHABLE by its session - it
+#     DESCENDS from the session's harness process (fm_harness_ancestry_pid) or,
+#     for a tagged Windows pid that is outside the local process table, the
+#     pid-identity of the harness process it claimed under (entry line 3) still
+#     recomputes for the session's current one. Pinning it to that identity is
+#     what keeps a resumed session - same conversation id, new process - from
+#     reading its own dead predecessor's orphan as open, even when that new
+#     process reuses the
 #     dead holder's pid number - and it is not STUCK - stuck meaning both the
 #     ledger entry and the watcher beacon (state/.last-watcher-beat) are older
 #     than the guard grace, which proves the owner hung mid-arm with nothing
@@ -2204,15 +2191,15 @@ fm_failure_episode_reset() {
 #     captain turn (tests/fm-claude-stop-autoarm.test.sh,
 #     test_orphaned_claim_from_dead_session_is_superseded_by_replacement). Such
 #     an orphan fails both signals: it no longer descends from the replacement's
-#     lock pid, and its recorded lock-holder identity is the dead session's,
-#     whichever id the sidecar carries after lock recovery. An entry written by
+#     harness process, and its recorded lock-holder identity is the dead
+#     session's, whichever sidecar id that entry carries. An entry written by
 #     a build before these fields existed records neither and falls back to the
 #     descent signal alone.
 #     For a firing that names its Claude session, a claim recorded under a
 #     different claude_session is not open either: Claude delivers a hook's
 #     exit-2 rewake to the session that launched it, so a claim from a session
 #     Claude has since continued under a new id (a backgrounded session's
-#     --fork-session resume, still under the lock-holding front end) can only
+#     --fork-session resume, still under the session's front end) can only
 #     wake a conversation nobody runs. A claim or a caller without a session
 #     is judged as before.
 #   - Every firing DEFERS (exits 0) to an open claim; anything else - a
@@ -2285,12 +2272,12 @@ _fm_autoarm_epoch_field() {  # <epoch-file> <field>
 
 # Parse the current ledger claim. Sets FM_AUTOARM_GEN, FM_AUTOARM_OWNER,
 # FM_AUTOARM_OUTCOME, FM_AUTOARM_SESSION, FM_AUTOARM_RECOVERY,
-# FM_AUTOARM_OWNER_SESSION_ID, FM_AUTOARM_CLAUDE_SESSION (empty for an entry
-# that recorded none), FM_AUTOARM_OWNER_LOCK_IDENTITY (line 3 of the
-# entry: the session-lock identity of the holder as the claim was taken), and
-# FM_AUTOARM_IDENTITY (line 2 of the entry, and ONLY
-# line 2 - identity is never substituted from a lock, so a transient
-# micro-mutex hold or a reused pid can never authenticate a stale entry).
+# FM_AUTOARM_CLAUDE_SESSION (empty for an entry that recorded none),
+# FM_AUTOARM_OWNER_LOCK_IDENTITY (line 3 of the entry: the identity of the
+# harness process as the claim was taken), and FM_AUTOARM_IDENTITY (line 2 of
+# the entry, and ONLY line 2 - identity is never substituted from elsewhere, so
+# a transient micro-mutex hold or a reused pid can never authenticate a stale
+# entry).
 fm_autoarm_ledger_read() {  # <state-dir>
   local state=$1 epoch
   epoch="$state/.claude-autoarm-epoch"
@@ -2299,7 +2286,6 @@ fm_autoarm_ledger_read() {  # <state-dir>
   FM_AUTOARM_OUTCOME=
   FM_AUTOARM_SESSION=
   FM_AUTOARM_RECOVERY=
-  FM_AUTOARM_OWNER_SESSION_ID=
   FM_AUTOARM_CLAUDE_SESSION=
   FM_AUTOARM_OWNER_LOCK_IDENTITY=
   FM_AUTOARM_IDENTITY=
@@ -2308,7 +2294,6 @@ fm_autoarm_ledger_read() {  # <state-dir>
   FM_AUTOARM_OUTCOME=$(_fm_autoarm_epoch_field "$epoch" outcome) || return 1
   FM_AUTOARM_SESSION=$(_fm_autoarm_epoch_field "$epoch" session_pid 2>/dev/null || true)
   FM_AUTOARM_RECOVERY=$(_fm_autoarm_epoch_field "$epoch" recovery_generation 2>/dev/null || true)
-  FM_AUTOARM_OWNER_SESSION_ID=$(_fm_autoarm_epoch_field "$epoch" owner_session_id 2>/dev/null || true)
   FM_AUTOARM_CLAUDE_SESSION=$(_fm_autoarm_epoch_field "$epoch" claude_session 2>/dev/null || true)
   case "$FM_AUTOARM_GEN" in
     ''|*[!0-9]*) return 1 ;;
@@ -2358,16 +2343,13 @@ fm_autoarm_claim_open() {  # <state-dir> [grace] [claude-session]
   current=$(fm_pid_identity "$FM_AUTOARM_OWNER" 2>/dev/null) || return 1
   [ -n "$current" ] || return 1
   [ "$current" = "$FM_AUTOARM_IDENTITY" ] || return 1
-  lock_pid=$(sed -n '1p' "$state/.lock" 2>/dev/null || true)
-  _fm_wake_require_session_lock
+  _fm_wake_require_proc_lib
+  lock_pid=$(fm_harness_ancestry_pid 2>/dev/null || true)
   fm_session_pid_valid "$lock_pid" || return 1
   if ! fm_pid_descends_from "$FM_AUTOARM_OWNER" "$lock_pid"; then
-    [ -n "$FM_AUTOARM_OWNER_SESSION_ID" ] || return 1
     [ -n "$FM_AUTOARM_OWNER_LOCK_IDENTITY" ] || return 1
     lock_identity=$(fm_session_pid_identity "$lock_pid" 2>/dev/null) || return 1
     [ "$lock_identity" = "$FM_AUTOARM_OWNER_LOCK_IDENTITY" ] || return 1
-    recorded=$(fm_session_lock_recorded_session_id "$state" 2>/dev/null || true)
-    [ -n "$recorded" ] && [ "$recorded" = "$FM_AUTOARM_OWNER_SESSION_ID" ] || return 1
   fi
   if [ "$(fm_path_age "$epoch")" -ge "$grace" ] \
     && [ "$(fm_path_age "$state/.last-watcher-beat")" -ge "$grace" ]; then
@@ -2381,13 +2363,13 @@ fm_autoarm_claim_open() {  # <state-dir> [grace] [claude-session]
 # The watcher runs only between turns; turn-end re-arms.
 #
 # Healthy means outcome=rewake with no exhausted-failure marker, bound to the
-# current session-lock pid and current watcher recovery generation. The rewake
+# current harness-process pid and current watcher recovery generation. The rewake
 # ledger must also be at least as new as the last watcher beacon: a later beacon
 # proves another between-turns watcher cycle has begun, so the rewake belongs to
 # an earlier handling turn.
 #
 # A missing generation, a failed or exhausted episode, an open arming claim, a
-# changed or dead session lock, a moved recovery generation, or an absent/later
+# changed or dead harness process, a moved recovery generation, or an absent/later
 # beacon all fail it, so a genuine lapse stays loud. Cursor autoarm homes have no
 # Claude epoch ledger and fail this, keeping their existing fresh-beacon-only
 # pull-guard contract. The rewake and beacon may both be older than grace: a
@@ -2399,9 +2381,9 @@ fm_autoarm_midturn_healthy() {  # <state-dir> [grace]
   [ -e "$state/.claude-autoarm-failure-alarmed" ] && return 1
   fm_autoarm_ledger_read "$state" || return 1
   [ "$FM_AUTOARM_OUTCOME" = rewake ] || return 1
-  lock_pid=$(sed -n '1p' "$state/.lock" 2>/dev/null || true)
+  _fm_wake_require_proc_lib
+  lock_pid=$(fm_harness_ancestry_pid 2>/dev/null || true)
   [ -n "$FM_AUTOARM_SESSION" ] && [ "$FM_AUTOARM_SESSION" = "$lock_pid" ] || return 1
-  _fm_wake_require_session_lock
   fm_session_pid_alive "$lock_pid" || return 1
   fm_recovery_marker_read "$state/.watcher-down" || return 1
   recovery=${FM_RECOVERY_MARKER_TOKEN##*:}
@@ -2411,20 +2393,16 @@ fm_autoarm_midturn_healthy() {  # <state-dir> [grace]
   [ "$epoch_mtime" -ge "$beacon_mtime" ]
 }
 
-# Match an interrupted episode to the current lock's process identity AND
-# recorded session id. A changed anchor is still the same session only when
-# the existing trusted-session ownership proof verifies that recorded id.
+# Match an interrupted episode to the session's current harness process: the
+# recorded identity must still be that live process's identity.
 fm_autoarm_session_matches() {  # <state-dir> <identity> [recorded-session-id]
-  local state=$1 identity=$2 session_id=${3:-} lock_pid current recorded
+  local state=$1 identity=$2 lock_pid current
   [ -n "$identity" ] || return 1
-  _fm_wake_require_session_lock
-  lock_pid=$(sed -n '1p' "$state/.lock" 2>/dev/null || true)
+  _fm_wake_require_proc_lib
+  lock_pid=$(fm_harness_ancestry_pid 2>/dev/null || true)
   current=$(fm_session_pid_identity "$lock_pid" 2>/dev/null) || return 1
   [ -n "$current" ] || return 1
-  recorded=$(fm_session_lock_recorded_session_id "$state" 2>/dev/null || true)
-  [ "$session_id" = "$recorded" ] || return 1
-  [ "$identity" = "$current" ] && return 0
-  [ -n "$session_id" ] && fm_session_lock_same_session "$state"
+  [ "$identity" = "$current" ]
 }
 
 # Atomically publish this process as the owner of generation N+1, under one
@@ -2434,7 +2412,7 @@ fm_autoarm_session_matches() {  # <state-dir> <identity> [recorded-session-id]
 # (the ledger holds a claim open to this session), and 1 when the micro-mutex
 # is contended, the mandatory identity cannot be computed, or the write failed.
 fm_autoarm_claim_next() {  # <state-dir> [grace] [claude-session]
-  local state=$1 grace=${2:-${FM_GUARD_GRACE:-300}} claude_session=${3:-} lock epoch pid gen identity session_id lock_pid lock_identity tmp interrupted_identity interrupted_session
+  local state=$1 grace=${2:-${FM_GUARD_GRACE:-300}} claude_session=${3:-} lock epoch pid gen identity lock_pid lock_identity tmp interrupted_identity interrupted_session
   lock="$state/.claude-autoarm.lock"
   epoch="$state/.claude-autoarm-epoch"
   FM_AUTOARM_MY_GEN=
@@ -2447,14 +2425,13 @@ fm_autoarm_claim_next() {  # <state-dir> [grace] [claude-session]
   pid=${BASHPID:-$$}
   identity=$(fm_pid_identity "$pid" 2>/dev/null) || return 1
   [ -n "$identity" ] || return 1
-  _fm_wake_require_session_lock
-  session_id=$(fm_session_lock_trusted_session_id 2>/dev/null || true)
-  case "$session_id" in
-    *[![:alnum:]_.-]*) session_id= ;;
-  esac
-  lock_pid=$(sed -n '1p' "$state/.lock" 2>/dev/null || true)
-  lock_identity=$(fm_session_pid_identity "$lock_pid" 2>/dev/null || true)
-  [ -n "$lock_identity" ] || session_id=
+  _fm_wake_require_proc_lib
+  lock_pid=$(fm_harness_ancestry_pid 2>/dev/null || true)
+  # The harness process this claim is taken under. It is recorded as the
+  # entry's third line so a tagged Windows holder - outside this process
+  # table, where descent cannot be walked - still proves reachability.
+  lock_identity=
+  [ -z "$lock_pid" ] || lock_identity=$(fm_session_pid_identity "$lock_pid" 2>/dev/null || true)
   fm_lock_try_acquire "$lock" || return 1
   if fm_autoarm_claim_open "$state" "$grace" "$claude_session"; then
     fm_lock_release "$lock"
@@ -2481,10 +2458,9 @@ fm_autoarm_claim_next() {  # <state-dir> [grace] [claude-session]
   if ! {
       printf 'epoch=%s owner_pid=%s outcome=arming updated_at=%s' \
         "$gen" "$pid" "$(date +%s)"
-      [ -z "$session_id" ] || printf ' owner_session_id=%s' "$session_id"
       [ -z "$claude_session" ] || printf ' claude_session=%s' "$claude_session"
       printf '\n%s\n' "$identity"
-      [ -z "$session_id" ] || printf '%s\n' "$lock_identity"
+      [ -z "$lock_identity" ] || printf '%s\n' "$lock_identity"
     } > "$tmp" 2>/dev/null || ! mv -f "$tmp" "$epoch" 2>/dev/null; then
     rm -f "$tmp" 2>/dev/null || true
     fm_lock_release "$lock"
@@ -2584,33 +2560,6 @@ fm_autoarm_reset_owned() {  # <state-dir> <gen>
   fi
   fm_lock_release "$lock"
   return 0
-}
-
-# Move the current entry's session_pid from <old-pid> to <new-pid> when
-# bin/fm-lock.sh re-anchors a live lock line 1 within the same session, so a
-# rewake stays bound to the session-lock owner fm_autoarm_midturn_healthy
-# reads. Every other field, the identity line, and the ledger mtime are kept,
-# so neither the rewake-versus-beacon order nor the stuck proof's age moves.
-# The caller holds state/.claude-autoarm.lock. Returns 0 when the entry records
-# another session_pid or none, and 1 when the rewrite failed.
-fm_autoarm_rekey_session() {  # <state-dir> <old-pid> <new-pid>
-  local state=$1 old=$2 new=$3 epoch tok line='' tmp
-  local -a toks=()
-  epoch="$state/.claude-autoarm-epoch"
-  [ "$(_fm_autoarm_epoch_field "$epoch" session_pid 2>/dev/null)" = "$old" ] || return 0
-  IFS=' ' read -r -a toks 2>/dev/null < "$epoch" || return 1
-  for tok in ${toks[@]+"${toks[@]}"}; do
-    [ "$tok" != "session_pid=$old" ] || tok="session_pid=$new"
-    line="${line:+$line }$tok"
-  done
-  tmp="$epoch.tmp.${BASHPID:-$$}"
-  if { printf '%s\n' "$line" && sed '1d' "$epoch"; } > "$tmp" 2>/dev/null \
-    && touch -r "$epoch" "$tmp" 2>/dev/null \
-    && mv -f "$tmp" "$epoch" 2>/dev/null; then
-    return 0
-  fi
-  rm -f "$tmp" 2>/dev/null || true
-  return 1
 }
 
 # LEGACY shim (see the contract comment above): the abandonment proof for a

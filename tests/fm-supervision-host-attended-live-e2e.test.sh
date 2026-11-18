@@ -264,7 +264,7 @@ start_primary() {  # <lab>
   prompt='This is an isolated Firstmate test lab, not a real fleet. Reply with exactly READY now and use no tools. Later, whenever a "Stop hook feedback" message wakes you, do exactly this and nothing else: run `bin/fm-wake-drain.sh` once with the Bash tool, then run the exact `bin/fm-wake-drain.sh --ack-through ...` command that its WAKE_ACK_REQUIRED line prints, then reply with exactly ACKED. Never run any other command, never run bin/fm-watch-arm.sh, and never use any other tool.'
   started=$(date +%s)
   tmux -L "$sock" new-session -d -s primary -x 220 -y 50 -c "$lab/fm" \
-    "sh -c '. \"$lab/env\"; printf \"%s\\n\" \"\$\$\" > state/.lock; exec claude --model $MODEL --effort low --dangerously-skip-permissions'" \
+    "sh -c '. \"$lab/env\"; printf \"%s\\n\" \"\$\$\" > state/harness-pid; exec claude --model $MODEL --effort low --dangerously-skip-permissions'" \
     || fail "$(basename "$lab"): the tmux session did not start"
   i=0
   while [ "$i" -lt 90 ]; do
@@ -296,7 +296,7 @@ start_primary() {  # <lab>
   jq -e '[.hooks.StopFailure[]?.hooks[]? | select(.type == "command" and .asyncRewake == true and .timeout == 28800 and (.command | endswith("/bin/fm-claude-stop-autoarm.sh") or endswith("/bin/fm-claude-stop-autoarm.sh\"")))] | length == 1' \
     "$lab/fm/.claude/settings.json" >/dev/null \
     || fail "$(basename "$lab"): the lab lacks the tracked StopFailure hook registration"
-  evidence "$(basename "$lab") step 1: primary idle (claude pid $(cat "$lab/fm/state/.lock"), $CLAUDE_VERSION, model $MODEL); tracked Stop and StopFailure hooks registered; config/supervision-host present; host pid $(awk -F '\t' '$1 == "host" { print $2; exit }' "$lab/fm/state/.supervision-host") parked on watcher $(watcher_pid "$lab"); listener runner $(listener_pid "$lab"); captain prompts so far: $(captain_prompts "$lab")"
+  evidence "$(basename "$lab") step 1: primary idle (claude pid $(cat "$lab/fm/state/harness-pid"), $CLAUDE_VERSION, model $MODEL); tracked Stop and StopFailure hooks registered; config/supervision-host present; host pid $(awk -F '\t' '$1 == "host" { print $2; exit }' "$lab/fm/state/.supervision-host") parked on watcher $(watcher_pid "$lab"); listener runner $(listener_pid "$lab"); captain prompts so far: $(captain_prompts "$lab")"
   evidence "$(basename "$lab") transcript: $(transcript "$lab")"
 }
 

@@ -1593,8 +1593,7 @@ test_spawn_codex_scout_writes_toml_env_with_traceparent() {
   write_spawn_brief "$data" "$id"
   touch "$state/.last-watcher-beat"
   # A worker's trace context is this home's frozen session decision
-  # (bin/fm-trace-context-lib.sh): the session lock pid plus an `on` record.
-  printf '%s\n' "$$" > "$state/.lock"
+  # (bin/fm-trace-context-lib.sh): the session pid plus an `on` record.
   printf '%s on\n' "$$" > "$state/.trace-context-effective"
   FM_T3_PROJ="$proj" t3_world_set 'w.projects[0].workspaceRoot = process.env.FM_T3_PROJ'
   fb=$(make_treehouse_fakebin "$CASE_DIR")

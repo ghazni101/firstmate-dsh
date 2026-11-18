@@ -372,11 +372,9 @@ git init -q -b main "$E2E_ROOT"
 git -C "$E2E_ROOT" commit -q --allow-empty -m init
 
 make_hanging_tasks_axi "$E2E_FAKEBIN"
-# The reconcile sweep this half asserts on runs only under a verified fleet
-# lock, and fm-lock.sh finds its holder by walking the invoking process tree
-# through `ps`. A CI runner's ancestry carries no harness process, so the lock
-# would be refused there and the sweep silently skipped. Pin the lock evidence
-# the same way tests/fm-session-start.test.sh's make_fake_ps_harness does:
+# The reconcile sweep this half asserts on runs at a session boundary, and the
+# identity facts it reads come from the invoking process tree through `ps`. Pin
+# those the same way tests/fm-session-start.test.sh's make_fake_ps_harness does:
 # every queried pid reports a live `claude` harness, independent of whatever
 # process tree the test itself was launched from.
 cat > "$E2E_FAKEBIN/ps" <<'SH'

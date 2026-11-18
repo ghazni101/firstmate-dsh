@@ -16,8 +16,8 @@
 #                 sessionStart.
 #
 # The park runs as a child of a fake harness (a bash symlink named cursor-agent)
-# whose pid holds the fixture home's session lock, so the real Cursor ancestry
-# path in bin/fm-session-lock-lib.sh is exercised rather than stubbed.
+# that is the fixture home's session harness, so the real Cursor ancestry
+# path in bin/fm-proc-lib.sh is exercised rather than stubbed.
 # tests/fm-cursor-primary-live-e2e.test.sh is the opt-in guard against a real
 # cursor-agent. Neither replaces the other.
 # shellcheck disable=SC2016 # single quotes are deliberate: $FM_HOME expands inside the fake harness child
@@ -73,8 +73,8 @@ install_scripts() {
            fm-sessionstart-run.sh fm-sessionstart-nudge.sh fm-arm-pretool-check.sh \
            fm-cd-pretool-check.sh fm-claude-stop-autoarm.sh fm-hook-host-lib.sh \
            fm-primary-scope-lib.sh fm-supervision-lib.sh fm-wake-lib.sh fm-path-lib.sh \
-           fm-session-lock-lib.sh fm-omp-process-lib.sh fm-cursor-lib.sh fm-operational-input.sh \
-           fm-supervision-instructions.sh fm-harness.sh fm-lock.sh \
+           fm-proc-lib.sh fm-omp-process-lib.sh fm-cursor-lib.sh fm-operational-input.sh \
+           fm-supervision-instructions.sh fm-harness.sh \
            fm-gate-refuse-lib.sh fm-afk-contract.sh fm-classify-lib.sh fm-timeout-lib.sh \
            fm-supervision-engine-lib.sh fm-lease-lib.sh; do
     cp "$ROOT/bin/$f" "$dir/bin/$f"
@@ -135,16 +135,15 @@ SH
   chmod +x "$dir/bin/fm-watch-arm.sh"
 }
 
-# The park's child body: claim the home lock as this fake harness process, then
-# run the adapter as its child, so the real Cursor ancestry path decides lock
-# ownership on every platform. Keep the fake harness process alive: Linux
-# changes the process identity when an exec reaches the adapter's shebang.
+# The park's child body: run the adapter as a child of the fake harness, so the
+# real Cursor harness-identity ancestry path decides ownership on every
+# platform. Keep the fake harness process alive: Linux changes the process
+# identity when an exec reaches the adapter's shebang.
 PARK_CHILD='
-  printf "%s\n" "$$" > "$FM_HOME/state/.lock"
   "$FM_HOME/bin/fm-turnend-guard-cursor.sh"
 '
 
-# Run the park as a child of the fake cursor harness that holds the home lock.
+# Run the park as a child of the fake cursor harness.
 # Clear PI_CODING_AGENT so a Pi host session running this suite cannot make the
 # Cursor park stand down before the fixture under test is exercised.
 run_park() {  # <dir> [loop_count] [loop_ceiling]
@@ -163,7 +162,6 @@ run_session() {  # <dir> <event> <source> [session-id]
   local dir=$1 event=$2 source=$3 session_id=${4:-sess-cursor} payload
   payload=$(printf '{"hook_event_name":"%s","session_id":"%s","cursor_version":"x"}' "$event" "$session_id")
   printf '%s' "$payload" | FM_HOME="$dir" FM_SESSION_SOURCE="$source" "$FAKE_CURSOR" -c '
-    printf "%s\n" "$$" > "$FM_HOME/state/.lock"
     "$FM_HOME/bin/fm-sessionstart-cursor.sh" --source "$FM_SESSION_SOURCE"
   ' 2>/dev/null
 }
@@ -210,7 +208,6 @@ test_autoarm_stands_down_on_cursor_payload() {
   : > "$dir/state/task1.meta"
   write_arm_fixture "$dir" actionable
   printf '%s' "$CURSOR_PAYLOAD" | FM_HOME="$dir" "$FAKE_CURSOR" -c '
-      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
       exec "$FM_HOME/bin/fm-claude-stop-autoarm.sh"
     ' >/dev/null 2>&1
   status=$?
@@ -661,15 +658,17 @@ SH
   pass "cursor park: an away-mode transition wins before follow-up commit"
 }
 
-test_park_inert_without_session_lock() {
-  local dir out
-  dir=$(make_primary_dir "$TMP_ROOT/park-nolock")
+test_park_inert_without_session_identity() {
+  local dir out blind
+  dir=$(make_primary_dir "$TMP_ROOT/park-noid")
+  blind=$(fm_fakebin "$TMP_ROOT/park-noid-blind")
+  fm_fake_blind_ancestry "$blind"
   : > "$dir/state/task1.meta"
   write_arm_fixture "$dir" actionable
-  out=$(printf '%s' "$CURSOR_PAYLOAD" | env -u PI_CODING_AGENT FM_HOME="$dir" bash "$dir/bin/fm-turnend-guard-cursor.sh" 2>/dev/null)
-  [ -z "$out" ] || fail "a session that does not hold the home lock must not arm or wake: $out"
-  [ ! -e "$dir/state/arm-ran" ] || fail "the park armed without owning the session lock"
-  pass "cursor park: inert when this session does not hold the home lock"
+  out=$(printf '%s' "$CURSOR_PAYLOAD" | env -u PI_CODING_AGENT PATH="$blind:$PATH" FM_HOME="$dir" bash "$dir/bin/fm-turnend-guard-cursor.sh" 2>/dev/null)
+  [ -z "$out" ] || fail "a process with no resolvable harness identity must not arm or wake: $out"
+  [ ! -e "$dir/state/arm-ran" ] || fail "the park armed without a session identity"
+  pass "cursor park: inert when no harness identity can be resolved"
 }
 
 test_park_stands_down_after_session_takeover() {
@@ -686,7 +685,8 @@ test_park_stands_down_after_session_takeover() {
     waited=$((waited + 1))
     [ "$waited" -lt 200 ] || fail "the park never began polling before takeover"
   done
-  printf '%s\n' "$$" > "$dir/state/.lock"
+  # A newer Stop claims the park baton; the older park must stand down.
+  printf 'seq=99 pid=%s updated_at=%s\n' "$$" "$(date +%s)" > "$dir/state/.cursor-park-owner"
   wait "$park_pid" 2>/dev/null || true
   out=$(cat "$dir/state/takeover-out" 2>/dev/null || true)
   [ -z "$out" ] || fail "the replaced session emitted a follow-up after takeover: $out"
@@ -726,7 +726,6 @@ SH
 }
 
 WIN_SESSION_ROW='  4201508       0       0       7204  ?              0 22:24:48 C:\Users\u\.local\bin\claude.exe'
-WIN_OTHER_ROW='  4201600       0       0       7300  ?              0 22:30:00 C:\Users\u\.local\bin\claude.exe'
 
 run_windows_park() {  # <dir> <fakebin> <windows-table>
   printf '%s' "$CURSOR_PAYLOAD" | env -u PI_CODING_AGENT -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID \
@@ -735,62 +734,21 @@ run_windows_park() {  # <dir> <fakebin> <windows-table>
     bash "$1/bin/fm-turnend-guard-cursor.sh" 2>/dev/null
 }
 
-# On Windows/Git Bash the session lock legitimately holds a tagged win:<pid>
-# (bin/fm-session-lock-lib.sh). The park must recognize its own tagged lock and
-# reclaim a dead tagged holder's, instead of reading either as malformed.
-test_park_honors_a_windows_tagged_session_lock() {
+# On Windows/Git Bash the harness is a native Windows process, so identity is
+# resolved through the tagged pid the Windows bridge returns
+# (bin/fm-proc-lib.sh). A park whose session resolves that way must still arm
+# and deliver its wake.
+test_park_honors_a_windows_bridged_harness_identity() {
   local dir fakebin out
   dir=$(make_primary_dir "$TMP_ROOT/park-win-owned")
   fakebin=$(windows_session_fakebin "$dir" MINGW64_NT-10.0-26200)
   : > "$dir/state/task1.meta"
   write_arm_fixture "$dir" actionable
-  printf 'win:7204\n' > "$dir/state/.lock"
   out=$(run_windows_park "$dir" "$fakebin" "$WIN_SESSION_ROW")
-  [ -e "$dir/state/arm-ran" ] || fail "the park did not arm for the session holding its own tagged lock"
+  [ -e "$dir/state/arm-ran" ] || fail "the park did not arm for a session resolved through the Windows bridge"
   [ "$(kind_of_followup "$out")" = watcher ] \
-    || fail "the owner of a tagged lock must receive the actionable wake, got: $out"
-
-  dir=$(make_primary_dir "$TMP_ROOT/park-win-reclaim")
-  : > "$dir/state/task1.meta"
-  write_arm_fixture "$dir" actionable
-  printf 'win:7300\n' > "$dir/state/.lock"
-  out=$(run_windows_park "$dir" "$fakebin" "$WIN_SESSION_ROW")
-  [ "$(cat "$dir/state/.lock")" = 'win:7204' ] \
-    || fail "a dead tagged holder's lock was not reclaimed: $(cat "$dir/state/.lock")"
-  [ -e "$dir/state/arm-ran" ] || fail "the park did not arm after reclaiming a dead tagged holder's lock"
-  [ "$(kind_of_followup "$out")" = watcher ] \
-    || fail "the reclaiming session must receive the actionable wake, got: $out"
-  pass "cursor park: a Windows-tagged session lock is owned by its session and reclaimed from a dead holder"
-}
-
-# A live tagged holder is another session, a malformed tagged value is no
-# identity, and the tag means nothing off Windows: each leaves the lock alone.
-test_park_leaves_other_tagged_session_locks_alone() {
-  local spec case_name uname lock table dir fakebin out
-  for spec in \
-    "live-other|MINGW64_NT-10.0-26200|win:7300|both" \
-    "malformed|MINGW64_NT-10.0-26200|win:72x4|session" \
-    "not-windows|Linux|win:7300|session"; do
-    IFS='|' read -r case_name uname lock table <<EOF
-$spec
-EOF
-    case "$table" in
-      both) table="$WIN_SESSION_ROW
-$WIN_OTHER_ROW" ;;
-      *) table=$WIN_SESSION_ROW ;;
-    esac
-    dir=$(make_primary_dir "$TMP_ROOT/park-win-$case_name")
-    fakebin=$(windows_session_fakebin "$dir" "$uname")
-    : > "$dir/state/task1.meta"
-    write_arm_fixture "$dir" actionable
-    printf '%s\n' "$lock" > "$dir/state/.lock"
-    out=$(run_windows_park "$dir" "$fakebin" "$table")
-    [ -z "$out" ] || fail "$case_name: a session that does not own the tagged lock emitted a follow-up: $out"
-    [ ! -e "$dir/state/arm-ran" ] || fail "$case_name: the park armed without owning the tagged lock"
-    [ "$(cat "$dir/state/.lock")" = "$lock" ] \
-      || fail "$case_name: the tagged lock was rewritten to $(cat "$dir/state/.lock")"
-  done
-  pass "cursor park: a live, malformed, or off-Windows tagged lock is left alone"
+    || fail "the Windows-resolved session must receive the actionable wake, got: $out"
+  pass "cursor park: a Windows-tagged harness identity resolved through the bridge owns the park"
 }
 
 test_park_inert_in_child_worktree() {
@@ -915,10 +873,9 @@ test_park_host_boundary_stand_down_and_death
 test_park_inert_under_pi_coding_agent
 test_park_still_parks_with_pi_leak_and_cursor_identity
 test_park_stands_down_when_away_mode_activates_before_commit
-test_park_inert_without_session_lock
+test_park_inert_without_session_identity
 test_park_stands_down_after_session_takeover
-test_park_honors_a_windows_tagged_session_lock
-test_park_leaves_other_tagged_session_locks_alone
+test_park_honors_a_windows_bridged_harness_identity
 test_park_inert_in_child_worktree
 test_park_ignores_malformed_payload
 test_sessionstart_emits_additional_context

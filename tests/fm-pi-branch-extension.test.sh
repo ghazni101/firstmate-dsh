@@ -968,11 +968,13 @@ import { spawnSync } from "node:child_process";
 
 const fleetOperations = [];
 globalThis.__fmExecuteBranchBash = async (context) => {
-  const actor = spawnSync(
-    "bash",
-    ["-c", '. "$1"; fm_lease_actor', "_", `${realRoot}/bin/fm-lease-lib.sh`],
-    { encoding: "utf8", cwd: context.cwd, env: context.env },
-  );
+  // The retired two-actor lease helper is gone with the fleet session lock;
+  // the branch's own shell now marks itself through the injected actor env.
+  const actor = spawnSync("bash", ["-c", 'printf "%s\n" "${FM_SUPERVISION_ACTOR:-main}"'], {
+    encoding: "utf8",
+    cwd: context.cwd,
+    env: context.env,
+  });
   if (actor.status !== 0) throw new Error(`branch bash actor resolution failed: ${actor.stderr}`);
   const result = spawnSync("bash", ["-c", context.command], {
     encoding: "utf8",
@@ -1287,6 +1289,7 @@ const prelude = process.env.DRIVER_PRELUDE;
 await eval(`(async () => { ${prelude}; globalThis.__t = { fire, dispatch, settle, sentToMain, mainEntries, mainTools, outcomeScript, defaultSessionCtx, home, bus, markdownTransformers }; })()`);
 const { fire, dispatch, settle, sentToMain, mainEntries, mainTools, outcomeScript, defaultSessionCtx, home, bus, markdownTransformers } = globalThis.__t;
 import { writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
 
 let requestsFloor = 0;
 const requests = () => sentToMain.filter((sent) => sent.message.customType === "fm-branch-process").slice(requestsFloor);
@@ -1617,9 +1620,18 @@ for (const initial of ["", "Unrelated prior acknowledgment"]) {
 }
 
 // A session that does not own the fleet lock cannot acknowledge anything.
-writeFileSync(`${home}/state/.lock`, "1\n");
-const foreign = await processed.execute("ack-foreign", { through: seqF }, undefined, undefined, {});
-if (!foreign.isError) throw new Error("a session without lock ownership acknowledged an outcome");
+// Only a LIVE foreign holder takes ownership away; "1", a malformed value, or a
+// dead pid all belong to this native home.
+const foreignHolder = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+writeFileSync(`${home}/state/.lock`, `${foreignHolder.pid}\n`);
+try {
+  const foreign = await processed.execute("ack-foreign", { through: seqF }, undefined, undefined, {});
+  if (!foreign.isError || !foreign.content[0].text.includes("does not own the fleet lock")) {
+    throw new Error(`a session without lock ownership acknowledged an outcome: ${JSON.stringify(foreign)}`);
+  }
+} finally {
+  foreignHolder.kill("SIGTERM");
+}
 process.exit(0);
 EOF
   status=$?
@@ -1806,7 +1818,7 @@ test_branch_default_on_heartbeat_afk_and_fallback() {
   mkdir -p "$home/state" "$home/config" "$broken/bin"
   install_pi_branch_extension_fixture "$repo"
   cp "$ROOT/bin/fm-branch-outcome.sh" "$ROOT/bin/fm-classify-lib.sh" \
-    "$ROOT/bin/fm-lease.sh" "$ROOT/bin/fm-lease-lib.sh" "$ROOT/bin/fm-timeout-lib.sh" \
+    "$ROOT/bin/fm-lease-lib.sh" "$ROOT/bin/fm-timeout-lib.sh" \
     "$ROOT/bin/fm-wake-lib.sh" "$ROOT/bin/fm-path-lib.sh" "$ROOT/bin/fm-wake-grant.sh" "$broken/bin/"
   cat > "$broken/bin/fm-branch-prompt.sh" <<'SH'
 #!/usr/bin/env bash
@@ -4384,7 +4396,7 @@ EOF
   pass "an unusable model pin rejects to watcher fallback and an unparseable one is treated as no pin"
 }
 
-test_replacement_activation_cleans_leases_and_retries_failure() {
+test_replacement_activation_retries_failed_activation() {
   local repo home fakebin out status real_bash
   repo="$TMP_ROOT/activation-root"
   home="$TMP_ROOT/activation-home"
@@ -4394,7 +4406,7 @@ test_replacement_activation_cleans_leases_and_retries_failure() {
   install_pi_branch_extension_fixture "$repo"
   cat > "$fakebin/bash" <<'SH'
 #!/bin/sh
-if [ "$1" = "$FM_TEST_LEASE_SCRIPT" ] && [ ! -e "$FM_TEST_FAIL_MARKER" ]; then
+if [ "$1" = "$FM_TEST_GRANT_SCRIPT" ] && [ ! -e "$FM_TEST_FAIL_MARKER" ]; then
   : > "$FM_TEST_FAIL_MARKER"
   exit 7
 fi
@@ -4402,118 +4414,33 @@ exec "$FM_TEST_REAL_BASH" "$@"
 SH
   chmod +x "$fakebin/bash"
   PATH="$fakebin:$PATH" PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
-    FM_TEST_REAL_BASH="$real_bash" FM_TEST_LEASE_SCRIPT="$ROOT/bin/fm-lease.sh" \
-    FM_TEST_FAIL_MARKER="$home/state/release-failed-once" DRIVER_PRELUDE="$DRIVER_PRELUDE" \
+    FM_TEST_REAL_BASH="$real_bash" FM_TEST_GRANT_SCRIPT="$ROOT/bin/fm-wake-grant.sh" \
+    FM_TEST_FAIL_MARKER="$home/state/grant-failed-once" DRIVER_PRELUDE="$DRIVER_PRELUDE" \
     node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
 const prelude = process.env.DRIVER_PRELUDE;
-await eval(`(async () => { ${prelude}; globalThis.__t = { fire, dispatch, settle, home, realRoot }; })()`);
-const { fire, dispatch, settle, home } = globalThis.__t;
-import { existsSync, writeFileSync } from "node:fs";
+await eval(`(async () => { ${prelude}; globalThis.__t = { fire, home, defaultSessionCtx }; })()`);
+const { fire, home, defaultSessionCtx } = globalThis.__t;
+import { existsSync } from "node:fs";
 
-writeFileSync(`${home}/state/.lease-task-old`, `branch\t${process.pid}\t123\n`);
-
-await fire("session_start", {});
-if (!existsSync(`${home}/state/.lease-task-old`)) throw new Error("failed activation incorrectly committed lease cleanup");
-const offer = dispatch("signal: retry activation");
-if (!offer.accepted) throw new Error("later boundary did not retry failed activation");
-// Activation runs as the accepted wake's first settlement step, so its lease
-// cleanup is observable once that wake has reached the branch.
-await settle(() => (globalThis.__fmPrompts ?? []).length === 1, "post-retry wake prompt");
-if (existsSync(`${home}/state/.lease-task-old`)) throw new Error("replacement activation did not clean the prior branch lease");
-process.exit(0);
-EOF
-  status=$?
-  out=$(cat "$TMP_ROOT/node-output")
-  expect_code 0 "$status" "replacement activation must clean leases and retry failures: $out"
-  pass "replacement activation cleans old branch leases and retries failed cleanup"
-}
-
-test_cold_start_activates_after_lock_acquisition() {
-  local repo home out status
-  repo="$TMP_ROOT/coldstart-root"
-  home="$TMP_ROOT/coldstart-home"
-  mkdir -p "$home/state" "$home/config"
-  install_pi_branch_extension_fixture "$repo"
-  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
-    FM_TEST_SKIP_LOCK=1 DRIVER_PRELUDE="$DRIVER_PRELUDE" node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
-const prelude = process.env.DRIVER_PRELUDE;
-await eval(`(async () => { ${prelude}; globalThis.__t = { fire, dispatch, settle, home, mainEntries, outcomeScript, defaultSessionCtx }; })()`);
-const { fire, dispatch, settle, home, mainEntries, outcomeScript, defaultSessionCtx } = globalThis.__t;
-import { existsSync, writeFileSync } from "node:fs";
-
-const summary = "Recovered the stored captain result after cold startup.";
-const seq = Number(outcomeScript(["append", "--task", "cold-result", "--verdict", "captain", "--summary", summary]));
 await fire("session_start", {}, defaultSessionCtx);
-if (mainEntries.some((entry) => entry.customType === "fm-branch-visible-outcome")) {
-  throw new Error("captain outcome was delivered before lock ownership");
+if (!existsSync(`${home}/state/grant-failed-once`)) {
+  throw new Error("session_start did not attempt activation through the grant script");
 }
-if (dispatch("signal: before lock").accepted) throw new Error("branch accepted a wake before the lock existed");
 if (existsSync(`${home}/state/.pi-branch-extension-loaded`)) {
-  throw new Error("branch wrote its marker before owning the lock");
+  throw new Error("failed activation committed the loaded marker");
 }
-writeFileSync(`${home}/state/.lock`, `${process.pid}\n`);
+// Activation is retried lazily on the next owned boundary, so a transient
+// grant-script failure must not leave the generation permanently inert.
 await fire("turn_end", {}, defaultSessionCtx);
-const visible = mainEntries.filter((entry) => entry.customType === "fm-branch-visible-outcome");
-if (visible.length !== 1 || visible[0].data.seq !== seq || visible[0].data.summary !== summary) {
-  throw new Error(`post-lock turn_end did not recover the exact captain outcome: ${JSON.stringify(visible)}`);
-}
-if (outcomeScript(["unread"]) !== "") throw new Error("post-lock turn_end did not advance the outcome cursor");
-if (!dispatch("signal: after lock").accepted) throw new Error("branch refused a wake after the lock was acquired");
-await settle(() => (globalThis.__fmPrompts ?? []).length === 1, "post-lock branch wake prompt");
 if (!existsSync(`${home}/state/.pi-branch-extension-loaded`)) {
-  throw new Error("owned activation did not write the diagnostic marker");
+  throw new Error("later boundary did not retry the failed activation");
 }
 process.exit(0);
 EOF
   status=$?
   out=$(cat "$TMP_ROOT/node-output")
-  expect_code 0 "$status" "cold-start lazy lock-ownership activation must hold: $out"
-  pass "branch activates on a cold start once the lock is acquired, never before"
-}
-
-# On Windows the session lock may hold a tagged win:<pid> (bin/fm-session-lock-lib.sh),
-# and native Node sees that Windows pid directly. The branch activates for its own
-# tagged lock and never for a malformed tag or for any tag off Windows. Each run
-# sets the platform for the whole process so every host exercises both sides.
-test_branch_activates_for_a_windows_tagged_session_lock() {
-  local repo home platform out status
-  for platform in win32 linux; do
-    repo="$TMP_ROOT/tagged-lock-$platform-root"
-    home="$TMP_ROOT/tagged-lock-$platform-home"
-    mkdir -p "$home/state" "$home/config"
-    install_pi_branch_extension_fixture "$repo"
-    PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
-      FM_TEST_SKIP_LOCK=1 FM_TEST_PLATFORM="$platform" DRIVER_PRELUDE="$DRIVER_PRELUDE" \
-      node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
-import { existsSync, writeFileSync } from "node:fs";
-const platform = Object.getOwnPropertyDescriptor(process, "platform");
-Object.defineProperty(process, "platform", { ...platform, value: process.env.FM_TEST_PLATFORM });
-const prelude = process.env.DRIVER_PRELUDE;
-await eval(`(async () => { ${prelude}; globalThis.__t = { fire, dispatch, settle, home, defaultSessionCtx }; })()`);
-const { fire, dispatch, settle, home, defaultSessionCtx } = globalThis.__t;
-const marker = `${home}/state/.pi-branch-extension-loaded`;
-
-writeFileSync(`${home}/state/.lock`, `win:${process.pid}x\n`);
-await fire("session_start", {}, defaultSessionCtx);
-if (dispatch("signal: malformed tag").accepted) throw new Error("branch accepted a wake under a malformed tagged lock");
-writeFileSync(`${home}/state/.lock`, `win:${process.pid}\n`);
-await fire("turn_end", {}, defaultSessionCtx);
-const accepted = dispatch("signal: tagged lock").accepted;
-if (process.platform !== "win32") {
-  if (accepted) throw new Error("branch accepted a wake under a tagged lock off Windows");
-  if (existsSync(marker)) throw new Error("branch wrote its marker under a tagged lock off Windows");
-  process.exit(0);
-}
-if (!accepted) throw new Error("branch refused a wake under its own Windows-tagged lock");
-await settle(() => (globalThis.__fmPrompts ?? []).length === 1, "tagged-lock branch wake prompt");
-if (!existsSync(marker)) throw new Error("owned tagged activation did not write the diagnostic marker");
-process.exit(0);
-EOF
-    status=$?
-    out=$(cat "$TMP_ROOT/node-output")
-    expect_code 0 "$status" "branch must read a Windows-tagged session lock only on Windows ($platform): $out"
-  done
-  pass "branch activates for its own Windows-tagged session lock only on Windows, never for a malformed tag"
+  expect_code 0 "$status" "replacement activation must retry a failed grant activation: $out"
+  pass "replacement activation retries a failed grant activation on the next owned boundary"
 }
 
 test_queued_actions_recheck_lock_ownership() {
@@ -4527,7 +4454,8 @@ test_queued_actions_recheck_lock_ownership() {
 const prelude = process.env.DRIVER_PRELUDE;
 await eval(`(async () => { ${prelude}; globalThis.__t = { fire, dispatch, settle, home, mainUserMessages }; })()`);
 const { fire, dispatch, settle, home, mainUserMessages } = globalThis.__t;
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
 
 let releasePrompt;
 globalThis.__fmPromptGate = new Promise((resolve) => { releasePrompt = resolve; });
@@ -4543,17 +4471,24 @@ const entries = [{ type: "message", message: { role: "user", content: "queued mi
 await fire("turn_end", {}, {
   sessionManager: { getSessionFile: () => `${home}/main.jsonl`, getEntries: () => entries },
 });
-unlinkSync(`${home}/state/.lock`);
-releasePrompt();
-const failure = await queuedFailure;
-if (!(failure instanceof Error) || !failure.message.includes("no longer owns the fleet lock")) {
-  throw new Error(`queued wake did not reject to watcher fallback: ${String(failure)}`);
+// Ownership is lost only to a LIVE foreign holder now: an absent or dead
+// legacy lock belongs to this native home.
+const foreign = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+writeFileSync(`${home}/state/.lock`, `${foreign.pid}\n`);
+try {
+  releasePrompt();
+  const failure = await queuedFailure;
+  if (!(failure instanceof Error) || !failure.message.includes("no longer owns the fleet lock")) {
+    throw new Error(`queued wake did not reject to watcher fallback: ${String(failure)}`);
+  }
+  if (mainUserMessages.length !== 0) throw new Error("branch bypassed watcher-owned fallback delivery");
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const session = globalThis.__fmSessions[0];
+  if (session.ops.some((op) => op.kind === "custom")) throw new Error("queued mirror appended after lock ownership was lost");
+  if (existsSync(`${home}/state/.branch-mirror-cursor`)) throw new Error("queued mirror advanced its cursor after lock ownership was lost");
+} finally {
+  foreign.kill("SIGTERM");
 }
-if (mainUserMessages.length !== 0) throw new Error("branch bypassed watcher-owned fallback delivery");
-await new Promise((resolve) => setTimeout(resolve, 25));
-const session = globalThis.__fmSessions[0];
-if (session.ops.some((op) => op.kind === "custom")) throw new Error("queued mirror appended after lock ownership was lost");
-if (existsSync(`${home}/state/.branch-mirror-cursor`)) throw new Error("queued mirror advanced its cursor after lock ownership was lost");
 process.exit(0);
 EOF
   status=$?
@@ -4606,7 +4541,7 @@ if (!reportResult.isError) throw new Error("stale report tool was not refused");
 let bashRefused = false;
 try {
   oldBash.__options.spawnHook({
-    command: "bin/fm-lease.sh claim task-stale --actor branch",
+    command: "printf stale-shell > state/stale-shell-ran",
     cwd: home,
     env: {},
   });
@@ -4615,7 +4550,7 @@ try {
 }
 if (!bashRefused) throw new Error("stale bash tool was not refused");
 if (existsSync(`${home}/state/branch-outcomes.jsonl`)) throw new Error("stale report appended an outcome");
-if (existsSync(`${home}/state/.lease-task-stale`)) throw new Error("stale bash claimed a lease");
+if (existsSync(`${home}/state/stale-shell-ran`)) throw new Error("stale bash tool ran a shell command");
 if (sentToMain.length !== 0) throw new Error("stale report merged a note into main");
 
 releaseMirror();
@@ -4635,7 +4570,7 @@ EOF
   status=$?
   out=$(cat "$TMP_ROOT/node-output")
   expect_code 0 "$status" "stale branch boundaries must perform no side effects: $out"
-  pass "stale reports, shells, mirrors, cursors, leases, and prompts perform no side effects"
+  pass "stale reports, shells, mirrors, cursors, and prompts perform no side effects"
 }
 
 test_secondary_session_stays_inert() {
@@ -4646,10 +4581,9 @@ test_secondary_session_stays_inert() {
   install_pi_branch_extension_fixture "$repo"
   # The fleet lock is owned by ANOTHER live process that is NOT in the
   # driver's ancestry (a sibling sleeper), so the driver is a secondary
-  # session: it must accept nothing, write no marker, and release no leases.
+  # session: it must accept nothing and write no marker.
   sleep 60 &
   foreign_pid=$!
-  printf 'branch\t%s\t123\n' "$foreign_pid" > "$home/state/.lease-task-x"
   PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     FM_TEST_SKIP_LOCK=1 FM_TEST_LOCK_PID=$foreign_pid DRIVER_PRELUDE="$DRIVER_PRELUDE" node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
 const prelude = process.env.DRIVER_PRELUDE;
@@ -4660,9 +4594,6 @@ writeFileSync(`${home}/state/.lock`, `${process.env.FM_TEST_LOCK_PID}\n`);
 if (dispatch("signal: secondary probe").accepted) throw new Error("secondary session accepted a wake it does not own");
 if (existsSync(`${home}/state/.pi-branch-extension-loaded`)) {
   throw new Error("secondary session wrote the primary's marker");
-}
-if (!existsSync(`${home}/state/.lease-task-x`)) {
-  throw new Error("secondary session released the primary's branch lease");
 }
 process.exit(0);
 EOF
@@ -6274,9 +6205,7 @@ test_unpinned_branch_follows_main_effort_changes_live
 test_extension_registered_provider_resolves_in_the_branch
 test_supervision_model_command_picks_effort_after_the_model
 test_unusable_model_pin_falls_back_to_main
-test_replacement_activation_cleans_leases_and_retries_failure
-test_cold_start_activates_after_lock_acquisition
-test_branch_activates_for_a_windows_tagged_session_lock
+test_replacement_activation_retries_failed_activation
 test_queued_actions_recheck_lock_ownership
 test_stale_generation_boundaries_are_side_effect_free
 test_secondary_session_stays_inert

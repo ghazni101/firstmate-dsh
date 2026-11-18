@@ -1046,11 +1046,9 @@ SH
   pass "fm-harness: markerless kimi keeps its ancestry identity under an inherited marker"
 }
 
-test_kimi_session_lock_identity() {
-  local home fakebin out
-  home="$TMP_ROOT/session-lock-home"
-  fakebin=$(fm_fakebin "$TMP_ROOT/session-lock-fake")
-  mkdir -p "$home/state"
+test_kimi_harness_identity() {
+  local fakebin out
+  fakebin=$(fm_fakebin "$TMP_ROOT/session-identity-fake")
   cat > "$fakebin/ps" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
@@ -1061,16 +1059,16 @@ exit 1
 SH
   chmod +x "$fakebin/ps"
 
-  FM_HOME="$home" PATH="$fakebin:$BASE_PATH" "$ROOT/bin/fm-lock.sh" \
-    || fail "fm-lock did not acquire from Kimi ancestry"
-  case "$(cat "$home/state/.lock")" in
-    ''|*[!0-9]*) fail "fm-lock did not record the Kimi harness ancestor" ;;
+  out=$(PATH="$fakebin:$BASE_PATH" bash -c '
+    . "$1/bin/fm-proc-lib.sh"
+    pid=$(fm_harness_ancestry_pid) || exit 11
+    fm_harness_pid_alive "$pid" || exit 12
+    printf "%s\n" "$pid"
+  ' _ "$ROOT")
+  case "$out" in
+    ''|*[!0-9]*) fail "fm-proc-lib did not resolve a live Kimi harness pid: '$out'" ;;
   esac
-  printf '%s\n' "$$" > "$home/state/.lock"
-  out=$(FM_HOME="$home" PATH="$fakebin:$BASE_PATH" "$ROOT/bin/fm-lock.sh" status)
-  assert_contains "$out" "lock: held by live harness pid" \
-    "fm-lock did not recognize Kimi as a live holder"
-  pass "fm-lock recognizes Kimi ancestry and live lock holders"
+  pass "fm-proc-lib resolves and proves a live Kimi harness ancestry"
 }
 
 test_kimi_busy_signature_is_scoped_to_spinner_lines() {
@@ -1283,7 +1281,7 @@ test_kimi_partial_trust_dialog_blocks_the_ready_verdict
 test_kimi_stuck_trust_dialog_fails_before_delivery
 test_kimi_trust_detection_requires_the_complete_dialog
 test_kimi_detection_uses_ancestry_after_markers
-test_kimi_session_lock_identity
+test_kimi_harness_identity
 test_kimi_busy_signature_is_scoped_to_spinner_lines
 test_watcher_never_classifies_kimi_from_its_spinner
 test_kimi_bordered_prompt_needs_no_override

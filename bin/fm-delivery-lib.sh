@@ -228,7 +228,7 @@ fm_delivery_resolve() {
   [ -n "$pr" ] || { [ -z "$task" ] || pr=$(fm_delivery_task_pr_url "$task"); }
 
   # 1. PR record.
-  local pr_key=
+  local pr_key=''
   if [ -n "$pr" ]; then pr_key=$(fm_delivery_pr_key "$pr" 2>/dev/null || true); fi
   if [ -n "${pr_key:-}" ] && fm_delivery_read "$pr_key"; then
     mode=$FM_DELIVERY_MODE
@@ -240,7 +240,7 @@ fm_delivery_resolve() {
   fi
 
   # 2. Task record.
-  local task_key=
+  local task_key=''
   if [ -n "$task" ]; then task_key=$(fm_delivery_task_key "$task" 2>/dev/null || true); fi
   if [ -n "${task_key:-}" ] && fm_delivery_read "$task_key"; then
     if [ "$source" = pr ]; then
@@ -249,10 +249,10 @@ fm_delivery_resolve() {
     else
       mode=$FM_DELIVERY_MODE
       yolo=$FM_DELIVERY_YOLO
-      source=task
+      source='task'
       reason=$FM_DELIVERY_REASON
       [ -n "$project" ] || project=$FM_DELIVERY_PROJECT
-      if [ "$FM_DELIVERY_YOLO" != inherit ]; then yolo_source=task; fi
+      if [ "$FM_DELIVERY_YOLO" != inherit ]; then yolo_source='task'; fi
     fi
   fi
 

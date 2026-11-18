@@ -89,19 +89,6 @@ test_fm_home_parameterization() {
   pass "FM_HOME parameterizes data and state paths"
 }
 
-test_lock_status_is_per_home() {
-  local home_one home_two out
-  home_one="$TMP_ROOT/lock-one"
-  home_two="$TMP_ROOT/lock-two"
-  mkdir -p "$home_one/state" "$home_two/state"
-  printf '999999\n' > "$home_one/state/.lock"
-  out=$(FM_HOME="$home_one" "$ROOT/bin/fm-lock.sh" status)
-  printf '%s\n' "$out" | grep -F 'lock: stale' >/dev/null || fail "home one lock status did not read its own lock"
-  out=$(FM_HOME="$home_two" "$ROOT/bin/fm-lock.sh" status)
-  [ "$out" = "lock: free" ] || fail "home two lock status was affected by home one"
-  pass "fm-lock status is scoped per home"
-}
-
 test_seed_allows_overlapping_clones_and_drops_owner() {
   # A project may appear in several secondmates' (non-exclusive) clone lists; the
   # registry never uses the legacy owns: field, and the removed `owner` subcommand
@@ -3115,7 +3102,6 @@ EOF
 }
 
 test_fm_home_parameterization
-test_lock_status_is_per_home
 test_seed_allows_overlapping_clones_and_drops_owner
 test_home_seed_validate_rejects_unparseable_registry_entry
 test_home_seed_refuses_broken_registry_symlink

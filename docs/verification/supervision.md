@@ -364,7 +364,8 @@ ok - cursor primary: the captain keeps control and the older park stands down af
 ok - cursor primary: an away-mode escalation is delivered, confirmed, and processed
 ```
 
-The live run proved that session start acquires the fleet lock through Cursor's structural process identity in `bin/fm-cursor-lib.sh`; `tests/fm-session-lock-ancestry.test.sh` pins the same ancestry path portably.
+The live run proved that session start resolves Cursor's structural process identity in `bin/fm-cursor-lib.sh`; `tests/fm-proc-lib.test.sh` pins the same ancestry path portably.
+The observed lines above, including the fleet-lock assertion, were captured on the build exercised before that lock was retired; current session start has no lock stage, and the identity assertion is the part that survives.
 It also proved that Cursor's `autoarm` supervision model lets the mid-turn pull guard accept a fresh beacon after the between-turn watcher closes; `tests/fm-guard-stale-banner.test.sh` pins that model-aware verdict.
 The baton is claimed only by the next `stop`, so an actionable close before that claim can still produce one real follow-up from the sole existing park; durable wake handling is idempotent, and any older park still running after the claim stands down.
 The step is now registered for the dialog mirror, but still does not invalidate the park baton; [turnend-guard.md](../turnend-guard.md) owns the remaining pre-claim window and deferred fix.
@@ -400,56 +401,29 @@ That inertness result is scoped to the builds it exercised: it did not establish
 
 The secondmate-home scope and manual-repair wake path were measured with Claude Code 2.1.207 on 2026-07-12, when a native background completion re-invoked the idle model with no human input.
 The current Stop-owned main/secondmate inclusion and child-worktree exclusion are covered deterministically by `tests/fm-claude-stop-autoarm.test.sh`.
-Session-lock ownership in `bin/fm-session-lock-lib.sh` is decided against a session's whole contiguous harness ancestry rather than one chosen pid, so the Stop auto-arm reaches its lock owner wherever that owner sits: a pid of Claude Code's multi-level `bg-spare` hook worker chain, or an inner pid when a harness-named daemon parents the session.
-A background Claude session whose transient helper chain is recycled loses that contiguity while its recorded owner stays alive, so the library also accepts a trusted same-session id: `CLAUDE_CODE_SESSION_ID` counts only when `CLAUDE_PID` is a Claude-shaped member of the current run, it must equal the id `bin/fm-lock.sh` recorded in `state/.lock-session`, and the recorded pid must still be a live harness, while every weaker combination (no id, no sidecar, an untrusted id, a different id, a dead recorded pid) leaves the ancestry verdict unchanged.
-For such a session `bin/fm-lock.sh` records `CLAUDE_PID` on lock line 1 instead of the outermost chain pid, so a shared daemon or front-end that outlives the session never keeps a dead session's lock alive, and a same-session confirmation over a live line 1 outside the current ancestry rewrites line 1 to `CLAUDE_PID` and moves task leases and a Claude auto-arm rewake recorded against the old pid with it, so a later `/clear` re-key in the same process is still proven by ancestry, a held lease stays live, and the mid-turn guard still accepts that rewake.
+The session's harness process, resolved in `bin/fm-proc-lib.sh`, is decided against its whole contiguous harness ancestry rather than one chosen pid, so the Stop auto-arm reaches its session wherever that session sits: a pid of Claude Code's multi-level `bg-spare` hook worker chain, or an inner pid when a harness-named daemon parents the session.
+A background Claude session whose transient helper chain is recycled loses that contiguity while its recorded owner stays alive, so a claim also records the identity of the harness process it was taken under and reaches it again by that identity when descent cannot be walked.
+That binding is what keeps a resumed session, which carries the same conversation id in a new process, from reading its own dead predecessor's orphan claim as open.
 Harness identity is read from the executable path and `argv[0]` as well as the command basename, because Claude Code's native installer names the per-session executable by its version (`.../share/claude/versions/2.1.220`): `ps -o comm=` reports that path on macOS and the bare version string on Linux, and neither basename names a harness.
-`tests/fm-session-lock-ancestry.test.sh` pins both platforms' reporting semantics behind a deterministic process table and runs the real Stop auto-arm in version-named, daemon-parented, and combined real process trees.
-The same suite drives the ancestry and session-id signals apart in that table, asserting the divergence itself so no case is vacuous, and runs a real orphaned front-end, daemon, pty-host, and bg-spare tree whose daemon is ended mid-run: before the spare proves anything, a different id, an untrusted id, and no id each keep the live-owner refusal naming the recorded id; the same id then keeps arming through the real `bin/fm-lock.sh`, `bin/fm-claude-stop-autoarm.sh`, and `bin/fm-turnend-guard.sh --claude` with the sidecar untouched and lock line 1 moved off the live front-end onto the spare's pid rather than the outermost pty-host; and a new id from that same spare, with the front-end still alive, stays owned and re-keys the sidecar.
-`tests/fm-turnend-foreign-owner-repro.py` keeps the genuinely foreign live owner as the negative control, and its same-id positive control is a live process outside the owner's ancestry that re-anchors line 1 onto its own `CLAUDE_PID` while a different id stays refused against the re-anchored pid.
-The unit cases ran on 2026-09-18 on macOS with bash 3.2.57 as the fake harness interpreter:
+`tests/fm-proc-lib.test.sh` pins both platforms' reporting semantics behind a deterministic process table: a version-named Claude install, a harness that is pid 1 of its own namespace, a bun-run omp script, ordinary script paths under a harness directory, a non-harness gap above the contiguous run, a competing live session outside it, and Cygwin's ps without `-o`.
+`tests/fm-proc-lib-ps-denied.test.sh` proves the same identity survives a ps binary whose exec is refused, through the OS provider, including a real blocked-ps process tree on this platform.
+`tests/fm-proc-lib-windows-consumers.test.sh` covers the tagged `win:<pid>` form and the auto-arm claim bound to it.
+
+The identity cases ran on 2026-11-18 on Linux with bash 5.3.9 as the fake harness interpreter:
 
 ```sh
-tests/fm-session-lock-ancestry.test.sh
+tests/fm-proc-lib.test.sh
+tests/fm-proc-lib-ps-denied.test.sh
+tests/fm-proc-lib-windows-consumers.test.sh
 ```
 
 Observed output, bounded to the lines that coverage added:
 
 ```text
-ok - session-lock: a trusted same-session id keeps owning a recycled background chain, and nothing weaker does
-ok - session-lock: a trusted id anchors the lock on the model-loop process, anything else on the outermost pid
-```
-
-The re-anchor, same-process re-key, and lease phases ran on 2026-10-15 on Linux with GNU bash 5.3.9 as the fake harness interpreter and Python 3.14.4 for the repro:
-
-```sh
-bin/fm-test-run.sh tests/fm-session-lock-ancestry.test.sh
-bin/fm-test-run.sh tests/fm-turnend-foreign-owner-arm-fix.test.sh
-```
-
-Observed output, bounded to the lines that coverage adds:
-
-```text
-ok - session-lock e2e: a background session keeps its lock and its supervision across a recycled helper chain and a same-process session-id change
-ok - session-lock: a re-anchor keeps both supervision actors' task leases live
-same-session acquisition rc=0 pid=3116951 output='lock acquired: harness pid 3116951\n'
-other-session acquisition rc=0 stdout='lock_rc=1\n' stderr='error: another live firstmate session holds the lock (pid 3116951, session synthetic-same); operate read-only until resolved\n'
-FIXED same-session id re-anchors the lock onto its own process; a different id is still foreign
-COMPLETE
-```
-
-The auto-arm rewake move and the lease claim pinned before a re-anchor ran on 2026-10-16 on Linux with GNU bash 5.3.9 as the fake harness interpreter:
-
-```sh
-bin/fm-test-run.sh tests/fm-session-lock-ancestry.test.sh tests/fm-branch-supervision.test.sh
-```
-
-Observed output, bounded to the lines that coverage adds:
-
-```text
-ok - session-lock: a re-anchor during a rewake turn keeps the mid-turn auto-arm proof healthy
-ok - a claim pinned before a re-anchor records the live lock holder; a dead pin stays stale
-FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=43472
+ok - a version-named Claude Code session is identified from its install path and argv[0]
+ok - ancestry stops at the first non-harness gap above the contiguous run
+ok - denied ps: this ancestry's harness is found and a foreign live harness stays recognized
+ok - auto-arm: a claim binds the session's tagged harness identity and reads open only while it holds
 ```
 
 No live unattended Claude background session ran on the verifying machine: that topology is documented by the real process listings in issues #3902, #2314, #3398, and #4066, and the coverage above is the structural predicate plus those executable fixtures, not a live pass.
@@ -534,6 +508,8 @@ FM_TEST_SUMMARY total=5 failed=0 skipped_gate=0 duration_ms=280160
 The same correction was verified against a live Pi primary's own supervision evidence on 2026-08-13.
 The hand-off was captured live at beacon age 63s, then the home's `state/.lock`, `state/.last-watcher-beat`, both `state/.pi-*-extension-loaded` markers, and both `.pi/extensions/*.ts` builds were copied into an isolated fixture with no watcher lock.
 The fixture's copied beacon was fresh at 0s in the output below; the deterministic stale-beacon case separately verifies the grace boundary.
+
+The commands below were captured on the build exercised before the read-only guard mode and the fleet lock were retired; the banner they exercise survives, and `tests/fm-guard-stale-banner.test.sh` now drives it directly.
 
 ```sh
 FM_SUPERVISION_MODEL=persistent FM_GUARD_READ_ONLY=1 bin/fm-guard.sh

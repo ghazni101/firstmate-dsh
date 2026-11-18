@@ -85,7 +85,7 @@ type ArmResult = {
   message: string;
 };
 
-type LockOwnership = "owned" | "missing" | "other";
+type LockOwnership = "owned" | "other";
 
 type CloseClassification = {
   kind: "actionable" | "failure";
@@ -224,21 +224,27 @@ function pidAlive(pid: string): boolean {
   }
 }
 
+// A home that records no fleet session lock is a native home: the session owns
+// it by identity, these extensions load inside that session's own process, and
+// there is no foreign owner to defer to. The lock read stays so a home that
+// still carries a legacy record keeps its previous verdict; a malformed or
+// provably dead record grants that same native ownership rather than wedging
+// the session out of supervision.
 function lockOwnership(): LockOwnership {
   let lockPid = "";
   try {
     lockPid = readFileSync(`${state}/.lock`, "utf8").trim();
   } catch {
-    return "missing";
+    return "owned";
   }
-  if (!/^[0-9]+$/.test(lockPid) || lockPid === "1") return "other";
+  if (!/^[0-9]+$/.test(lockPid) || lockPid === "1") return "owned";
   let pid = String(process.pid);
   for (let i = 0; i < 8; i += 1) {
     if (pid === lockPid) return "owned";
     pid = parentPid(pid);
     if (!pid || pid === "1") break;
   }
-  return pidAlive(lockPid) ? "other" : "missing";
+  return pidAlive(lockPid) ? "other" : "owned";
 }
 
 function markLoaded(): void {
@@ -937,13 +943,7 @@ export default function (pi: ExtensionAPI) {
   function startArm(owner: SessionGeneration, predecessorArmPid = ""): ArmResult {
     if (!generationIsLive(owner)) return { ok: false, message: shuttingDownMessage };
     const ownership = lockOwnership();
-    if (ownership === "other") return { ok: false, message: "watcher: read-only - session lock is held by another firstmate session" };
-    if (ownership === "missing") {
-      return {
-        ok: false,
-        message: "watcher: not armed - no live session holds the lock; run bin/fm-session-start.sh to reclaim it, then call fm_watch_arm_omp to re-arm",
-      };
-    }
+    if (ownership === "other") return { ok: false, message: "watcher: read-only - a legacy session lock is held by another live firstmate session" };
     markLoaded();
     if (owner.child) {
       return {

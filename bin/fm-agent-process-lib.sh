@@ -15,8 +15,8 @@
 
 _FM_AGENT_PROCESS_LIB_DIR=${BASH_SOURCE[0]%/*}
 [ "$_FM_AGENT_PROCESS_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _FM_AGENT_PROCESS_LIB_DIR=.
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "${_FM_AGENT_PROCESS_LIB_DIR:-/}/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-proc-lib.sh
+. "${_FM_AGENT_PROCESS_LIB_DIR:-/}/fm-proc-lib.sh"
 # shellcheck source=bin/fm-gemini-lib.sh
 . "${_FM_AGENT_PROCESS_LIB_DIR:-/}/fm-gemini-lib.sh"
 # shellcheck source=bin/fm-hermes-process-lib.sh

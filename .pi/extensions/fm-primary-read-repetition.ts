@@ -1,6 +1,5 @@
 // Managed Pi primary read-loop containment. No startup command, fleet mutation,
 // model routing, tool replay or authority over worker/monitor sessions.
-import { spawnSync } from "node:child_process";
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -15,7 +14,6 @@ const physical = (path: string): string => realpathSync(path);
 type PrimaryOptions = {
   root: string; state: string; home: string; agentDir: string; pid: number;
   env: NodeJS.ProcessEnv; read?: (path: string) => string;
-  parentPid?: (pid: number) => number;
   platform?: NodeJS.Platform;
 };
 
@@ -37,23 +35,12 @@ export function primaryOwnsContext(ctx: ExtensionContext, options: PrimaryOption
   if (!primarySessionContext(ctx, options)) return false;
   const read = options.read ?? ((path: string) => readFileSync(path, "utf8"));
   try {
+    // Native session identity: this host is the primary session's own extension
+    // host (the session-dir match above) and it wrote the turn-end marker this
+    // session's startup loaded. There is no fleet-wide owner record to compare
+    // against, so the marker is the whole proof.
     const markerPid = read(join(options.state, ".pi-turnend-extension-loaded")).split(/\r?\n/)[1];
-    if (markerPid !== String(options.pid)) return false;
-    const lockPid = read(join(options.state, ".lock")).trim();
-    if (!/^[0-9]+$/.test(lockPid) || Number(lockPid) <= 1) return false;
-    let pid = options.pid;
-    for (let i = 0; i < 8 && pid > 1; i++) {
-      if (String(pid) === lockPid) return true;
-      // Linux is the currently verified platform, including wrapper ancestry.
-      pid = (options.parentPid ?? ((child) => {
-        if (process.platform === "win32") return 0;
-        const result = spawnSync("ps", ["-o", "ppid=", "-p", String(child)], {
-          encoding: "utf8", timeout: 1000,
-        });
-        return result.status === 0 && /^\d+$/.test(result.stdout.trim()) ? Number(result.stdout.trim()) : 0;
-      }))(pid);
-      if (!Number.isSafeInteger(pid)) return false;
-    }
+    return markerPid === String(options.pid);
   } catch { /* Missing ownership evidence leaves this extension inert. */ }
   return false;
 }

@@ -151,9 +151,9 @@ ENTRIES='if . == "" or endswith("\n") then .[:-1] else error("unterminated mirro
 writer_in_scope() {
   # shellcheck source=bin/fm-primary-scope-lib.sh
   . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-  # shellcheck source=bin/fm-session-lock-lib.sh
-  . "$SCRIPT_DIR/fm-session-lock-lib.sh"
-  fm_primary_scope_matches "$FM_ROOT" "$STATE" && fm_session_lock_owned_by_self "$STATE"
+  # shellcheck source=bin/fm-proc-lib.sh
+  . "$SCRIPT_DIR/fm-proc-lib.sh"
+  fm_primary_scope_matches "$FM_ROOT" "$STATE"
 }
 
 operational() {  # <text>

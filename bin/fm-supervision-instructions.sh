@@ -23,7 +23,6 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 DOC_DIR="$REPO_ROOT/docs/supervision-protocols"
 
 HARNESS=
-READ_ONLY=0
 AFK=0
 AFK_MODE=away
 X_MODE=0
@@ -32,7 +31,7 @@ QUEUE_PENDING=0
 
 usage() {
   cat <<'EOF'
-Usage: fm-supervision-instructions.sh [--harness <name>] [--read-only 0|1] [--afk 0|1] [--afk-mode away|quiet] [--x-mode 0|1] [--repair-line] [--queue-pending 0|1]
+Usage: fm-supervision-instructions.sh [--harness <name>] [--afk 0|1] [--afk-mode away|quiet] [--x-mode 0|1] [--repair-line] [--queue-pending 0|1]
 
 Print the current primary harness's supervision operating instructions.
 With --repair-line, print one concise repair instruction for guard and hook messages.
@@ -53,11 +52,6 @@ while [ "$#" -gt 0 ]; do
     --harness)
       [ "$#" -gt 1 ] || { echo "error: --harness requires a value" >&2; exit 2; }
       HARNESS=$2
-      shift 2
-      ;;
-    --read-only)
-      [ "$#" -gt 1 ] || { echo "error: --read-only requires 0 or 1" >&2; exit 2; }
-      READ_ONLY=$(bool_value "$2")
       shift 2
       ;;
     --afk)
@@ -197,10 +191,6 @@ render_snippet() {  # [snippet]
 }
 
 repair_line() {
-  if [ "$READ_ONLY" -eq 1 ]; then
-    printf '%s\n' 'Watcher repair belongs to the session holding the fleet lock; do not drain, arm, or repair from this read-only session.'
-    return 0
-  fi
   if [ "$AFK" -eq 1 ]; then
     if [ "$AFK_MODE" = quiet ]; then
       printf '%s\n' 'Quiet mode owns watcher supervision; load /quiet and ensure the daemon is running instead of starting normal supervision directly.'
@@ -308,11 +298,7 @@ printf '%s\n' "$RULE"
 printf 'SUPERVISION OPERATING INSTRUCTIONS - primary harness: %s\n' "$HARNESS"
 printf '%s\n' "$RULE"
 printf 'Current state:\n'
-if [ "$READ_ONLY" -eq 1 ]; then
-  printf '%s\n' '- Lock: read-only; do not drain, arm, spawn, steer, merge, or repair fleet state here.'
-else
-  printf '%s\n' '- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.'
-fi
+printf '%s\n' '- Home: this session owns it by identity; normal supervision applies unless away mode says otherwise.'
 if [ "$AFK" -eq 1 ]; then
   if [ "$AFK_MODE" = quiet ]; then
     printf '%s\n' '- Quiet mode: active; load /quiet and keep normal harness supervision paused while the daemon owns the watcher. Ordinary captain chat does NOT exit it - only an explicit /quiet off does.'

@@ -122,7 +122,7 @@ make_lab() {  # <harness> -> echoes lab dir
   ln -sf "$ROOT/bin/fm-startup-network.sh" "$lab/bin/fm-startup-network.sh"
   ln -sf "$ROOT/bin/fm-timeout-lib.sh" "$lab/bin/fm-timeout-lib.sh"
   ln -sf "$ROOT/bin/fm-wake-lib.sh" "$lab/bin/fm-wake-lib.sh"
-  ln -sf "$ROOT/bin/fm-session-lock-lib.sh" "$lab/bin/fm-session-lock-lib.sh"
+  ln -sf "$ROOT/bin/fm-proc-lib.sh" "$lab/bin/fm-proc-lib.sh"
   ln -sf "$ROOT/bin/fm-omp-process-lib.sh" "$lab/bin/fm-omp-process-lib.sh"
   cat > "$lab/bin/fm-bootstrap.sh" <<'SH'
 #!/usr/bin/env bash
@@ -159,9 +159,9 @@ if [ -z "$source" ]; then
 fi
 [ -n "$source" ] || source=none
 printf '%s\n' "$source" >> "$record"
-# Exactly what bin/fm-session-start.sh does after taking the lock.
+# Exactly what bin/fm-session-start.sh does after resolving the session identity.
 if [ -n "${FM_LIVE_DETACH_MARKER:-}" ]; then
-  "$(dirname "$0")/fm-startup-network.sh" start --locked 0 --harvest-pid $$ >/dev/null 2>&1 || true
+  "$(dirname "$0")/fm-startup-network.sh" start --mutating 0 --harvest-pid $$ >/dev/null 2>&1 || true
 fi
 printf 'FMHOOKTOKEN-%s-%s-%s\n' "$source" "$(grep -c . "$record" | tr -d ' ')" "${FM_LIVE_NONCE:?}"
 exit 0

@@ -30,7 +30,7 @@ Fleet supervision on the Pi primary harness runs on a second conversation - the 
 ### What the branch handles while attended
 
 Supervision is default-on.
-Once a Pi primary session owns this home's fleet lock, the branch handles two kinds of work:
+Once a Pi primary session owns this home, the branch handles two kinds of work:
 
 - Eligible task-local rows from ordinary actionable wakes.
   A row is one queued wake entry.
@@ -83,8 +83,8 @@ On a non-Pi home that runs the supervision host, the host runs the branch beside
 | [Branch model and effort selection](#branch-model-and-effort-selection) | `/supervision-model`, registered by the same extension |
 | [Branch system prompt](#branch-system-prompt) | `bin/fm-branch-prompt.sh` |
 | [Outcome store](#outcome-store) | `bin/fm-branch-outcome.sh` |
-| [Consistency](#consistency) | `bin/fm-lease-lib.sh`, with `bin/fm-lease.sh` as the command surface |
-| [Autonomy](#autonomy) | Default-on once a Pi primary session owns the fleet lock |
+| [Consistency](#consistency) | `bin/fm-lease-lib.sh`, the thin seam over the native per-task lease |
+| [Autonomy](#autonomy) | Default-on once a Pi primary session owns the home |
 
 ### Wake dispatch
 
@@ -170,8 +170,8 @@ They re-present on the new main session exactly as they do after a crash.
 
 #### Guarded side effects and delivery ownership
 
-Before each guarded branch side effect, the extension checks the current extension generation and `state/.lock` ownership.
-That way, replacement or lock loss cannot let an old continuation mutate the new session.
+Before each guarded branch side effect, the extension checks the current extension generation and its own session ownership.
+That way, replacement or ownership loss cannot let an old continuation mutate the new session.
 Those checks and the store calls around them are awaited rather than synchronous.
 An explicit queue inside the extension is what keeps them serialized (see "Off-thread delivery" below).
 
@@ -240,21 +240,23 @@ That work is tracked as follow-up `fm-pi-routine-delivery-idempotency-followup-r
 
 ### Consistency
 
-`bin/fm-lease-lib.sh` owns:
+`bin/fm-lease-lib.sh` is the thin seam over the native per-task lease (`bin/fm-native-lib.sh`, with `dsh-plugin/src/lease.js` as its owner).
+It owns:
 
-- The per-task lease contract.
-- The posture-aware main-only role partition.
+- The passive task-lease guard the mutating entrypoints call: inert in a home that has not recorded `config/dsh-native-lease`, and requiring a live `FM_LEASE_TOKEN` with `FM_LEASE_SESSION` when it is on.
+- The surviving branch-actor refusal (`fm_lease_forbid_branch`) for a home that has not opted in, so a process marking itself `FM_SUPERVISION_ACTOR=branch` still cannot mutate it.
 - The deliberate CONFUSED-AGENT-GRADE threat model these guards target.
   That threat model was captain-decided; adversarial-grade separation is out of scope and tracked as follow-up design work.
 
-`bin/fm-lease.sh` is the command surface.
+The retired two-actor `main`/`branch` lease and its `bin/fm-lease.sh` command surface are gone.
+`dsh-plugin/bin/fm-lease.mjs` is the lease CLI.
 
 The guards are wired into these scripts:
 
 | Scripts | Guard behavior |
 | --- | --- |
-| `fm-send.sh`, `fm-control.sh`, and `fm-teardown.sh` | Overlap, lease-checked, with claim serialization retained through the mutation. |
-| `fm-pr-merge.sh`, `fm-merge-local.sh`, `fm-spawn.sh`, `fm-send.sh --resolve-key` for a decision key, and `fm-teardown.sh` for a second mate | Main-owned while attended; branch refused. |
+| `fm-send.sh`, `fm-control.sh`, and `fm-teardown.sh` | Overlap, lease-checked when the home opts into the native lease, with claim serialization retained through the mutation. |
+| `fm-pr-merge.sh`, `fm-merge-local.sh`, `fm-spawn.sh`, `fm-send.sh --resolve-key` for a decision key, and `fm-teardown.sh` for a second mate | Refused for a process that marks itself as the branch actor in a home that has not opted into the native lease. |
 
 A relaunch through `fm-control` stays branch-legal recovery in both postures.
 Under the away-posture record, the PR merge, a fresh spawn, and a decision answer relocate to the branch behind each script's own gate.
@@ -262,7 +264,7 @@ Local-only landing and second-mate retirement never do ("Postures" below).
 
 ### Autonomy
 
-Supervision is default-on for every task once a Pi primary session owns the fleet lock (docs/configuration.md "Pi supervision branch").
+Supervision is default-on for every task once a Pi primary session owns the home (docs/configuration.md "Pi supervision branch").
 No captain grant file is required.
 
 A fleet-wide heartbeat is separately eligible only when every row other than a check or decision-owned signal/stale row is a heartbeat row or a resolvable task-local row (see "Heartbeat routing" below).
@@ -309,7 +311,7 @@ That queue is what preserves these guarantees:
 - The read cursor advances before the next reader sees a row.
 - Each generation gets one ownership activation.
 
-Cancellation is preserved by the generation and lock-ownership rechecks the awaits are placed around.
+Cancellation is preserved by the generation and ownership rechecks the awaits are placed around.
 A session replaced mid-delivery fails the next recheck rather than acting into the session that replaced it.
 
 ### Reads that stay synchronous
@@ -317,10 +319,10 @@ A session replaced mid-delivery fails the next recheck rather than acting into t
 Two reads stay synchronous because Pi's own API is synchronous there, not as an optimization:
 
 - Pi types its bash spawn hook as a plain function, so the guard on the branch's own shell commands cannot await.
-- The watcher reads `offer.accepted` the moment its dispatch event returns, so a session that does not own the fleet lock must still refuse a wake without waiting.
+- The watcher reads `offer.accepted` the moment its dispatch event returns, so a session that no longer owns its generation must still refuse a wake without waiting.
 
 Both read the same uncached ownership authority.
-The lock's process ancestry is walked in full every time it is asked, never cached.
+The owning session's process ancestry is walked in full every time it is asked, never cached.
 Reparenting and pid reuse can invalidate a remembered chain, and this answer decides ownership rather than hinting at it.
 
 ## Lost-wake outcome backstop
@@ -406,10 +408,10 @@ Conflicting content for one sequence fails closed.
 
 Reconciliation runs at two points:
 
-- At session start, when that generation already owns the fleet lock.
-- At the first post-lock `turn_end`.
+- At session start, when that generation already owns the home.
+- At the first `turn_end`.
 
-Together, these let a cold start that acquires the lock through the startup digest still deliver stored captain outcomes without waiting for another wake.
+Together, these let a cold start that establishes its session through the startup digest still deliver stored captain outcomes without waiting for another wake.
 
 ### Processing a captain outcome on main
 
@@ -649,7 +651,7 @@ The generated prompt includes the [scout-completion](../.agents/skills/scout-com
 - Suppression of empty or exact-repeat retry finals with differing replies preserved, preserved tool calls and user responses, the triggered-then-next-turn pacing, and session-start re-presentation.
 - Routine outcomes staying turn-free, task-level no-change notes staying hidden, absent-marker re-presentation, and malformed-age reporting without acknowledgement.
 - Idle and busy main state, and incident-shaped compaction and unrelated-assistant context.
-- Cold-start post-lock recovery, crash-before-cursor reload recovery, and repeated-reload idempotency.
+- Cold-start recovery, crash-before-cursor reload recovery, and repeated-reload idempotency.
 - Mirroring.
 - Post-construction provider-error and no-report fallback, the consecutive-error latch, cooldown probe, exponential backoff, report-plus-settlement recovery, and report-before-error re-latch.
 - Cache key, and model and effort selection.

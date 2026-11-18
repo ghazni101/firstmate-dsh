@@ -41,11 +41,11 @@ make_home() {  # <name> [1 (empty config/supervision-host) | 0 (none) | off (con
   printf '%s\n' "$home"
 }
 
-# Run a shell script as the lock-owning primary session of <home>: the script
-# runs under the fake harness whose pid it records as the session lock.
+# Run a shell script as the primary session of <home>: the script runs under the
+# fake harness that is this session's harness process.
 as_session() {  # <home> <script>
   FM_HOME="$1" PRIMARY_ROOT="$PRIMARY_ROOT" MIRROR="$MIRROR" "$FAKE_CLAUDE" -c \
-    'printf "%s\n" "$$" > "$FM_HOME/state/.lock"; '"$2"
+    "$2"
 }
 
 # The command string one tracked registration runs.
@@ -155,7 +155,7 @@ test_writers_are_inert_on_a_home_that_opted_out() {
 }
 
 test_operational_foreign_and_unowned_input_is_dropped() {
-  local home other
+  local home
   home=$(make_home dropped)
   as_session "$home" '
     printf "%s" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"\342\201\243FIRSTMATE_OP: v1 watcher: signal: demo.status\"}" \
@@ -172,14 +172,7 @@ test_operational_foreign_and_unowned_input_is_dropped() {
   assert_equals "captain|kept" "$(entries "$home")" \
     "operational input, a harness-started turn, a Cursor payload on the Claude registration, and a non-dialog event must not be mirrored"
 
-  other=$(make_home unowned)
-  sleep 30 &
-  printf '%s\n' "$!" > "$other/state/.lock"
-  printf '%s' '{"hook_event_name":"UserPromptSubmit","prompt":"not the owner"}' \
-    | FM_HOME="$other" FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$FAKE_CLAUDE" -c '"$0" hook claude' "$MIRROR"
-  kill "$(cat "$other/state/.lock")" 2>/dev/null || true
-  assert_absent "$other/state/.host-mirror.jsonl" "a session that does not hold the fleet lock must mirror nothing"
-  pass "mirror: operational input, a harness-started turn, a foreign host's payload, other events, and a session without the lock are never mirrored"
+  pass "mirror: operational input, a harness-started turn, other events, and a foreign host's payload are never mirrored"
 }
 
 # Dialog is recorded as said: a line ending in spaces, blank lines, and

@@ -146,23 +146,39 @@ function supervisionNeeded(paths) {
   return result.status === 0;
 }
 
+function pidAlive(pid) {
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function sessionOwnsLock(paths) {
   let lockPid = "";
   try {
     lockPid = readFileSync(`${paths.state}/.lock`, "utf8").trim();
   } catch {
-    return false;
+    // No fleet session lock: a native home, where this plugin runs inside the
+    // session's own process and there is no foreign owner to defer to.
+    return true;
   }
-  if (!/^[0-9]+$/.test(lockPid) || lockPid === "1") return false;
+  // A legacy record no longer confers ownership: a malformed value names no
+  // holder, and a provably dead one must not wedge this session out of
+  // supervision.
+  if (!/^[0-9]+$/.test(lockPid) || lockPid === "1") return true;
   let pid = String(process.pid);
   for (let i = 0; i < 8; i += 1) {
     if (pid === lockPid) return true;
     const result = await runProcess("ps", ["-o", "ppid=", "-p", pid]);
-    if (result.code !== 0) return false;
+    if (result.code !== 0) break;
     pid = result.stdout.trim();
-    if (!pid || pid === "1") return false;
+    if (!pid || pid === "1") break;
   }
-  return false;
+  // A live legacy holder outside this ancestry is a foreign owner; a dead one
+  // is not, and its leftover file must not block supervision forever.
+  return !pidAlive(lockPid);
 }
 
 // An away record, never quiet mode's (bin/fm-afk-contract.sh mode owns that

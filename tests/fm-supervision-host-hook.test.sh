@@ -3,9 +3,9 @@
 # (bin/fm-supervision-host.sh, docs/supervision-host.md). Shared fixtures live
 # in tests/supervision-host-helpers.sh.
 #
-# The loop cases run the real host, arm, watcher, wake grant, drain, outcome
-# store, and lease scripts in a fixture home. The host runs as a child of a fake
-# harness (a bash symlink named "claude") whose pid is the home's session lock,
+# The loop cases run the real host, arm, watcher, wake grant, drain, and outcome
+# store in a fixture home. The host runs as a child of a fake harness (a bash
+# symlink named "claude") whose pid is the home's session harness,
 # and its engine is a stub named by FM_SUPERVISION_ENGINE_CLAUDE_BIN that does
 # what a branch turn does through the same scripts, so the real argument
 # construction, bounding, and reaping are exercised without a model. A real
@@ -92,7 +92,7 @@ SH
 case "$*" in *'%77'*) ;; *) exit 1 ;; esac
 case "$1:$*" in
   display-message:*'#{pane_pid}'*)
-    if [ -f "$FM_HOME/foreign-pane" ]; then printf '999999\n'; else cat "$FM_HOME/state/.lock"; fi ;;
+    if [ -f "$FM_HOME/foreign-pane" ]; then printf '999999\n'; else cat "$FM_HOME/session-pid"; fi ;;
   display-message:*'#{cursor_y}'*) printf '0\n' ;;
   capture-pane:*) cat "$FM_HOME/screen" ;;
   send-keys:*) printf '%s\n' "$*" >> "$FM_HOME/submits" ;;
@@ -152,7 +152,7 @@ test_handoff_retry_reaches_the_receiving_herdr_pane() {
   cat > "$home/fakebin/herdr" <<'SH'
 #!/usr/bin/env bash
 set -u
-lock_pid() { cat "$FM_HOME/state/.lock"; }
+lock_pid() { cat "$FM_HOME/session-pid"; }
 agent_status() { cat "$FM_HOME/herdr-status" 2>/dev/null || printf 'idle\n'; }
 arg_value() { # <flag> <args...>
   local flag=$1

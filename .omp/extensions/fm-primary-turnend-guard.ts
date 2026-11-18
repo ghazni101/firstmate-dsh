@@ -46,7 +46,7 @@ type ExtensionAPI = {
   sendMessage?: (message: unknown) => void;
 };
 
-type LockOwnership = "owned" | "missing" | "other";
+type LockOwnership = "owned" | "other";
 
 const extensionFile = fileURLToPath(import.meta.url);
 const extensionDir = dirname(extensionFile);
@@ -71,21 +71,27 @@ function pidAlive(pid: string): boolean {
   }
 }
 
+// A home that records no fleet session lock is a native home: the session owns
+// it by identity, these extensions load inside that session's own process, and
+// there is no foreign owner to defer to. The lock read stays so a home that
+// still carries a legacy record keeps its previous verdict; a malformed or
+// provably dead record grants that same native ownership rather than wedging
+// the session out of supervision.
 function lockOwnership(): LockOwnership {
   let lockPid = "";
   try {
     lockPid = readFileSync(`${state}/.lock`, "utf8").trim();
   } catch {
-    return "missing";
+    return "owned";
   }
-  if (!/^[0-9]+$/.test(lockPid) || lockPid === "1") return "other";
+  if (!/^[0-9]+$/.test(lockPid) || lockPid === "1") return "owned";
   let pid = String(process.pid);
   for (let i = 0; i < 8; i += 1) {
     if (pid === lockPid) return "owned";
     pid = parentPid(pid);
     if (!pid || pid === "1") break;
   }
-  return pidAlive(lockPid) ? "other" : "missing";
+  return pidAlive(lockPid) ? "other" : "owned";
 }
 
 function markLoaded(): void {

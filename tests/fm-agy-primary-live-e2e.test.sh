@@ -78,15 +78,17 @@ HOME="$AGY_USER_HOME" "$HOME_DIR/bin/fm-agy-trust.sh" "$HOME_DIR" "live-primary"
 
 # --- SessionStart -------------------------------------------------------------
 OUT=$(run_agy "$HOME_DIR" "Reply with the exact live marker token from session start context and nothing else.")
-[ -f "$HOME_DIR/state/.lock" ] || fail "SessionStart hook did not create state/.lock in live agy run"
+completion=$(sed -n '1p' "$HOME_DIR/state/.session-start-complete" 2>/dev/null || true)
+case "$completion" in
+  ''|*[!0-9]*) fail "SessionStart hook did not record the live agy harness pid in state/.session-start-complete" ;;
+esac
 assert_contains "$OUT" "$MARKER" "SessionStart injectSteps systemMessage did not reach live agy context"
-pass "agy primary live: SessionStart hook acquires lock and injects digest into live model context"
+pass "agy primary live: SessionStart hook records the agy harness identity and injects digest into live model context"
 
 # --- PreToolUse deny ----------------------------------------------------------
 # A direct foreground watcher is denied by the shared arm-command policy, so the
 # whole command line never runs and its trailing touch leaves no marker.
 DENY_MARK="$HOME_DIR/state/live-deny-ran"
-rm -f "$HOME_DIR/state/.lock"
 OUT=$(run_agy "$HOME_DIR" "Run exactly this one shell command with your command tool: bin/fm-watch.sh; touch state/live-deny-ran
 If the command is blocked or denied, do not run any other command; reply with the word BLOCKED and the reason you were given.")
 [ ! -e "$DENY_MARK" ] || fail "PreToolUse did not deny a direct bin/fm-watch.sh command in live agy: $OUT"
@@ -99,7 +101,7 @@ pass "agy primary live: PreToolUse --agy deny blocks a direct watcher command"
 # An in-flight task makes supervision needed, so the turn end must park on a
 # real watcher. Once the watcher beats, a task status line wakes it, and the
 # wake must reach a follow-up turn; a short park bound keeps the run bounded.
-rm -f "$HOME_DIR/state/.lock" "$HOME_DIR/state/.agy-park-owner" \
+rm -f "$HOME_DIR/state/.agy-park-owner" \
   "$HOME_DIR/state/.last-watcher-beat" "$HOME_DIR/state/live-watcher-started" \
   "$HOME_DIR/state/live-task.status" "$HOME_DIR/state/.wake-queue"
 : > "$HOME_DIR/state/live-task.meta"
@@ -151,7 +153,10 @@ jq -e --arg p "$SM_HOME" '.trustedWorkspaces | index($p) != null' \
   || fail "secondmate home was not recorded in agy trustedWorkspaces"
 
 OUT=$(run_agy "$SM_HOME" "Reply with the exact live marker token from session start context and nothing else.")
-[ -f "$SM_HOME/state/.lock" ] || fail "SessionStart hook did not create state/.lock in the live secondmate home"
+completion=$(sed -n '1p' "$SM_HOME/state/.session-start-complete" 2>/dev/null || true)
+case "$completion" in
+  ''|*[!0-9]*) fail "SessionStart hook did not record the live agy harness pid in the secondmate home" ;;
+esac
 assert_contains "$OUT" "$SM_MARKER" "a pre-trusted secondmate home did not reach its own SessionStart digest in live agy"
 pass "agy secondmate live: pre-seeded workspace trust launches straight into the secondmate home's digest"
 

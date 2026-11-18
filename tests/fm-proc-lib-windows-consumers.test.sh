@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Readers of a Windows session lock: the supervision host's main-session key and
-# the Claude auto-arm (claim pin, claim read-back, mid-turn health) must accept
-# the tagged win:<pid> holder bin/fm-session-lock-lib.sh writes on Git Bash, and
+# Readers of a legacy Windows session lock: the supervision host's main-session
+# key and the Claude auto-arm (claim pin, claim read-back, mid-turn health) must
+# accept the tagged win:<pid> holder an older build wrote on Git Bash, and
 # must still fail closed when that Windows process is gone, is a different
 # executable, or the tag appears off Windows. Every untagged value must reach
 # the generic numeric helpers unchanged, so POSIX behaviour stays identical.
@@ -11,7 +11,7 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-TMP_ROOT=$(fm_test_tmproot fm-session-lock-windows-consumers)
+TMP_ROOT=$(fm_test_tmproot fm-proc-lib-windows-consumers)
 
 # A Git Bash host as firstmate sees it: uname reports MINGW, Cygwin's ps has no
 # -o option and reports every shell's parent as 1, and `ps -W` lists Windows
@@ -70,12 +70,11 @@ REUSED_TABLE='  4201508       0       0       7204  ?              0 23:01:10 C:
 # The session has exited.
 GONE_TABLE='  4198625       0       0       4321  ?              0 22:24:48 C:\Windows\explorer.exe'
 
-# A home whose session lock is held by <lock-value> under session id S1.
+# A home whose legacy session record names <lock-value> as its holder.
 make_home() {  # <name> <lock-value>
   local home="$TMP_ROOT/$1"
   mkdir -p "$home/state" "$home/proc"
   printf '%s\n' "$2" > "$home/state/.lock"
-  printf 'S1\n' > "$home/state/.lock-session"
   printf '%s\n' "$home"
 }
 
@@ -102,55 +101,50 @@ lib_eval() {  # <windows|posix> <home> <expression> [$0 [args...]]
         printf "bash\0-c\0" > "$FM_PROC_ROOT_OVERRIDE/$BASHPID/cmdline"
       }
       . "$FM_ROOT_OVERRIDE/bin/fm-wake-lib.sh" || exit 97
+      . "$FM_ROOT_OVERRIDE/bin/fm-proc-lib.sh" || exit 96
       . "$FM_ROOT_OVERRIDE/bin/fm-supervision-engine-lib.sh" || exit 98
       '"$expr" "$@"
 }
 
-test_supervision_main_key_reads_a_windows_session_lock() {
-  local home key
-  home=$(make_home main-key win:7204)
-  key=$(lib_eval windows "$home" 'fm_supervision_host_main_key "$FM_STATE_OVERRIDE"') \
-    || fail "the supervision host found no main-session key for a live win:7204 holder"
-  case "$key" in
-    win:7204:[0-9]*:[0-9]*) ;;
-    *) fail "the main-session key did not name the win:7204 holder: '$key'" ;;
-  esac
-  if FM_TEST_WIN_TABLE="$GONE_TABLE" lib_eval windows "$home" 'fm_supervision_host_main_key "$FM_STATE_OVERRIDE"' >/dev/null; then
-    fail "a win:7204 holder that has exited still produced a main-session key"
+test_tagged_values_are_read_on_windows_only() {
+  local home out
+  home=$(make_home tagged win:7204)
+  out=$(lib_eval windows "$home" '
+    fm_session_pid_alive win:7204 || echo alive-missing
+    fm_session_pid_identity win:7204 || echo identity-missing
+    if FM_TEST_WIN_TABLE=$1 fm_session_pid_identity win:7204 >/dev/null; then echo reused-identity; fi
+    if FM_TEST_WIN_TABLE=$2 fm_session_pid_alive win:7204; then echo gone-alive; fi
+  ' _ "$REUSED_TABLE" "$GONE_TABLE")
+  case "$out" in *alive-missing*|*identity-missing*) fail "a live tagged holder was not read: $out" ;; esac
+  printf '%s\n' "$out" | grep -q '^win-pid=7204 command=C:/Users/u/.local/bin/claude$' \
+    || fail "the tagged holder's identity was not its executable path: $out"
+  printf '%s\n' "$out" | grep -q '^reused-identity$' \
+    || fail "a reissued Windows pid kept the live holder's identity: $out"
+  ! printf '%s\n' "$out" | grep -q '^gone-alive$' \
+    || fail "an exited Windows holder still read as alive: $out"
+  if lib_eval posix "$home" 'fm_session_pid_alive win:7204'; then
+    fail "a tagged value read as a live local pid off Windows, where the tag must stay inert"
   fi
-  # A pid reissued to another executable is a different holder, so it must not
-  # reuse the live session's key.
-  reused=$(FM_TEST_WIN_TABLE="$REUSED_TABLE" lib_eval windows "$home" 'fm_supervision_host_main_key "$FM_STATE_OVERRIDE"') || reused=
-  [ "$reused" != "$key" ] || fail "a reissued Windows pid kept the live session's main-session key"
-  if lib_eval posix "$home" 'fm_supervision_host_main_key "$FM_STATE_OVERRIDE"' >/dev/null; then
-    fail "a win: lock was keyed off Windows, where the tag must stay inert"
-  fi
-  pass "supervision host: a win:<pid> session lock yields the main-session key only while that Windows process lives"
+  pass "tagged values: a win:<pid> holder is read only where the Windows boundary applies"
 }
 
-test_autoarm_claim_pins_a_windows_lock_holder_and_reads_it_back() {
+test_autoarm_claim_binds_the_sessions_tagged_identity() {
   local home out
   home=$(make_home claim win:7204)
   out=$(lib_eval windows "$home" '
     self_proc
     fm_autoarm_claim_next "$FM_STATE_OVERRIDE" || { echo claim-failed; exit 0; }
-    sed -n "1p;3p" "$FM_STATE_OVERRIDE/.claude-autoarm-epoch"
-    if fm_autoarm_claim_open "$FM_STATE_OVERRIDE"; then echo open; else echo closed; fi
-    if FM_TEST_WIN_TABLE=$1 fm_autoarm_claim_open "$FM_STATE_OVERRIDE"; then echo reused-open; else echo reused-closed; fi
-    if FM_TEST_WIN_TABLE=$2 fm_autoarm_claim_open "$FM_STATE_OVERRIDE"; then echo gone-open; else echo gone-closed; fi
+    if fm_autoarm_claim_open "$FM_STATE_OVERRIDE"; then echo claim=open; else echo claim=closed; fi
+    if FM_TEST_WIN_TABLE=$1 fm_autoarm_claim_open "$FM_STATE_OVERRIDE"; then echo reused=open; else echo reused=closed; fi
+    if FM_TEST_WIN_TABLE=$2 fm_autoarm_claim_open "$FM_STATE_OVERRIDE"; then echo gone=open; else echo gone=closed; fi
   ' _ "$REUSED_TABLE" "$GONE_TABLE")
-  [ "$out" != claim-failed ] || fail "the auto-arm claim failed under a win:7204 lock"
-  printf '%s\n' "$out" | sed -n 1p | grep -q 'owner_session_id=S1' \
-    || fail "the claim did not record the trusted session id S1: $out"
-  [ "$(printf '%s\n' "$out" | sed -n 2p)" = 'win-pid=7204 command=C:/Users/u/.local/bin/claude' ] \
-    || fail "the claim did not pin the win:7204 holder's identity: $out"
-  [ "$(printf '%s\n' "$out" | sed -n 3p)" = open ] \
-    || fail "a claim pinned to the live win:7204 holder did not read back as open: $out"
-  [ "$(printf '%s\n' "$out" | sed -n 4p)" = reused-closed ] \
-    || fail "a claim stayed open after win:7204 was reissued to another executable: $out"
-  [ "$(printf '%s\n' "$out" | sed -n 5p)" = gone-closed ] \
-    || fail "a claim stayed open after the win:7204 holder exited: $out"
-  pass "auto-arm: a claim pins a win:<pid> lock holder and reads open only while that holder lives"
+  printf '%s\n' "$out" | grep -q '^claim=open$' \
+    || fail "a claim taken under the session's own tagged harness did not read back open: $out"
+  printf '%s\n' "$out" | grep -q '^reused=closed$' \
+    || fail "a claim stayed open after its Windows pid was reissued to another executable: $out"
+  printf '%s\n' "$out" | grep -q '^gone=closed$' \
+    || fail "a claim stayed open after its Windows holder exited: $out"
+  pass "auto-arm: a claim binds the session's tagged harness identity and reads open only while it holds"
 }
 
 test_autoarm_midturn_health_follows_a_windows_lock_holder() {
@@ -185,7 +179,7 @@ test_untagged_values_reach_the_numeric_helpers_unchanged() {
   dead=$!
   wait "$dead" 2>/dev/null || true
   out=$(lib_eval posix "$home" '
-    _fm_wake_require_session_lock
+    _fm_wake_require_proc_lib
     for v in "$1" "$2" "" abc 12x win:7204; do
       a=$(fm_session_pid_identity "$v" 2>&1); ra=$?
       b=$(fm_pid_identity "$v" 2>&1); rb=$?
@@ -204,6 +198,6 @@ test_untagged_values_reach_the_numeric_helpers_unchanged() {
 }
 
 test_untagged_values_reach_the_numeric_helpers_unchanged
-test_supervision_main_key_reads_a_windows_session_lock
-test_autoarm_claim_pins_a_windows_lock_holder_and_reads_it_back
+test_tagged_values_are_read_on_windows_only
+test_autoarm_claim_binds_the_sessions_tagged_identity
 test_autoarm_midturn_health_follows_a_windows_lock_holder

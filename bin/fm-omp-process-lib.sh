@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # omp (Oh My Pi) process identity, shared by harness detection and the
-# session-lock ancestry walk. This file has no side effects on source.
+# harness-ancestry walk. This file has no side effects on source.
 #
 # omp ships two ways, and the live process looks different for each:
 #   - the Bun-compiled single binary, whose process name is exactly `omp`

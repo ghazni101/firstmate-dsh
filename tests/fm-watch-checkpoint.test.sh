@@ -397,7 +397,7 @@ test_host_checkpoint_needs_the_file_and_honors_off() {
   pass "checkpoint: a Codex home without config/supervision-host, or with an off file, never runs the host"
 }
 
-# The real host under a fake Codex harness that holds the home's session lock.
+# The real host under a fake Codex harness that is the home's session.
 # shellcheck disable=SC2016 # the fake harness's script expands in its own shell
 test_real_host_checkpoint_ends_quietly_at_its_bound() {
   local home fakebin status
@@ -408,7 +408,6 @@ test_real_host_checkpoint_ends_quietly_at_its_bound() {
   ln -s /bin/bash "$fakebin/codex"
   status=0
   FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$fakebin/codex" -c '
-    printf "%s\n" "$$" > "$FM_HOME/state/.lock"
     "$0" --seconds 4
   ' "$CHECKPOINT" >"$home/out.txt" 2>"$home/err.txt" || status=$?
   expect_code 124 "$status" "a quiet host checkpoint: $(cat "$home/out.txt" "$home/err.txt")"

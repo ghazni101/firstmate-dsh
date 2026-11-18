@@ -168,7 +168,6 @@ def run(lab):
         api(f"/api/session/{sid}/prompt", {"text": "CASE_GUARD"})
         until(lambda: any("TURN WOULD END BLIND" in m.get("text", "") for m in context()), "native turn-end guard follow-up")
         print("ok - native terminal event admits a turn-end guard follow-up")
-        (fmhome / "state/.lock").write_text(str(process.pid) + "\n")
         api(f"/api/session/{sid}/prompt", {"text": "CASE_WATCH_ARM"})
         lock = fmhome / "state/.watch.lock/pid"
         until(lock.exists, "watcher arming")

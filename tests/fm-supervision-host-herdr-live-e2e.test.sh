@@ -173,7 +173,7 @@ ENV
 #!/usr/bin/env bash
 set -u
 . '$lab/env'
-printf '%s\n' "\$\$" > "\$FM_HOME/state/.lock"
+printf '%s\n' "\$\$" > "\$FM_HOME/state/harness-pid"
 exec claude --model $MODEL --effort low --dangerously-skip-permissions
 ENV
   chmod +x "$lab/launch.sh"
@@ -339,7 +339,7 @@ start_primary() {  # <lab>
   jq -e '[.hooks.Stop[]?.hooks[]? | select(.type == "command" and .asyncRewake == true and (.command | endswith("/bin/fm-claude-stop-autoarm.sh") or endswith("/bin/fm-claude-stop-autoarm.sh\"")))] | length == 1' \
     "$lab/fm/.claude/settings.json" >/dev/null \
     || fail "$(basename "$lab"): the lab lacks the tracked Stop hook registration"
-  evidence "$(basename "$lab") step 1: primary idle (claude pid $(cat "$lab/fm/state/.lock" 2>/dev/null), $CLAUDE_VERSION, model $MODEL) in pane $HERDR_LAB_SESSION:$pane; tracked Stop hook registered; config/supervision-host and config/supervision-handoff-ack present; host pid $(awk -F '\t' '$1 == "host" { print $2; exit }' "$lab/fm/state/.supervision-host") parked on watcher $(watcher_pid "$lab")"
+  evidence "$(basename "$lab") step 1: primary idle (claude pid $(cat "$lab/fm/state/harness-pid" 2>/dev/null), $CLAUDE_VERSION, model $MODEL) in pane $HERDR_LAB_SESSION:$pane; tracked Stop hook registered; config/supervision-host and config/supervision-handoff-ack present; host pid $(awk -F '\t' '$1 == "host" { print $2; exit }' "$lab/fm/state/.supervision-host") parked on watcher $(watcher_pid "$lab")"
   evidence "$(basename "$lab") transcript: $(transcript "$lab")"
 }
 

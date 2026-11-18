@@ -54,20 +54,15 @@ for harness in codex claude; do
   mkdir -p "$home/state" "$home/config"
   if [ "$harness" = codex ]; then setting=codex-approval-mode; fallback=approve-for-me; else setting=claude-permission-mode; fallback=auto; fi
   printf 'harness=%s\napproval_mode=bypass\n' "$harness" > "$home/state/task.meta"
-  printf 'branch\t0\t1\n' > "$home/state/.lease-task"
   printf 'blocked: existing task event\n' > "$home/state/task.status"
-  cp "$home/state/.lease-task" "$home/lease.before"
   cp "$home/state/task.status" "$home/status.before"
   rc=0
   run_apply FM_GATE_REFUSE_BYPASS=0 NO_MISTAKES_GATE=1 FM_SUPERVISION_ACTOR=branch > "$home/gate.out" 2>&1 || rc=$?
   [ "$rc" -eq 3 ] || fail "$harness gate caller did not receive the gate refusal"
   [ -z "$(find "$home/config" -mindepth 1 -print)" ] || fail 'gate refusal changed configuration'
-  cmp "$home/lease.before" "$home/state/.lease-task" || fail 'gate refusal reached stale-lease cleanup'
   cmp "$home/status.before" "$home/state/task.status" || fail 'gate refusal changed task status'
-  [ ! -e "$home/state/.fm-lease-command.lock" ] || fail 'gate refusal left a lease lock'
   [ ! -e "$home/control.log" ] || fail 'gate refusal reached lifecycle control'
-  rm "$home/state/.lease-task"
-  pass "$harness refuses gate callers before configuration, lease or lifecycle mutation"
+  pass "$harness refuses gate callers before configuration or lifecycle mutation"
 
   lab=$("$ROOT/bin/fm-lab-home.sh" create "$TMP_ROOT/$harness-lab") || fail 'could not create disposable lab home'
   printf 'harness=%s\napproval_mode=bypass\n' "$harness" > "$lab/state/task.meta"
@@ -135,19 +130,14 @@ for harness in codex claude; do
   [ "$(wc -l < "$home/control.log")" = "$before" ] || fail 'publication failure touched the worker'
   pass "$harness atomically preserves concurrent explicit destinations"
 
-  printf '%s\n' "$$" > "$home/state/.lock"
-  printf 'branch\t%s\t%s\n' "$$" "$(date +%s)" > "$home/state/.lease-task"
-  for actor in '' main; do
-    rc=0
-    run_apply FM_SUPERVISION_ACTOR="$actor" > "$home/lease.out" 2>&1 || rc=$?
-    [ "$rc" -eq 6 ] || fail 'other-actor lease did not refuse failover'
-    [ ! -e "$home/config/$setting" ] || fail 'lease refusal saved fallback'
-    [ "$(wc -l < "$home/control.log")" = "$before" ] || fail 'lease refusal reached lifecycle control'
-  done
-  run_apply FM_SUPERVISION_ACTOR=branch >/dev/null || fail 'same-actor lifecycle call deadlocked or failed'
-  [ "$(cat "$home/config/$setting")" = "$fallback" ] || fail 'authorized actor lost fallback'
-  rm "$home/config/$setting" "$home/state/.lease-task" "$home/state/.lock"
-  pass "$harness honors live leases before saving and releases its guard before child control"
+  # The two-actor main/branch lease is retired: this home has not opted into
+  # the native task lease, so the guard is inert and the call is the calling
+  # session's own. What survives is that saving the fallback reaches no
+  # lifecycle control before the child call.
+  run_apply >/dev/null || fail 'lifecycle call deadlocked or failed'
+  [ "$(cat "$home/config/$setting")" = "$fallback" ] || fail 'operator lost fallback'
+  rm "$home/config/$setting"
+  pass "$harness saves the fallback and releases its guard before child control"
 
   # No timestamp or detector state is needed: firstmate supplies the observed
   # failure, including for an existing worker predating launch-mode metadata.

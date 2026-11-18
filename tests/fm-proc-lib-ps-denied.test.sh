@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# tests/fm-session-lock-ps-denied.test.sh - the ps-free identity route.
+# tests/fm-proc-lib-ps-denied.test.sh - the ps-free identity route.
 #
 # An EDR-style policy can deny the ps BINARY's exec (verified on a hardened
 # macOS host: /bin/ps refused even `ps -V`, while kill/head/sysctl/pgrep/lsof
-# ran), and before bin/fm-session-lock-lib.sh could fall back to an OS
-# provider, that turned every session into a permanent lock-refused
-# read-only one, because identity proof walked ancestry through ps.
+# ran), and before bin/fm-proc-lib.sh could fall back to an OS provider, that
+# turned every session into an unidentifiable one, because the harness-ancestry
+# walk went through ps.
 #
 # The unit cases drive the library behind a deterministic fake ps that
 # refuses to run (exit 126, bash's refused-exec status) plus a fake OS
@@ -19,9 +19,9 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-TMP_ROOT=$(fm_test_tmproot fm-session-lock-ps-denied)
+TMP_ROOT=$(fm_test_tmproot fm-proc-lib-ps-denied)
 
-LIB="$ROOT/bin/fm-session-lock-lib.sh"
+LIB="$ROOT/bin/fm-proc-lib.sh"
 
 # A denied ps: refuses to run at all, exactly like the blocked binary.
 make_denied_ps() {  # <fakebin>
@@ -267,7 +267,7 @@ test_fallback_diagnostic_is_emitted_once() {
     fm_proc_info 701 || true
     fm_proc_info 702 || true
   ' "$LIB" >/dev/null 2>"$err" || fail "the failing-reads fixture shell itself failed"
-  lines=$(grep -c '^fm-session-lock:' "$err" || true)
+  lines=$(grep -c '^fm-session-identity:' "$err" || true)
   [ "$lines" = 1 ] \
     || fail "three failing reads printed $lines diagnostics, expected 1: $(cat "$err")"
   err="$dir/readable-then-failing"
@@ -285,7 +285,7 @@ test_fallback_diagnostic_is_emitted_once() {
     fm_proc_info 701 || true
     fm_proc_info 702 || true
   ' "$LIB" >/dev/null 2>"$err" || fail "a readable first pid stopped the fixture walk"
-  lines=$(grep -c '^fm-session-lock:' "$err" || true)
+  lines=$(grep -c '^fm-session-identity:' "$err" || true)
   [ "$lines" = 1 ] \
     || fail "a readable read spent the diagnostic budget: $lines lines, expected 1"
   pass "the denied-ps diagnostic prints once per shell, whatever reads follow"
@@ -295,12 +295,9 @@ test_ps_success_with_empty_comm_stays_present() {
   # ps exit 0 with no name is a REAL answer about a REAL process: a
   # live process whose comm was emptied is still a live process.
   #
-  # It must not read as "the pid is gone". fm_session_lock_inspect
-  # separates "gone" (stale, reclaimable) from "present but not
-  # classifiable" (unknown), and collapsing the two here would report a
-  # live owner as reclaimable - the take-over direction this whole
-  # change exists to close. The unchanged base reports "unknown" for
-  # this case, so the ps route has to agree with it.
+  # It must not read as "the pid is gone", so the base read reports the
+  # fields ps actually gave, including an empty comm, rather than
+  # inventing one or failing the read.
   local dir fakebin rc
   dir="$TMP_ROOT/empty-comm"
   fakebin=$(fm_fakebin "$dir")
@@ -330,35 +327,16 @@ SH
     [ "$FM_PROC_PPID" = "1" ] || exit 6
   ' "$LIB" >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || fail "ps rc0-with-empty-comm was not reported as a present pid (rc $rc)"
-
-  # The lock-level consequence: a live pid ps cannot name is NOT stale.
-  # "stale" means reclaimable, and a reclaimable live owner is the
-  # take-over this change exists to prevent.
-  local state
-  state=$(mktemp -d "$TMP_ROOT/empty-comm-state.XXXXXX")
-  echo 700 > "$state/.lock"
-  rc=0
-  PATH="$fakebin:$PATH" bash -c '
-    . "$0"
-    kill() { return 0; }
-    fm_session_lock_inspect "$1" >/dev/null 2>&1
-    printf "%s" "$FM_LOCK_INSPECT_STATE"
-  ' "$LIB" "$state" > "$state/out" 2>/dev/null || rc=$?
-  [ "$rc" -eq 0 ] || fail "the lock inspection failed on a present unnamed pid (rc $rc)"
-  [ "$(cat "$state/out")" != "stale" ] \
-    || fail "a live pid ps could not name was reported stale (reclaimable)"
-  pass "ps returning no name stays a present pid, never a reclaimable stale one"
+  pass "ps returning no name stays a present pid, never a dead one"
 }
 
-test_denied_ps_lock_decision_chain() {
-  # The lock-level promise at lib level with a fake provider: a
-  # provider-readable harness in THIS ancestry reads as our own lock,
-  # and a provider-readable live harness OUTSIDE it reads as a
-  # foreign live owner that must be refused, named, and never
-  # reclaimed. The ps-working suites cover the same decisions against
-  # real ps; this one proves the denied-ps route reaches them at all.
-  local dir fakebin table state rc out
-  dir="$TMP_ROOT/lock-chain"
+test_denied_ps_identity_decision_chain() {
+  # The identity promise at lib level with a fake provider: the denied-ps
+  # route still finds the harness in THIS ancestry, and still recognizes a
+  # readable live harness OUTSIDE it, which is what every consumer's own
+  # decision is built on.
+  local dir fakebin table got
+  dir="$TMP_ROOT/identity-chain"
   fakebin=$(fm_fakebin "$dir"); make_denied_ps "$fakebin"
   table="$dir/t"
   cat > "$table" <<'ROWS'
@@ -367,23 +345,12 @@ test_denied_ps_lock_decision_chain() {
 1|0|launchd|/sbin/launchd
 default|700|bash|bash run.sh
 ROWS
-  state="$dir/state"; mkdir -p "$state"
-  # Ours: recorded pid 700 is a harness ancestor of this walk.
-  printf '700\n' > "$state/.lock"
-  FM_TEST_STATE="$state" lib_eval_denied "$fakebin" "$table" \
-    'fm_session_lock_owned_by_self "$FM_TEST_STATE"' >/dev/null 2>&1 \
-    || fail "denied ps: the walk did not recognize its own harness lock"
-  # Foreign: 701 is a live readable harness, but not in this ancestry.
-  printf '701\n' > "$state/.lock"
-  rc=0
-  out=$(FM_TEST_STATE="$state" lib_eval_denied "$fakebin" "$table" '
-    fm_session_lock_foreign_owner_live "$FM_TEST_STATE" || exit 7
-    [ "$FM_SESSION_LOCK_FOREIGN_OWNER_PID" = 701 ] || exit 6
-    if fm_session_lock_owned_by_self "$FM_TEST_STATE"; then exit 5; fi
-    exit 0
-  ' 2>&1) || rc=$?
-  [ "$rc" -eq 0 ] || fail "denied ps: a foreign live harness was not reported as foreign (rc $rc): $out"
-  pass "denied ps: own lock is owned, foreign live harness is refused and named"
+  got=$(lib_eval_denied "$fakebin" "$table" 'fm_harness_ancestry_pid') \
+    || fail "denied ps: the walk did not find the harness in this ancestry"
+  [ "$got" = 700 ] || fail "denied ps: ancestry resolved '$got', expected 700"
+  lib_eval_denied "$fakebin" "$table" 'fm_harness_pid_alive 701' \
+    || fail "denied ps: a live readable harness outside this ancestry was not recognized"
+  pass "denied ps: this ancestry's harness is found and a foreign live harness stays recognized"
 }
 
 test_linux_provider_fixture_tree() {
@@ -449,10 +416,9 @@ SH
   PATH="$fakebin:$PATH" FM_PROC_ROOT_OVERRIDE="$dir/proc" bash -c '
     . "$1"
     kill() { return 0; }
-    fm_harness_pid_alive 700 || exit 1
-    fm_session_lock_pid_blocks_reclaim 700
-  ' _ "$LIB" || fail "live Unicode Cursor alias allowed reclaim"
-  pass "Unicode identity survives denied ps; controls flatten and live Cursor blocks reclaim"
+    fm_harness_pid_alive 700
+  ' _ "$LIB" || fail "live Unicode Cursor alias was not recognized as a harness"
+  pass "Unicode identity survives denied ps; controls flatten and the live Cursor alias still resolves"
 }
 
 test_denied_ps_still_finds_the_harness() {
@@ -593,7 +559,7 @@ test_e2e_real_tree_with_blocked_ps() {
 #!/usr/bin/env bash
 set -u
 . "\$1"
-anchor=\$(fm_session_lock_anchor_pid) || { echo anchor-failed; exit 1; }
+anchor=\$(fm_harness_ancestry_pid) || { echo anchor-failed; exit 1; }
 fm_proc_info "\$anchor" || { echo identity-read-failed; exit 1; }
 printf '%s|%s\n' "\$anchor" "\$FM_PROC_COMM"
 CHILD
@@ -833,37 +799,7 @@ os.execv(sys.executable, [sys.executable, "-c", "import sys,time; open(sys.argv[
   pass "trailing empty argv elements are dropped; interior empties and argument spaces survive"
 }
 
-test_unreadable_owner_refuses_acquisition() {
-  [ "$(uname -s)" = Linux ] || { pass "unreadable owner acquisition: Linux fixture only, skipped"; return; }
-  local dir fakebin real_ps owner rc
-  dir="$TMP_ROOT/unreadable-acquisition"
-  fakebin=$(fm_fakebin "$dir")
-  real_ps=$(command -v ps)
-  owner=$$
-  mkdir -p "$dir/state" "$dir/proc" "$dir/named"
-  printf '%s\n' "$owner" > "$dir/state/.lock"
-  cat > "$fakebin/ps" <<'SH'
-#!/usr/bin/env bash
-case " $* " in
-  *" -V "*|*" -p $FM_TEST_OWNER "*) exit 126 ;;
-esac
-exec "$FM_TEST_REAL_PS" "$@"
-SH
-  chmod +x "$fakebin/ps"
-  ln -s "$(command -v bash)" "$dir/named/claude"
-  rc=0
-  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
-    FM_TEST_OWNER="$owner" FM_TEST_REAL_PS="$real_ps" \
-    FM_PROC_ROOT_OVERRIDE="$dir/proc" FM_STATE_OVERRIDE="$dir/state" \
-    PATH="$fakebin:$PATH" "$dir/named/claude" -c 'bash "$1/bin/fm-lock.sh"; rc=$?; exit "$rc"' _ "$ROOT" \
-    > "$dir/out" 2>&1 || rc=$?
-  [ "$rc" -ne 0 ] || fail "acquisition took over an unreadable live owner"
-  [ "$(cat "$dir/state/.lock")" = "$owner" ] || fail "acquisition replaced the unreadable owner"
-  grep -q 'another live firstmate session' "$dir/out" || fail "acquisition did not refuse the owner"
-  pass "acquisition refuses a live owner with unreadable identity"
-}
-
-test_partial_identity_reads_refuse() {
+test_partial_identity_reads_are_unreadable() {
   local dir fakebin got
   dir="$TMP_ROOT/partial-identity"
   fakebin=$(fm_fakebin "$dir")
@@ -878,14 +814,16 @@ SH
   chmod +x "$fakebin/ps"
   # The identity the matcher reads is comm and args. A failed args read is
   # a partial identity: a live harness whose arguments could not be read
-  # must not be reduced to a bare interpreter name, so the read is
-  # unreadable and the lock is not reclaimable.
+  # must not be reduced to a bare interpreter name, so the verdict is
+  # unreadable rather than a harness.
   PATH="$fakebin:$PATH" FM_TEST_FAILED_FIELD=args bash -c '
     . "$1"
     kill() { return 0; }
-    fm_session_lock_pid_blocks_reclaim 700 || exit 1
-    [ "$FM_SESSION_LOCK_PID_VERDICT" = unreadable ]
-  ' _ "$LIB" || fail "failed ps args read permitted reclaim"
+    fm_proc_pid_verdict 700
+    [ "$FM_PROC_PID_VERDICT" = unreadable ] || exit 1
+    fm_harness_pid_alive 700 && exit 2
+    exit 0
+  ' _ "$LIB" || fail "failed ps args read was treated as a readable harness"
   # The ppid is a walk input, not an identity field: a ppid that cannot be
   # read only ends the ancestry walk one hop early, which is the
   # conservative direction. The base read it the same tolerant way, and
@@ -894,8 +832,8 @@ SH
   PATH="$fakebin:$PATH" FM_TEST_FAILED_FIELD=ppid bash -c '
     . "$1"
     kill() { return 0; }
-    fm_session_lock_pid_blocks_reclaim 700 && exit 1
-    [ "$FM_SESSION_LOCK_PID_VERDICT" = readable ]
+    fm_proc_pid_verdict 700
+    [ "$FM_PROC_PID_VERDICT" = readable ] || exit 1
     [ -z "$FM_PROC_PPID" ]
   ' _ "$LIB" || fail "a failed ps ppid read was treated as an identity failure"
   PATH="$fakebin:$PATH" FM_TEST_FAILED_FIELD=none bash -c '
@@ -909,30 +847,15 @@ SH
     PATH="$fakebin:$PATH" FM_PROC_ROOT_OVERRIDE="$dir/proc" bash -c '
       . "$1"
       kill() { return 0; }
-      fm_session_lock_pid_blocks_reclaim 700 || exit 1
-      [ "$FM_SESSION_LOCK_PID_VERDICT" = unreadable ]
-    ' _ "$LIB" || fail "missing cmdline permitted reclaim"
+      fm_proc_pid_verdict 700
+      [ "$FM_PROC_PID_VERDICT" = unreadable ]
+    ' _ "$LIB" || fail "missing cmdline was treated as a readable identity"
     : > "$dir/proc/700/cmdline"
     got=$(FM_PROC_ROOT_OVERRIDE="$dir/proc" bash -c '. "$1"; fm_os_proc_triple 700' _ "$LIB") \
       || fail "successfully empty cmdline was refused"
     [ "$got" = "$(printf '1\tnode\t')" ] || fail "empty cmdline changed identity fields"
   fi
-  pass "partial identity reads block reclaim; successfully empty args remain readable"
-}
-
-test_nonpid_records_allow_acquisition() {
-  local dir record
-  dir="$TMP_ROOT/nonpid-acquisition"
-  mkdir -p "$dir/named" "$dir/state"
-  ln -s "$(command -v bash)" "$dir/named/claude"
-  for record in '' '   ' 'not-a-pid'; do
-    printf '%s\n' "$record" > "$dir/state/.lock"
-    env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID FM_STATE_OVERRIDE="$dir/state" \
-      "$dir/named/claude" -c 'bash "$1/bin/fm-lock.sh"; rc=$?; exit "$rc"' _ "$ROOT" \
-      > "$dir/out" 2>&1 || fail "non-pid record refused acquisition: $record"
-    [ "$(cat "$dir/state/.lock")" != "$record" ] || fail "non-pid record was not replaced"
-  done
-  pass "empty, whitespace and non-numeric lock records allow acquisition"
+  pass "partial identity reads stay unreadable; successfully empty args remain readable"
 }
 
 test_unreadable_verdict_returns_success() {
@@ -943,18 +866,16 @@ test_unreadable_verdict_returns_success() {
   : > "$table"
   got=$(FM_TEST_KILL_RC=0 lib_eval_denied "$fakebin" "$table" '
     set -e
-    fm_session_lock_pid_verdict 700
-    printf "%s|%s\n" "$?" "$FM_SESSION_LOCK_PID_VERDICT"
+    fm_proc_pid_verdict 700
+    printf "%s|%s\n" "$?" "$FM_PROC_PID_VERDICT"
   ') || fail "unreadable verdict aborted an errexit caller"
   [ "$got" = '0|unreadable' ] || fail "unreadable verdict returned unexpected status or value: $got"
-  pass "live owner with unreadable identity returns a successful verdict"
+  pass "live pid with unreadable identity returns a successful verdict"
 }
 
 test_unreadable_verdict_returns_success
-test_partial_identity_reads_refuse
-test_nonpid_records_allow_acquisition
+test_partial_identity_reads_are_unreadable
 
-test_unreadable_owner_refuses_acquisition
 test_denied_route_fields_parse_exactly
 test_provider_shape_violations_rejected
 test_provider_empty_field_is_a_present_pid
@@ -962,7 +883,7 @@ test_ps_failure_statuses_route_correctly
 test_ps_denial_must_be_confirmed_before_routing
 test_fallback_diagnostic_is_emitted_once
 test_ps_success_with_empty_comm_stays_present
-test_denied_ps_lock_decision_chain
+test_denied_ps_identity_decision_chain
 test_linux_provider_fixture_tree
 test_linux_unicode_owner_identity
 test_denied_ps_still_finds_the_harness

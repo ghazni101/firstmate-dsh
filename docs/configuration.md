@@ -140,7 +140,7 @@ Untracked files and directories whose names begin with `scratchpad` are also git
 
 - `docs/sessionstart-nudge.md` owns the native session-open adapter tiers that run or nudge the digest command, and the source routing between them.
 
-- `AGENTS.md` retains the run-once and read-once operator rules, lock-refusal safety, installation consent, and direct-report recovery boundaries because those facts apply at every session start.
+- `AGENTS.md` retains the run-once and read-once operator rules, installation consent, and direct-report recovery boundaries because those facts apply at every session start.
 
 - Ordinary dead-direct-report recovery is owned by `stuck-crewmate-recovery`, while persistent-secondmate recovery is owned by `secondmate-provisioning`.
 
@@ -203,9 +203,9 @@ An absent file uses `enabled: false`, `repeatLimit: 3` and `windowMs: 900000`; m
 `enabled: false` registers no guard handlers.
 Configuration changes require the next extension load.
 
-Ownership requires the effective home, current directory, session directory and primary PID marker to match this primary, with the session lock naming its process or a verified ancestor.
+Ownership requires the effective home, current directory, session directory and primary PID marker to match this primary, with that marker naming this session's harness process or a verified ancestor.
 Workers, supervision branches, foreign owners and nested capability probes remain outside the guard.
-Linux ancestry uses bounded `ps` queries, including when a wrapper holds the lock.
+Linux ancestry uses bounded `ps` queries, including when a wrapper interposes.
 Enabled configuration on macOS or Windows reports an unsupported-platform load error; those platforms have no protection claim.
 Missing ownership evidence leaves the guard inactive without writing session history or aborting another session.
 A proven owner records `fm-read-repetition-activation-v1` in its Pi session journal with the effective limits and restored latch state; extension discovery alone is not evidence of activation.
@@ -244,7 +244,7 @@ For a locally installed file at either new managed path, preflight the update an
 On a Pi primary, an in-process supervision branch handles eligible task-local wake rows and selected heartbeat reviews.
 Main-only rows stay on the captain-facing path.
 [docs/pi-supervision-branch.md](pi-supervision-branch.md) defines its conversation lifecycle, row eligibility, mixed-queue dispatch, heartbeat routing, and pre-drain recheck.
-Supervision is default-on: once a Pi primary session owns this home's fleet lock, the branch is eligible for every task with no captain grant file required.
+Supervision is default-on: in a Pi primary session that owns this home, the branch is eligible for every task with no captain grant file required.
 
 Bash absorbs a genuinely no-op heartbeat before it reaches Pi.
 Every watcher-failure alarm stays on the captain-facing main path.
@@ -430,7 +430,7 @@ Removing it stops further retries and leaves the current watcher for the ordinar
 
 Create the empty, home-local `config/codex-stop-park` file to let a Codex primary wait for watcher wakes outside the model between turns.
 The feature is off when the file is absent, and every Codex session then keeps the bounded foreground checkpoint protocol.
-With the file present, only an interactive native Codex session on the verified CLI version that holds this home's session lock parks; every other session keeps the foreground checkpoint.
+With the file present, only an interactive native Codex session on the verified CLI version parks; every other session keeps the foreground checkpoint.
 The supervision protocol is chosen when the session starts, so create or remove the file before starting the Codex session.
 The file is local to each home and is not inherited by secondmate homes.
 [The Codex protocol](supervision-protocols/codex.md) owns the parked operating protocol, and `bin/fm-codex-stop-park.sh` owns version selection, registration, and failure fallback.
@@ -545,7 +545,7 @@ Linking the code-root copy into the home therefore forks the queue on the first 
 
 Run every routine Firstmate backlog command through [`bin/fm-tasks-axi.sh`](../bin/fm-tasks-axi.sh).
 Like lifecycle transitions, it addresses this home's backlog and archive from any working directory.
-Bootstrap reports a code-root `data/backlog.md` or `data/done-archive.md` that is not this home's own file as a `BACKLOG_RECONCILE: code-root ...` line, even in a read-only session.
+Bootstrap reports a code-root `data/backlog.md` or `data/done-archive.md` that is not this home's own file as a `BACKLOG_RECONCILE: code-root ...` line, even in a detect-only run.
 
 ## Runtime backend (config/backend / FM_BACKEND)
 
@@ -662,7 +662,7 @@ Legacy tmux metadata remains cleanup-compatible when its exact window name is `f
 `FM_HOME` determines Herdr's home label: the primary home uses `firstmate`, and a secondmate home marked by `.fm-secondmate-home` uses `2ndmate-<secondmate-id>`.
 [`herdr-backend.md`](herdr-backend.md#watching-and-task-containers) owns launcher-bound workspace placement, the label-only fallback, collision handling, and recovery behavior.
 
-The local `config/herdr-presentation-spaces` file instead opts a home out of, or explicitly in to, Herdr's default-on disposable single-task visual projection; [Presentation spaces](herdr-backend.md#presentation-spaces) owns its accepted values, default, Herdr version floor, migration, behavior, safety limits, recovery contract, and narrow locked session-start cleanup of exact restored idle-shell children.
+The local `config/herdr-presentation-spaces` file instead opts a home out of, or explicitly in to, Herdr's default-on disposable single-task visual projection; [Presentation spaces](herdr-backend.md#presentation-spaces) owns its accepted values, default, Herdr version floor, migration, behavior, safety limits, recovery contract, and narrow session-start cleanup of exact restored idle-shell children.
 The setting is inherited into secondmate homes under the primary-authoritative contract owned by [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md).
 The local `config/herdr-project-groups` file opts a home in to display-only Herdr project groups; [Project groups](herdr-backend.md#project-groups) owns its values, rules, tags, inheritance, and limits.
 
@@ -741,7 +741,7 @@ The optional local, gitignored `config/trace-context` presence flag enables defa
 ### Precedence and session boundary
 
 `FM_TRACE_CONTEXT` overrides the file: `1`/`on`/`true`/`yes` enables, any other non-empty value disables, and unset or empty defers to the file.
-Each locked home session resolves those inputs once, and all spawns from that home use the frozen decision until a new session starts.
+Each home session resolves those inputs once, and all spawns from that home use the frozen decision until a new session starts.
 
 ### Secondmate propagation
 
@@ -1278,11 +1278,11 @@ The section counts toward the startup memory budget like the rest of its file, s
 ## Startup memory budget (config/startup-memory-budget)
 
 `config/startup-memory-budget` is the primary-authoritative per-home allowance for the startup prompt-memory surface: `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md` together.
-The locked mutable bootstrap path materializes its visible default of `7500` estimated tokens in a primary home when the file is absent.
+The mutating bootstrap path materializes its visible default of `7500` estimated tokens in a primary home when the file is absent.
 
 ### Set and validate the budget
 
-To select another allowance, replace the primary home's file with one valid positive value in the exact format below; the next locked bootstrap convergence or `bin/fm-config-push.sh` propagates it to registered secondmates.
+To select another allowance, replace the primary home's file with one valid positive value in the exact format below; the next bootstrap convergence or `bin/fm-config-push.sh` propagates it to registered secondmates.
 A secondmate does not create an independent default and instead receives the primary value through the inherited-local-material contract in [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md).
 
 The file must be one positive base-10 integer followed by exactly one newline in a regular, single-linked file beneath a non-symlinked `config/` directory.
@@ -2437,13 +2437,13 @@ An absent required tool with an automated install path reports `MISSING:` with i
 **Checkout diagnostics**
 
 Bootstrap also reports a `TANGLE:` line when `FM_ROOT` is on a named non-default branch; follow the printed checkout remediation rather than treating it as an installable tool problem.
-In a read-only session that did not get the fleet lock, the same line is advisory and omits the checkout command.
+A detect-only run prints the same line as advisory and omits the checkout command.
 
 With the opt-in [Treehouse pool report](#treehouse-pool-report-configtreehouse-pool-report), bootstrap also prints `TREEHOUSE_POOL_REPORT:` findings.
 
 **Project refresh at startup**
 
-The locked session-start deferred network stage runs bootstrap's best-effort project clone refresh through `fm-fleet-sync.sh`; [`fm-bootstrap.sh`'s header](../bin/fm-bootstrap.sh) owns the exact clone-refresh overlap, liveness-before-convergence, per-mate concurrency, ordered diagnostic replay, and sequential-fallback contract.
+The session-start deferred network stage runs bootstrap's best-effort project clone refresh through `fm-fleet-sync.sh`; [`fm-bootstrap.sh`'s header](../bin/fm-bootstrap.sh) owns the exact clone-refresh overlap, liveness-before-convergence, per-mate concurrency, ordered diagnostic replay, and sequential-fallback contract.
 
 - It emits `FLEET_SYNC:` for skipped refreshes that may matter, recovered self-heals, and `STUCK:` alarms.
 - Normal completed runs keep local-only and no-origin skips silent.
@@ -2471,7 +2471,7 @@ Local routes use direct guarded filesystem operations, while remote routes deleg
 For a mid-session inherited local-material edit where tracked-file sync is not needed, run `bin/fm-config-push.sh`.
 It uses the same live secondmate discovery and propagation helper as bootstrap; its [help](../bin/fm-config-push.sh) owns reporting and exit semantics, and [`fm_config_inherit_items`](../bin/fm-config-inherit-lib.sh) declares the inherited items.
 
-- The [`secondmate-provisioning` skill](../.agents/skills/secondmate-provisioning/SKILL.md#charter-and-seed) owns the local and remote re-read behavior shared with locked bootstrap inheritance, including unchanged retries and interrupted transfers.
+- The [`secondmate-provisioning` skill](../.agents/skills/secondmate-provisioning/SKILL.md#charter-and-seed) owns the local and remote re-read behavior shared with bootstrap inheritance, including unchanged retries and interrupted transfers.
 - That live discovery starts from `state/*.meta` records with `kind=secondmate`; `data/secondmates.md` only backfills `home=` for older or incomplete meta records.
 - Skipped items, such as a destination checkout that does not yet gitignore the item, are visible warnings but not hard failures.
 
@@ -2739,7 +2739,7 @@ The dashboard owns account creation, identity linking, bot installation, and tok
 
 **Generated state and watcher cadence**
 
-The locked session-start bootstrap step turns the token into local generated state.
+The session-start bootstrap step turns the token into local generated state.
 It writes `state/x-watch.check.sh`, a byte-static identity shim for `bin/fm-x-poll.sh`, and `config/x-mode.env`, which exports `FM_CHECK_INTERVAL=30` for watcher processes in that home.
 Independent home-local watcher overrides belong in `config/watch.env` as exported shell assignments; `bin/fm-watch-arm.sh` loads it before `config/x-mode.env`, so Relay retains its required cadence and bootstrap never removes non-Relay tuning. Only watchers started through that arm read it: the Codex checkpoint route (`bin/fm-watch-checkpoint.sh` with no `config/supervision-host`) and the away-mode daemon (`bin/fm-supervise-daemon.sh`) start `bin/fm-watch.sh` directly and use the watcher defaults.
 
@@ -2757,7 +2757,7 @@ The active primary-harness supervision protocol owns how that sourced cadence re
 Because `bin/fm-watch.sh` reads `FM_CHECK_INTERVAL` only at process start, a cadence transition - opt-in while a watcher is already running, or opt-out - is applied by restarting the home-scoped watcher through the emitted harness protocol; bootstrap deliberately never restarts the watcher itself.
 While a legacy daemon flag is active the daemon owns the watcher and its default cadence applies; on Pi the away-posture record alone leaves the ordinary Relay watcher cadence active, and daemon-backed Relay cadence remains a deferred follow-up.
 
-When the token is removed or empty, the next locked session-start bootstrap step removes those artifacts.
+When the token is removed or empty, the next session-start bootstrap step removes those artifacts.
 Steady-state off is silent and writes nothing.
 
 Relay remains additive to non-Relay lifecycle behavior: homes without the generated artifacts keep the default watcher cadence and do not run the Relay poll.
@@ -3557,14 +3557,13 @@ FM_SESSION_START_STATUS_TAIL=5   # state/*.status lines printed per task in the 
 FM_SESSION_START_QUEUED_LIMIT=20   # plain queued backlog rows in the session-start digest; in-flight, held, and blocked rows are never bounded and done rows are never listed
 FM_SESSION_START_ENDPOINT_TIMEOUT=10   # seconds bounding each per-task endpoint liveness read in the session-start digest (bin/fm-session-start.sh); nonpositive or invalid values fall back to 10; a read that hits the bound or dies becomes that task's own `endpoint: error` line and the digest continues
 FM_BACKLOG_ROW_TIMEOUT_SECS=10   # seconds bounding each backlog row read (bin/fm-backlog-transition-lib.sh) and the tasks-axi replay of each captain-hold Done-archive row (bin/fm-captain-hold.sh, which stops with 124 on a replay timeout); the archive scan itself is not bounded; nonpositive or invalid values fall back to 10; the first backlog read bound hit latches the sweep so later reads return immediately, each still naming its own item
-FM_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
+FM_BOOTSTRAP_DETECT_ONLY=0   # internal diagnostics-only mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
 FM_BOOTSTRAP_NETWORK=all   # internal session-start phase split: all, skip (local steps only), or only (network steps only); see bin/fm-bootstrap.sh
-FM_STARTUP_NETWORK_TIMEOUT=120   # seconds bounding the deferred inactive-outcome scan plus network checks, including the lock waits the worker makes before them; hitting it prints an actionable NETWORK_CHECKS line, and a lock a live process still holds at the deadline ends the worker with a failed-rerun record (publication and delivery are bounded by FM_SESSION_START_TIMEOUT the same way)
+FM_STARTUP_NETWORK_TIMEOUT=120   # seconds bounding the deferred inactive-outcome scan plus network checks, including the publish-lock waits the worker makes before them; hitting it prints an actionable NETWORK_CHECKS line, and a publish lock a live process still holds at the deadline ends the worker with a failed-rerun record (publication and delivery are bounded by FM_SESSION_START_TIMEOUT the same way)
 FM_SECONDMATE_CONVERGENCE_TIMEOUT=75   # shared per-mate deadline in seconds for remote startup tracked-file sync and inheritance push; bin/fm-bootstrap.sh owns its scope and timeout handling
 FM_REMOTE_INHERIT_PUSH_JOBS=4   # inherited items one remote inheritance push sends at a time, 1 for strictly one after another; capped at 16 (bin/fm-remote-inherit-push.sh)
 FM_TASKS_AXI_COMPATIBLE=   # internal one-hop handoff of an already-computed tasks-axi compatibility verdict (0 or 1); consumed when bin/fm-tasks-axi-lib.sh is sourced
 FM_TASKS_AXI_CHECK_REASON=   # internal one-hop handoff of the reason behind that verdict (compatible, version, or the capability probes the build fails); consumed when bin/fm-tasks-axi-lib.sh is sourced, and it keeps the OUTDATED requirement text from repeating the probes
-FM_GUARD_READ_ONLY=0    # internal/read-only guard mode: keep alarms but suppress drain, supervision repair, and checkout repair commands
 FM_GUARD_CONTINUE_LINE='This is a supervision warning only; the guarded operation WILL still run.'   # banner continuation line; fm-send.sh overrides it to name the requested message specifically
 FM_POLL=15              # seconds between watcher poll cycles
 FM_HOME_SUMMARY_INTERVAL=300   # seconds before a live watcher refreshes this home's state/home-summary.json even without a status signal; invalid or zero values use 300
@@ -3579,7 +3578,7 @@ FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=14  # floored elapsed-day threshold at which a
 FM_RECONCILE_REQUEST_MAX_BYTES=1048576   # maximum captured Bearings or fleet snapshot accepted for durable reconcile-notify request publication
 FM_HEARTBEAT=600        # base seconds between heartbeat scans; no-change heartbeats are absorbed while idle
 FM_HEARTBEAT_MAX=7200   # heartbeat backoff cap
-FM_INACTIVE_RECONCILE_SECS=900  # 60..1800-second watcher cadence and inactivity threshold; locked session start also requests an immediate scan in the deferred worker
+FM_INACTIVE_RECONCILE_SECS=900  # 60..1800-second watcher cadence and inactivity threshold; session start also requests an immediate scan in the deferred worker
 FM_INACTIVE_RECONCILE_BUDGET_SECS=10  # 1..30-second scan deadline; wedged-scan kill backstop follows one second later
 FM_CHECK_INTERVAL=300   # seconds between slow checks (authenticated merge polls, custom checks, or Relay dispatch)
 FM_TASK_INBOX_GRACE_SECS=90   # seconds an unhandled steering-inbox message may sit before the watcher attempts doorbell delivery on an idle endpoint; also the minimum spacing between attempts

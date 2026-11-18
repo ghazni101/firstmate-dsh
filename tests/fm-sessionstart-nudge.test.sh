@@ -123,46 +123,15 @@ test_missing_state_is_silent() {
   pass "fm-sessionstart-nudge: a checkout without state is silent"
 }
 
-test_owned_lock_is_silent() {
-  local root="$TMP_ROOT/already-ran"
+test_completed_session_is_silent() {
+  local root="$TMP_ROOT/already-ran" session_pid
   make_primary "$root"
-  printf '%s\n' "$$" > "$root/state/.lock"
-  expect_silent_zero "owned lock nudge" run_nudge "$root"
-  pass "fm-sessionstart-nudge: a lock holder in process ancestry is already run"
-}
-
-# A firstmate running inside a PID namespace - a container, or `codex sandbox` -
-# holds its home lock from a harness that IS pid 1, so this hook must recognize
-# that owner. The old walk rejected a lock pid of 1 outright and stopped before
-# comparing pid 1, so the hook nudged a session that had already run.
-# A fake ps cannot reach this path: `kill -0` is a shell builtin gating the lock
-# pid, and on a host `kill -0 1` fails for an unprivileged user, so the case
-# needs a real namespace where pid 1 is this user's own process.
-test_namespace_pid1_lock_holder_is_silent() {
-  local root="$TMP_ROOT/namespace-pid1" out status=0
-  if ! command -v unshare >/dev/null 2>&1 \
-    || ! unshare -rpf --mount-proc true >/dev/null 2>&1; then
-    printf '# skip: unprivileged PID namespaces are unavailable here, so the namespace pid 1 lock owner is unverified\n'
-    return 0
-  fi
-  make_primary "$root"
-
-  # Non-vacuity: inside the same namespace, with no lock at all, the hook must
-  # still produce its nudge, so silence below means the owner was recognized.
-  out=$(unshare -rpf --mount-proc bash -c \
-    "FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE='$root' FM_HOME='$root' '$NUDGE'; exit \$?") || status=$?
-  expect_code 0 "$status" "namespace nudge without a lock"
-  [ "$out" = "$NUDGE_LINE" ] \
-    || fail "the namespace fixture did not nudge without a lock, so its silence proves nothing: $out"
-
-  printf '1\n' > "$root/state/.lock"
-  status=0
-  out=$(unshare -rpf --mount-proc bash -c \
-    "FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE='$root' FM_HOME='$root' '$NUDGE'; exit \$?") || status=$?
-  expect_code 0 "$status" "namespace pid 1 lock nudge"
-  [ -z "$out" ] \
-    || fail "a lock held by the harness at namespace pid 1 was not recognized, got: $out"
-  pass "fm-sessionstart-nudge: a lock holder that is pid 1 of its own namespace is already run"
+  session_pid=$(bash -c '. "$1/bin/fm-proc-lib.sh"; fm_harness_ancestry_pid' _ "$ROOT") \
+    || fail "could not identify the fixture session's harness process"
+  [ -n "$session_pid" ] || fail "the fixture harness did not resolve to a session pid"
+  printf '%s\n' "$session_pid" > "$root/state/.session-start-complete"
+  expect_silent_zero "completed session nudge" run_nudge "$root"
+  pass "fm-sessionstart-nudge: a completion record naming this session is already run"
 }
 
 test_opencode_plugin_delivers_exact_nudge_once() {
@@ -236,8 +205,8 @@ run_hook_pi() {  # <root> [args...]
 }
 
 # Every run-tier assertion keys off the digest banner, which fm-session-start.sh
-# prints before the lock result, so routing is proven whether or not the lock
-# was won in the test environment.
+# prints before it resolves the session identity, so routing is proven whether or
+# not a harness process is identified in the test environment.
 FULL_BANNER="SESSION START - "
 REEMIT_BANNER="SESSION START (CONTEXT RE-EMIT) - "
 
@@ -247,8 +216,10 @@ test_run_startup_runs_the_full_digest() {
   out=$(run_hook "$root" --source startup </dev/null) || status=$?
   expect_code 0 "$status" "run wrapper startup"
   assert_contains "$out" "$FULL_BANNER$root" "startup did not run the full digest"
-  assert_contains "$out" "lock acquired: harness pid" \
+  assert_contains "$out" "harness process " \
     "the portable startup fixture did not supply a real harness process"
+  assert_not_contains "$out" "harness process: not identified" \
+    "the portable startup fixture did not resolve a session pid"
   assert_not_contains "$out" "$REEMIT_BANNER" "startup was misrouted to a context re-emit"
   assert_not_contains "$out" "FIRSTMATE_OP" "a run-tier open also emitted the nudge instruction"
   assert_contains "$out" "NEXT STEP" "the run wrapper did not deliver a complete digest"
@@ -335,13 +306,12 @@ test_run_clear_without_completion_finishes_startup() {
   pass "run wrapper: clear falls back to full startup when completion is unproven"
 }
 
-test_run_clear_rejects_previous_owner_completion() {
+test_run_clear_rejects_previous_session_completion() {
   local root="$TMP_ROOT/run-clear-previous-owner" out status=0 previous_pid
   make_run_primary "$root"
   sleep 0 &
   previous_pid=$!
   wait "$previous_pid"
-  printf '%s\n' "$previous_pid" > "$root/state/.lock"
   printf '%s\n' "$previous_pid" > "$root/state/.session-start-complete"
 
   out=$(run_hook "$root" --source clear </dev/null) || status=$?
@@ -350,8 +320,6 @@ test_run_clear_rejects_previous_owner_completion() {
     "clear treated a previous session's completion as current"
   assert_not_contains "$out" "$REEMIT_BANNER" \
     "clear skipped startup sweeps completed only by a previous session"
-  [ "$(cat "$root/state/.lock")" != "$previous_pid" ] \
-    || fail "the recovery startup did not replace the previous session's stale lock"
   pass "run wrapper: clear accepts completion only from the current harness"
 }
 
@@ -973,7 +941,6 @@ test_run_resume_delegates_to_the_nudge() {
   out=$(run_hook "$root" --source resume </dev/null) || status=$?
   expect_code 0 "$status" "run wrapper resume"
   [ "$out" = "$NUDGE_LINE" ] || fail "resume did not delegate to the exact nudge line, got: $out"
-  assert_absent "$root/state/.lock" "resume acquired the fleet lock instead of delegating"
   pass "run wrapper: resume delegates to the nudge instead of re-running the digest"
 }
 
@@ -986,8 +953,9 @@ test_run_reads_source_from_the_hook_payload() {
   expect_code 0 "$status" "run wrapper payload compact"
   assert_contains "$out" "$REEMIT_BANNER$root" "a compact hook payload was not routed to a re-emit"
 
-  # A fresh root, because the compact case above legitimately took the lock and
-  # an owned lock is exactly when the nudge is supposed to stay silent.
+  # A fresh root, because the compact case above legitimately recorded this
+  # session's startup completion and a completed session is exactly when the
+  # nudge is supposed to stay silent.
   root="$TMP_ROOT/run-payload-resume"
   make_run_primary "$root"
   status=0
@@ -1018,7 +986,6 @@ test_run_gate_and_scope_are_silent() {
   make_run_primary "$root"
   expect_silent_zero "gate env run" env NO_MISTAKES_GATE=1 FM_GATE_REFUSE_BYPASS=0 \
     FM_ROOT_OVERRIDE="$root" FM_HOME="$root" PATH="$RUN_PATH" "$RUN" --source startup
-  assert_absent "$root/state/.lock" "a gate agent's session open still took the fleet lock"
   out=$(env NO_MISTAKES_GATE=1 FM_GATE_REFUSE_BYPASS=0 \
     FM_ROOT_OVERRIDE="$root" FM_HOME="$root" PATH="$RUN_PATH" \
     "$RUN" --source startup --pi-prerequisite 2>&1) || status=$?
@@ -1033,7 +1000,6 @@ test_run_gate_and_scope_are_silent() {
   out=$(run_hook "$linked" --source startup --pi-prerequisite 2>&1) || status=$?
   expect_code 3 "$status" "linked worktree Pi prerequisite stand-down"
   [ -z "$out" ] || fail "linked worktree Pi prerequisite stand-down must be silent, got: $out"
-  assert_absent "$linked/state/.lock" "an unmarked task worktree still took the fleet lock"
   pass "run wrapper: ordinary ineligible opens stay silent-zero and Pi preflight gets an explicit silent stand-down"
 }
 
@@ -1049,8 +1015,6 @@ test_run_creates_missing_state_on_a_fresh_primary() {
   assert_present "$root/state" "a fresh primary root did not get its state dir created"
   assert_contains "$out" "$FULL_BANNER$root" \
     "creating the state dir did not let a fresh primary's session start run"
-  assert_contains "$out" "lock acquired: harness pid" \
-    "creating the state dir did not let a fresh primary take the fleet lock"
   assert_not_contains "$out" "$REEMIT_BANNER" \
     "a fresh primary's first session was misrouted to a context re-emit"
   assert_contains "$out" "NEXT STEP" "a fresh primary did not receive the complete digest"
@@ -1083,25 +1047,13 @@ test_run_reports_a_state_dir_it_cannot_create() {
   pass "run wrapper: a fresh primary that cannot create its state dir says so on stderr, then stands down"
 }
 
-test_run_reports_a_failed_session_start_as_digest_text() {
-  local root="$TMP_ROOT/run-unwritable" out status=0
-  make_run_primary "$root"
-  chmod 0500 "$root/state"
-  out=$(run_hook "$root" --source startup </dev/null) || status=$?
-  chmod 0700 "$root/state"
-  expect_code 0 "$status" "run wrapper with an unwritable state directory"
-  assert_contains "$out" "READ-ONLY SESSION" "a failed lock did not reach the agent as digest text"
-  pass "run wrapper: a session start that cannot take the lock still opens the session and says so"
-}
-
 test_genuine_primary_nudges
 test_gate_env_is_silent
 test_gate_common_dir_is_silent
 test_unmarked_linked_worktree_is_silent
 test_linked_secondmate_primary_nudges
 test_missing_state_is_silent
-test_owned_lock_is_silent
-test_namespace_pid1_lock_holder_is_silent
+test_completed_session_is_silent
 test_opencode_plugin_delivers_exact_nudge_once
 test_run_startup_runs_the_full_digest
 test_run_clear_and_compact_reemit
@@ -1115,7 +1067,6 @@ test_run_unknown_source_takes_the_helm
 test_run_gate_and_scope_are_silent
 test_run_creates_missing_state_on_a_fresh_primary
 test_run_reports_a_state_dir_it_cannot_create
-test_run_reports_a_failed_session_start_as_digest_text
 test_pi_startup_classifies_cli_continuations
 test_pi_sessionstart_generation_prerequisite
 test_pi_reload_releases_sessionstart_exit_listener

@@ -4,9 +4,9 @@
 #
 # The token-free half starts the installed omp in JSON-RPC mode with no prompt,
 # so it spends no model tokens, and has a loaded extension run bin/fm-harness.sh
-# and bin/fm-lock.sh from inside that process. It proves the installed omp,
-# whether the compiled binary or the bun global package (process name `bun`),
-# is detected as omp and can own the session lock.
+# and the harness-identity resolution from inside that process. It proves the
+# installed omp, whether the compiled binary or the bun global package (process
+# name `bun`), is detected as omp and is the session's harness.
 # FM_OMP_LIVE_E2E=1 selects the credentialed half below instead.
 #
 # The credentialed half is an omp (Oh My Pi) primary regression in an isolated lab
@@ -18,7 +18,7 @@
 # (tests/fm-omp-harness.test.sh) can only pin over a fake API:
 #   1. both tracked .omp/extensions load by auto-discovery alone;
 #   2. the session-start digest reaches model context before the first turn
-#      and the session lock names the omp process (ancestry detection);
+#      and state/.session-start-complete names the omp process (ancestry detection);
 #   3. fm_watch_arm_omp starts a real watcher, an actionable close spawns a
 #      ledger-linked successor, and the wake arrives as one follow-up turn;
 #   4. with the successor watcher frozen until its beacon passes the lab grace,
@@ -48,8 +48,10 @@ if [ "${FM_OMP_LIVE_E2E:-0}" != 1 ]; then
   cat > "$LAB/probe.sh" <<SH
 env -u CLAUDECODE -u FM_OMP_HARNESS -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \\
   '$ROOT/bin/fm-harness.sh' > '$LAB/harness.out' 2>&1
-env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID FM_HOME='$HOME_DIR' '$ROOT/bin/fm-lock.sh' > '$LAB/lock.out' 2>&1
-printf '%s\\n' "\$?" > '$LAB/lock.rc'
+env -u CLAUDECODE -u FM_OMP_HARNESS -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \\
+  bash -c '. "\$0/bin/fm-proc-lib.sh"; pid=\$(fm_harness_ancestry_pid) || exit 9; fm_harness_pid_alive "\$pid" || exit 10; printf "%s\\\\n" "\$pid"' \\
+  '$ROOT' > '$LAB/identity.out' 2>&1
+printf '%s\\n' "\$?" > '$LAB/identity.rc'
 SH
   cat > "$LAB/probe.ts" <<TS
 import { spawnSync } from "node:child_process";
@@ -64,7 +66,7 @@ TS
   OMP_PID=$!
   exec 3> "$LAB/rpc.in"
   i=0
-  while [ "$i" -lt 240 ] && [ ! -s "$LAB/lock.rc" ]; do
+  while [ "$i" -lt 240 ] && [ ! -s "$LAB/identity.rc" ]; do
     sleep 0.5
     i=$((i + 1))
   done
@@ -72,14 +74,14 @@ TS
   sleep 1
   kill -TERM "$OMP_PID" 2>/dev/null || true
   wait "$OMP_PID" 2>/dev/null || true
-  [ -s "$LAB/lock.rc" ] || { printf 'not ok - omp %s (%s) never ran the identity probe: %s\n' "$OMP_VERSION" "$INSTALL" "$(tail -3 "$LAB/rpc.err")" >&2; exit 1; }
+  [ -s "$LAB/identity.rc" ] || { printf 'not ok - omp %s (%s) never ran the identity probe: %s\n' "$OMP_VERSION" "$INSTALL" "$(tail -3 "$LAB/rpc.err")" >&2; exit 1; }
   [ "$(cat "$LAB/harness.out")" = omp ] \
     || { printf 'not ok - omp %s (%s) was detected as %s, not omp\n' "$OMP_VERSION" "$INSTALL" "$(cat "$LAB/harness.out")" >&2; exit 1; }
-  [ "$(cat "$LAB/lock.rc")" = 0 ] \
-    || { printf 'not ok - omp %s (%s) could not own the session lock: %s\n' "$OMP_VERSION" "$INSTALL" "$(cat "$LAB/lock.out")" >&2; exit 1; }
-  [ "$(sed -n 1p "$HOME_DIR/state/.lock")" = "$(cat "$LAB/omp.pid" 2>/dev/null)" ] \
-    || { printf 'not ok - omp %s (%s) acquired the session lock for pid %s, not the omp process %s\n' "$OMP_VERSION" "$INSTALL" "$(sed -n 1p "$HOME_DIR/state/.lock")" "$(cat "$LAB/omp.pid" 2>/dev/null)" >&2; exit 1; }
-  printf 'ok - omp %s (%s): detected as omp and acquired the session lock with no model tokens\n' "$OMP_VERSION" "$INSTALL"
+  [ "$(cat "$LAB/identity.rc")" = 0 ] \
+    || { printf 'not ok - omp %s (%s) could not resolve a live session harness: %s\n' "$OMP_VERSION" "$INSTALL" "$(cat "$LAB/identity.out")" >&2; exit 1; }
+  [ "$(cat "$LAB/identity.out")" = "$(cat "$LAB/omp.pid" 2>/dev/null)" ] \
+    || { printf 'not ok - omp %s (%s) resolved the session harness as %s, not the omp process %s\n' "$OMP_VERSION" "$INSTALL" "$(cat "$LAB/identity.out")" "$(cat "$LAB/omp.pid" 2>/dev/null)" >&2; exit 1; }
+  printf 'ok - omp %s (%s): detected as omp and identified as the session harness with no model tokens\n' "$OMP_VERSION" "$INSTALL"
   exit 0
 fi
 
@@ -267,7 +269,7 @@ wait_for_file "$PROJECT/state/.omp-turnend-extension-loaded" 60 || fail "omp $OM
 wait_for_file "$PROJECT/state/.omp-watch-extension-loaded" 60 || fail "omp $OMP_VERSION did not auto-discover the watch extension"
 pass "omp $OMP_VERSION: both tracked .omp/extensions loaded by auto-discovery with no -e and no trust dialog"
 
-# --- 1. session-start digest and lock identity ---------------------------------
+# --- 1. session-start digest and harness identity ------------------------------
 rpc_send '{"id":"p1","type":"prompt","message":"From the Firstmate session-start digest already in your context, reply with the single line that begins with SESSION START - and nothing else. Do not run any tool."}'
 wait_for_agent_ends 1 360 || fail "omp did not finish the first turn: $(tail -3 "$RPC_ERR")"
 first=$(assistant_text_since 1)
@@ -275,12 +277,12 @@ case "$first" in
   *"SESSION START - $PROJECT"*) ;;
   *) fail "the session-start digest did not reach model context before the first turn; reply was: $first" ;;
 esac
-lock_pid=$(sed -n '1p' "$PROJECT/state/.lock" 2>/dev/null || true)
+completion_pid=$(sed -n '1p' "$PROJECT/state/.session-start-complete" 2>/dev/null || true)
+[ -f "$PROJECT/state/.session-start-complete" ] || fail "session start did not record completion"
 omp_real_pid=$(pgrep -P "$OMP_PID" -x omp 2>/dev/null | head -1 || true)
 [ -n "$omp_real_pid" ] || omp_real_pid=$OMP_PID
-[ "$lock_pid" = "$omp_real_pid" ] || fail "the session lock names pid '$lock_pid', not the omp process $omp_real_pid; ancestry detection failed"
-[ -f "$PROJECT/state/.session-start-complete" ] || fail "session start did not record completion"
-pass "omp $OMP_VERSION: before_agent_start delivered the digest into model context and the lock names the omp process"
+[ "$completion_pid" = "$omp_real_pid" ] || fail "the session-start record names pid '$completion_pid', not the omp process $omp_real_pid; ancestry detection failed"
+pass "omp $OMP_VERSION: before_agent_start delivered the digest into model context and the session-start record names the omp process"
 
 # --- 2. watcher arm, successor, and wake delivery ------------------------------
 : > "$PROJECT/state/omp-e2e.meta"

@@ -201,9 +201,9 @@ const liveArmPids = () => readFileSync(process.env.FM_LIVE_WATCH_LOG, "utf8").sp
 const armCount = () => existsSync(process.env.FM_LIVE_WATCH_LOG)
   ? readFileSync(process.env.FM_LIVE_WATCH_LOG, "utf8").split(/\n/).filter((line) => line.startsWith("arm ")).length
   : 0;
-if (existsSync(`${home}/state/.pi-branch-extension-loaded`)) {
-  throw new Error("branch activated before the primary session acquired its lock");
-}
+// A home with no legacy record is the session's native home, so the branch is
+// already owned; the lock write keeps the same on-disk shape downstream probes
+// expect without gating activation on it.
 writeFileSync(`${home}/state/.lock`, `${process.pid}\n`);
 const watcherTool = session.getToolDefinition("fm_watch_arm_pi");
 if (!watcherTool) throw new Error("watcher tool was not registered in the real main session");

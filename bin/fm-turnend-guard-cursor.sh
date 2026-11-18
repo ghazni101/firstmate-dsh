@@ -96,8 +96,8 @@ case "$LOCK_ATTEMPTS" in ''|*[!0-9]*|0) LOCK_ATTEMPTS=50 ;; esac
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-proc-lib.sh
+. "$SCRIPT_DIR/fm-proc-lib.sh"
 # shellcheck source=bin/fm-supervision-engine-lib.sh
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
 # shellcheck source=bin/fm-operational-input.sh
@@ -256,25 +256,14 @@ park_still_ours() {
 
 current_session_still_ours() {
   local owner
-  owner=$(cat "$STATE/.lock" 2>/dev/null) || return 1
+  owner=$(fm_harness_ancestry_pid 2>/dev/null) || return 1
   fm_session_pid_valid "$owner" || return 1
-  [ "$owner" = "$OWNER_ID" ] || return 1
-  fm_session_lock_owned_by_self "$STATE"
+  [ "$owner" = "$OWNER_ID" ]
 }
 
-# Only the lock-owning session may arm or wake. The shared
-# fm_session_lock_pid_blocks_reclaim verdict decides whether a recorded owner may
-# be reclaimed, and any reclaim is delegated to bin/fm-lock.sh so acquisition
-# keeps its single owner.
-if ! fm_session_lock_owned_by_self "$STATE"; then
-  LOCK_PID=$(cat "$STATE/.lock" 2>/dev/null || true)
-  fm_session_pid_valid "$LOCK_PID" || exit 0
-  fm_session_lock_pid_blocks_reclaim "$LOCK_PID" && exit 0
-  "$SCRIPT_DIR/fm-lock.sh" >/dev/null 2>&1 || exit 0
-  fm_session_lock_owned_by_self "$STATE" || exit 0
-fi
-
-OWNER_ID=$(cat "$STATE/.lock" 2>/dev/null || true)
+# A session is its own home's owner, so this hook always has the authority to
+# arm or wake; it only has to be sure it is still the session that armed.
+OWNER_ID=$(fm_harness_ancestry_pid 2>/dev/null || true)
 fm_session_pid_valid "$OWNER_ID" || exit 0
 
 PARK_SEQ=

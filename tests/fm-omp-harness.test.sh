@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/fm-omp-harness.test.sh - the portable regression for the omp (Oh My Pi)
-# adapter: detection, session-lock identity, tmux liveness classification, the
+# adapter: detection, harness identity, tmux liveness classification, the
 # spawn launch line and worker posture overlay, pre-launch model validation, the
 # per-task busy-state extension, the extension supervision model and ownership
 # proof, and the two tracked primary extensions driven over a fake omp API.
@@ -41,8 +41,8 @@ set -u
 . "$ROOT/bin/fm-composer-lib.sh"
 # shellcheck source=bin/fm-control-lib.sh
 . "$ROOT/bin/fm-control-lib.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$ROOT/bin/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-proc-lib.sh
+. "$ROOT/bin/fm-proc-lib.sh"
 
 HARNESS="$ROOT/bin/fm-harness.sh"
 TMP_ROOT=$(fm_test_tmproot fm-omp-harness)
@@ -75,10 +75,12 @@ test_detection_anchored_name_and_marker_precedence() {
     "$bin/omp" -c '"$1"; :' _ "$HARNESS")
   [ "$out" = omp ] || fail "a process named omp must detect as omp, got '$out'"
   for decoy in ompd comp; do
-    # shellcheck disable=SC2016 # the quoted body expands inside the named shell
+    # Run the decoy under the named claude shell so the nearest harness ancestor
+    # is deterministic: this suite may itself be running under a real omp.
+    # shellcheck disable=SC2016 # the quoted bodies expand inside the named shells
     out=$(env -u CLAUDECODE -u FM_OMP_HARNESS -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
-      "$bin/$decoy" -c '"$1"; :' _ "$HARNESS")
-    [ "$out" != omp ] || fail "'$decoy' merely contains omp and must not detect as omp"
+      "$bin/claude" -c '"$@"; :' _ "$bin/$decoy" -c '"$1"; :' _ "$HARNESS")
+    [ "$out" != omp ] || fail "'$decoy' merely contains omp and must not detect as omp, got '$out'"
   done
   # The marker beats an inherited CLAUDECODE only under a real omp ancestor.
   # shellcheck disable=SC2016 # the quoted body expands inside the named shell
@@ -103,11 +105,11 @@ test_detection_anchored_name_and_marker_precedence() {
   pass "fm-harness: omp detects by its anchored name; the marker is a precedence override that needs real omp ancestry"
 }
 
-test_lock_identity_and_liveness_classification() {
-  fm_harness_process_matches omp '' || fail "session-lock identity must accept the exact omp name"
-  fm_harness_process_matches /usr/local/bin/omp 'omp --cwd /x' || fail "session-lock identity must accept an omp path"
-  ! fm_harness_process_matches ompd '' || fail "session-lock identity must not accept ompd"
-  ! fm_harness_process_matches comp '' || fail "session-lock identity must not accept comp"
+test_harness_identity_and_liveness_classification() {
+  fm_harness_process_matches omp '' || fail "harness identity must accept the exact omp name"
+  fm_harness_process_matches /usr/local/bin/omp 'omp --cwd /x' || fail "harness identity must accept an omp path"
+  ! fm_harness_process_matches ompd '' || fail "harness identity must not accept ompd"
+  ! fm_harness_process_matches comp '' || fail "harness identity must not accept comp"
   # shellcheck source=bin/fm-backend.sh
   . "$ROOT/bin/fm-backend.sh"
   fm_backend_source tmux || fail "fm_backend_source tmux failed"
@@ -115,7 +117,7 @@ test_lock_identity_and_liveness_classification() {
   [ "$(fm_agent_process_classify_name /opt/omp/bin/omp)" = agent ] || fail "tmux liveness must classify an omp path as an agent"
   [ "$(fm_agent_process_classify_name ompd)" != agent ] || fail "tmux liveness must not classify ompd as an agent"
   [ "$(fm_agent_process_classify_name comp)" != agent ] || fail "tmux liveness must not classify comp as an agent"
-  pass "session lock and tmux liveness: omp is anchored, decoys stay out"
+  pass "harness identity and tmux liveness: omp is anchored, decoys stay out"
 }
 
 # The bun global package install: `~/.bun/bin/omp` is a `#!/usr/bin/env bun`
@@ -146,8 +148,10 @@ run_bun_shape() {  # <dir> <name> <script>: the script path is $dir/scripts/<scr
   cat > "$dir/probe-$name.sh" <<SH
 printf '%s\n' "\$(env -u CLAUDECODE -u FM_OMP_HARNESS -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \\
   '$HARNESS')" > '$home/harness.out'
-env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID FM_HOME='$home' '$ROOT/bin/fm-lock.sh' > '$home/lock.out' 2>&1
-printf '%s\n' "\$?" > '$home/lock.rc'
+env -u CLAUDECODE -u FM_OMP_HARNESS -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \\
+  bash -c '. "\$0/bin/fm-proc-lib.sh"; pid=\$(fm_harness_ancestry_pid) || exit 9; fm_harness_pid_alive "\$pid" || exit 10; printf "%s\\\\n" "\$pid"' \\
+  '$ROOT' > '$home/identity.out' 2> '$home/identity.err'
+printf '%s\n' "\$?" > '$home/identity.rc'
 SH
   # shellcheck disable=SC2016 # the quoted body expands inside the claude shell
   env -u CLAUDECODE -u FM_OMP_HARNESS -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
@@ -156,23 +160,23 @@ SH
   printf '%s' "$home"
 }
 
-test_bun_package_omp_is_identified_and_owns_the_lock() {
+test_bun_package_omp_identity_is_the_session_harness() {
   local dir home shape
   dir=$(make_bun_shapes "$TMP_ROOT/bun-shapes")
   for shape in omp "Agent Tools/bin/omp"; do
     home=$(run_bun_shape "$dir" "pos-${shape//[\/ ]/_}" "$shape")
     [ "$(cat "$home/harness.out")" = omp ] || fail "bun running $shape must detect as omp, got '$(cat "$home/harness.out")'"
-    [ "$(cat "$home/lock.rc")" = 0 ] || fail "bun running $shape must let the session lock be acquired: $(cat "$home/lock.out")"
-    [ "$(sed -n 1p "$home/state/.lock")" = "$(cat "$home/shape.pid")" ] \
-      || fail "the lock for bun running $shape must name the bun-run omp process, got '$(sed -n 1p "$home/state/.lock")'"
+    [ "$(cat "$home/identity.rc")" = 0 ] || fail "bun running $shape must resolve a live session harness: $(cat "$home/identity.err")"
+    [ "$(sed -n 1p "$home/identity.out")" = "$(cat "$home/shape.pid")" ] \
+      || fail "the session harness for bun running $shape must be the bun-run omp process, got '$(sed -n 1p "$home/identity.out")'"
   done
   for shape in ompd comp prompt.sh "Agent Tools/bin/ompd"; do
     home=$(run_bun_shape "$dir" "neg-${shape//[\/ ]/_}" "$shape")
     [ "$(cat "$home/harness.out")" = claude ] || fail "bun running $shape must not detect as omp, got '$(cat "$home/harness.out")'"
-    [ "$(sed -n 1p "$home/state/.lock")" = "$(cat "$home/claude.pid")" ] \
-      || fail "the lock for bun running $shape must not name the bun process"
+    [ "$(sed -n 1p "$home/identity.out")" = "$(cat "$home/claude.pid")" ] \
+      || fail "the session harness for bun running $shape must be the claude ancestor, not the bun process, got '$(sed -n 1p "$home/identity.out")'"
   done
-  pass "fm-harness and fm-lock: a bun-run omp script owns the session; ompd, comp, and other scripts do not"
+  pass "fm-harness and fm-proc-lib: a bun-run omp script is the session harness; ompd, comp, and other scripts are not"
 }
 
 test_bun_package_omp_identity_unit_shapes() {
@@ -567,7 +571,7 @@ test_control_composer_and_model_tables() {
 
 # Stand up the durable evidence a live omp session leaves behind: both tracked
 # extensions under the case root and one marker per extension recording that
-# build plus the session pid in state/.lock.
+# build plus the session's harness pid.
 record_omp_session() {  # <root> <home> <session-pid> [omit] [drift]
   local root=$1 home=$2 session_pid=$3 omit=${4:-} drift=${5:-} pair source marker version
   mkdir -p "$root/.omp/extensions" "$home/state"
@@ -585,11 +589,18 @@ record_omp_session() {  # <root> <home> <session-pid> [omit] [drift]
     fi
     printf '%s\n%s\n' "$version" "$session_pid" > "$home/state/$marker"
   done
-  printf '%s\n' "$session_pid" > "$home/state/.lock"
 }
 
-owns() {  # <root> <home>
-  bash -c '. "$1"; fm_omp_extension_owns_supervision "$2" "$3"' _ "$ROOT/bin/fm-wake-lib.sh" "$2/state" "$1"
+# The proof binds to the session's harness pid as fm_harness_ancestry_pid
+# reports it. Inject that pid in a fresh shell so each case can choose the
+# recorded session process without depending on this suite's own harness.
+owns() {  # <root> <home> <session-pid>
+  bash -c '
+    . "$1"
+    pid=$3
+    fm_harness_ancestry_pid() { printf "%s\n" "$pid"; }
+    fm_omp_extension_owns_supervision "$2" "$4"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$2/state" "$3" "$1"
 }
 
 test_ownership_proof_is_omp_keyed() {
@@ -598,23 +609,25 @@ test_ownership_proof_is_omp_keyed() {
   pid=$!
   root="$TMP_ROOT/own/root"; home="$TMP_ROOT/own/home"
   record_omp_session "$root" "$home" "$pid" || fail "could not record the omp session"
-  owns "$root" "$home" || fail "a live session that loaded both omp extensions must own supervision"
-  bash -c '. "$1"; fm_pi_extension_owns_supervision "$2" "$3"' _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$root" \
+  owns "$root" "$home" "$pid" || fail "a live session that loaded both omp extensions must own supervision"
+  bash -c '. "$1"; pid=$4; fm_harness_ancestry_pid() { printf "%s\n" "$pid"; }; fm_pi_extension_owns_supervision "$2" "$3"' _ \
+    "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$root" "$pid" \
     && fail "omp markers must never satisfy the Pi proof"
-  bash -c '. "$1"; fm_extension_owns_supervision "$2" "$3"' _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$root" \
+  bash -c '. "$1"; pid=$4; fm_harness_ancestry_pid() { printf "%s\n" "$pid"; }; fm_extension_owns_supervision "$2" "$3"' _ \
+    "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$root" "$pid" \
     || fail "the shared extension proof must accept the omp pair"
 
   root="$TMP_ROOT/own-drift/root"; home="$TMP_ROOT/own-drift/home"
   record_omp_session "$root" "$home" "$pid" "" watch || fail "could not record the drifted session"
-  owns "$root" "$home" && fail "a session that loaded an older watch build must not own supervision"
+  owns "$root" "$home" "$pid" && fail "a session that loaded an older watch build must not own supervision"
   root="$TMP_ROOT/own-omit/root"; home="$TMP_ROOT/own-omit/home"
   record_omp_session "$root" "$home" "$pid" turnend || fail "could not record the partial session"
-  owns "$root" "$home" && fail "a session missing the turn-end guard extension must not own supervision"
+  owns "$root" "$home" "$pid" && fail "a session missing the turn-end guard extension must not own supervision"
   root="$TMP_ROOT/own-dead/root"; home="$TMP_ROOT/own-dead/home"
   record_omp_session "$root" "$home" "$pid" || fail "could not record the dead session"
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
-  owns "$root" "$home" && fail "a dead session must not own supervision"
+  owns "$root" "$home" "$pid" && fail "a dead session must not own supervision"
 
   # The pull-guard verdict tolerates the extension's own hand-off only with the proof.
   sleep 60 &
@@ -624,13 +637,13 @@ test_ownership_proof_is_omp_keyed() {
   touch "$home/state/.last-watcher-beat"
   local verdict
   verdict=$(FM_SUPERVISION_MODEL=extension FM_HOME="$home" bash -c '
-    . "$1"; fm_watcher_supervision_verdict "$2" "$3" 999 "$4" "$5"; printf "%s %s" "$FM_WATCHER_VERDICT_OK" "$FM_WATCHER_VERDICT_REASON"' \
-    _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$root/bin/fm-watch.sh" "$home" "$root")
-  [ "${verdict%% *}" = true ] || fail "an unheld lock with a fresh beacon and the omp proof must be healthy, got '$verdict'"
+    . "$1"; pid=$6; fm_harness_ancestry_pid() { printf "%s\n" "$pid"; }; fm_watcher_supervision_verdict "$2" "$3" 999 "$4" "$5"; printf "%s %s" "$FM_WATCHER_VERDICT_OK" "$FM_WATCHER_VERDICT_REASON"' \
+    _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$root/bin/fm-watch.sh" "$home" "$root" "$pid")
+  [ "${verdict%% *}" = true ] || fail "a fresh beacon with the omp proof must be healthy, got '$verdict'"
   rm -f "$home/state/.omp-turnend-extension-loaded"
   verdict=$(FM_SUPERVISION_MODEL=extension FM_HOME="$home" bash -c '
-    . "$1"; fm_watcher_supervision_verdict "$2" "$3" 999 "$4" "$5"; printf "%s %s" "$FM_WATCHER_VERDICT_OK" "$FM_WATCHER_VERDICT_REASON"' \
-    _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$root/bin/fm-watch.sh" "$home" "$root")
+    . "$1"; pid=$6; fm_harness_ancestry_pid() { printf "%s\n" "$pid"; }; fm_watcher_supervision_verdict "$2" "$3" 999 "$4" "$5"; printf "%s %s" "$FM_WATCHER_VERDICT_OK" "$FM_WATCHER_VERDICT_REASON"' \
+    _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$root/bin/fm-watch.sh" "$home" "$root" "$pid")
   [ "$verdict" = "false no-watcher" ] || fail "without the proof the same hand-off must alarm as no-watcher, got '$verdict'"
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
@@ -734,7 +747,6 @@ SH
     EXT="$repo/.omp/extensions/fm-primary-omp-watch.ts" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 import { writeFileSync, existsSync, readFileSync } from "node:fs";
-writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const handlers = new Map(); let tool = null; let command = null; const sent = [];
 const pi = {
   on(e, h) { handlers.set(e, h); },
@@ -817,7 +829,6 @@ SH
     RECORD_KIND="$kind" EXT="$repo/.omp/extensions/fm-primary-omp-watch.ts" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 import { writeFileSync, readFileSync } from "node:fs";
-writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const handlers = new Map(); let tool = null; const sent = [];
 const pi = {
   on(e, h) { handlers.set(e, h); },
@@ -889,7 +900,6 @@ SH
       EXT="$repo/.omp/extensions/fm-primary-omp-watch.ts" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 import { existsSync, writeFileSync, readFileSync } from "node:fs";
-writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const handlers = new Map(); let tool = null;
 const pi = {
   on(e, h) { handlers.set(e, h); },
@@ -946,7 +956,6 @@ SH
     EXT="$repo/.omp/extensions/fm-primary-omp-watch.ts" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
-writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const handoff = `${process.env.FM_HOME}/state/extensions/omp-primary-watch/session-replacement-actionable.json`;
 const handlers = new Map(); let tool = null; const sent = [];
 const pi = {
@@ -1026,7 +1035,6 @@ SH
     EXT="$repo/.omp/extensions/fm-primary-omp-watch.ts" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 import { writeFileSync } from "node:fs";
-writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const handlers = new Map(); let tool = null; const sent = [];
 const pi = {
   on(e, h) { handlers.set(e, h); },
@@ -1054,9 +1062,9 @@ EOF
 }
 
 test_detection_anchored_name_and_marker_precedence
-test_lock_identity_and_liveness_classification
+test_harness_identity_and_liveness_classification
 test_bun_package_omp_identity_unit_shapes
-test_bun_package_omp_is_identified_and_owns_the_lock
+test_bun_package_omp_identity_is_the_session_harness
 test_spawn_launch_line_and_worker_wiring
 test_spawn_model_validation_scoped_to_listed_providers
 test_secondmate_launch_relies_on_discovery

@@ -1256,58 +1256,47 @@ test_lock_real_directory_permission_refusal() {
     return
   fi
   # Triage #8275 requires a prompt named refusal. Missing search permission
-  # must not turn either session claim path back into an unbounded wait.
-  python3 - "$LIB" "$ROOT/bin/fm-lock.sh" "$TMP_ROOT" "$(dead_pid)" <<'PY' || fail "inaccessible directory-lock refusal"
+  # must not turn the directory-lock claim path back into an unbounded wait.
+  python3 - "$LIB" "$TMP_ROOT" "$(dead_pid)" <<'PY' || fail "inaccessible directory-lock refusal"
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 
-lib, script, root, dead = sys.argv[1:]
+lib, root, dead = sys.argv[1:]
 fixture = Path(root) / 'permission-refusal'
 fixture.mkdir()
-harness = fixture / 'claude'
-harness.symlink_to(shutil.which('bash'))
-for mode in ('library', 'new-session', 'own-session'):
-    for suffix in ('', '.steal'):
-        home = fixture / (mode + suffix)
-        state = home / 'state'
-        state.mkdir(parents=True)
-        lock = state / '.lock.acquire'
-        wedged = Path(str(lock) + suffix)
-        for path in (lock, Path(str(lock) + '.steal')):
-            path.mkdir()
-            (path / 'pid').write_text(dead + '\n')
-            os.utime(path, (1, 1))
-        wedged.chmod(0o600)
-        try:
-            probe = subprocess.run(['bash', '-c', 'cd -- "$1"', '_', str(wedged)],
-                                   capture_output=True, timeout=5)
-            if probe.returncode == 0:
-                print('SKIP permission refusal: filesystem does not enforce search permissions')
-                sys.exit(0)
-            env = dict(os.environ, FM_HOME=str(home), FM_STATE_OVERRIDE=str(state))
-            for name in ('CLAUDE_CODE_SESSION_ID', 'CLAUDE_PID'):
-                env.pop(name, None)
-            if mode == 'library':
-                command = ['bash', '-c', '. "$1"; fm_lock_acquire_wait "$2" --refuse-unreapable',
-                           '_', lib, str(lock)]
-            else:
-                command = [str(harness), '-c', 'if [ "$2" = own-session ]; then '
-                           'printf "%s\\n" "$$" > "$FM_HOME/state/.lock"; fi; '
-                           'bash "$1"; rc=$?; exit "$rc"', '_', script, mode]
-            result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=10)
-            assert result.returncode == 1, (mode, suffix, result)
-            assert 'cannot reclaim lock directory ' + str(wedged) in result.stderr, result.stderr
-            assert 'lock acquired:' not in result.stdout, result.stdout
-            assert wedged.is_dir() and not wedged.is_symlink()
-            assert not list(state.glob('*.owner.*')), list(state.iterdir())
-        finally:
-            wedged.chmod(0o700)
-        assert (wedged / 'pid').read_text() == dead + '\n'
+for suffix in ('', '.steal'):
+    state = fixture / ('library' + suffix)
+    state.mkdir(parents=True)
+    lock = state / '.lock.acquire'
+    wedged = Path(str(lock) + suffix)
+    for path in (lock, Path(str(lock) + '.steal')):
+        path.mkdir()
+        (path / 'pid').write_text(dead + '\n')
+        os.utime(path, (1, 1))
+    wedged.chmod(0o600)
+    try:
+        probe = subprocess.run(['bash', '-c', 'cd -- "$1"', '_', str(wedged)],
+                               capture_output=True, timeout=5)
+        if probe.returncode == 0:
+            print('SKIP permission refusal: filesystem does not enforce search permissions')
+            sys.exit(0)
+        env = dict(os.environ, FM_STATE_OVERRIDE=str(state))
+        result = subprocess.run(
+            ['bash', '-c', '. "$1"; fm_lock_acquire_wait "$2" --refuse-unreapable',
+             '_', lib, str(lock)],
+            env=env, capture_output=True, text=True, timeout=10)
+        assert result.returncode == 1, (suffix, result)
+        assert 'cannot reclaim lock directory ' + str(wedged) in result.stderr, result.stderr
+        assert 'lock acquired:' not in result.stdout, result.stdout
+        assert wedged.is_dir() and not wedged.is_symlink()
+        assert not list(state.glob('*.owner.*')), list(state.iterdir())
+    finally:
+        wedged.chmod(0o700)
+    assert (wedged / 'pid').read_text() == dead + '\n'
 PY
-  pass "inaccessible primary and steal directories refuse by name on both session claim paths"
+  pass "inaccessible primary and steal directories refuse by name on the directory-lock claim path"
 }
 
 test_lock_inaccessible_directory_replacement_is_retriable() {
@@ -1447,52 +1436,6 @@ test_lock_failed_create_discards_owner() {
     done
   ' _ "$LIB" "$state/.contend.lock" || fail "failed owner publication leaked its staging directory"
   pass "failed owner publication discards the staging directory"
-}
-
-test_session_lock_real_directory_residue() {
-  python3 - "$ROOT/bin/fm-lock.sh" "$TMP_ROOT" "$(dead_pid)" <<'PY' || fail "session-lock directory recovery/refusal"
-import os
-from pathlib import Path
-import shutil
-import subprocess
-import sys
-
-script, root, dead = sys.argv[1:]
-harness = Path(root) / 'claude'
-harness.symlink_to(shutil.which('bash'))
-for mode in ('recover', 'refuse', 'own-refuse'):
-    home = Path(root) / ('session-real-dir-' + mode)
-    state = home / 'state'
-    state.mkdir(parents=True)
-    lock = state / '.lock.acquire'
-    for path in (lock, Path(str(lock) + '.steal')):
-        path.mkdir()
-        owner = path / (path.name + '.owner.fixture')
-        owner.mkdir()
-        (owner / 'pid').write_text(dead + '\n')
-        os.utime(owner, (1, 1))
-        os.utime(path, (1, 1))
-    if mode != 'recover':
-        (lock / 'unrecognized-record').write_text('preserve me\n')
-        os.utime(lock, (1, 1))
-    env = dict(os.environ, FM_HOME=str(home), FM_STATE_OVERRIDE=str(state))
-    for name in ('CLAUDE_CODE_SESSION_ID', 'CLAUDE_PID'):
-        env.pop(name, None)
-    result = subprocess.run(
-        [str(harness), '-c', 'if [ "$2" = own-refuse ]; then '
-         'printf "%s\\n" "$$" > "$FM_HOME/state/.lock"; fi; '
-         'bash "$1"; rc=$?; exit "$rc"', '_', script, mode],
-        env=env, capture_output=True, text=True, timeout=15)
-    if mode == 'recover':
-        assert result.returncode == 0, result.stderr
-        assert 'lock acquired:' in result.stdout, result.stdout
-    else:
-        assert result.returncode == 1, (mode, result)
-        assert 'cannot reclaim lock directory ' + str(lock) in result.stderr, result.stderr
-        assert 'lock acquired:' not in result.stdout, result.stdout
-    assert not list(state.glob('*.owner.*')), list(state.iterdir())
-PY
-  pass "session-lock acquisition recovers directory residue and honors named refusal on both claim paths"
 }
 
 test_lock_empty_pid_uses_minimum_grace() {
@@ -2843,7 +2786,6 @@ test_lock_real_directory_permission_refusal
 test_lock_inaccessible_directory_replacement_is_retriable
 test_lock_real_directory_default_wait
 test_lock_failed_create_discards_owner
-test_session_lock_real_directory_residue
 test_lock_empty_pid_uses_minimum_grace
 test_lock_late_claim_loses_after_recreate
 test_lock_bounded_wait_earns_one_grace_window_for_unpublished_pid

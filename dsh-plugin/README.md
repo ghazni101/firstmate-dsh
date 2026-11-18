@@ -159,7 +159,7 @@ No live fleet, no network.
 - A home without `config/dsh-native-lease` is byte-for-byte unchanged; the existing lease
   tests and `tests/fm-send-inbox.test.sh` / `tests/fm-approval-failover.test.sh` still pass.
 - The native path never reads or writes `state/.lock`; tests assert the file stays absent.
-- `bin/fm-lease.sh` and the two-actor `main`/`branch` contract remain for legacy homes. The
+- The two-actor `main`/`branch` lease and its `bin/fm-lease.sh` command surface are retired; the
   native guard requires `FM_LEASE_TOKEN` + `FM_LEASE_SESSION` (and the matching
   `FM_LEASE_TASK`) from the plugin channel or the loop; a direct shell mutation without them
   refuses with exit 6.

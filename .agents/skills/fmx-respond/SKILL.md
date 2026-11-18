@@ -306,7 +306,7 @@ Treat a public loop as closed only after `retire`.
 - Conversations: `in_reply_to` carries the parent post and optional `in_reply_to_chain` carries the surrounding transcript for continuity; a pure acknowledgment with nothing to answer is dismissed at the relay and skipped, not replied to. The relay already guards against self-replies and caps replies per conversation, so you only judge "is there something to answer here?".
 - Never inline mention-influenced reply text into a shell command; always go through `--text-file` or stdin.
 - The reply length authority is the relay (it trims), but a tight reply is on you.
-- Never edit `bin/fm-x-poll.sh`, `bin/fm-x-reply.sh`, or the watcher to "answer faster"; the cadence is handled by the locked session-start bootstrap step.
+- Never edit `bin/fm-x-poll.sh`, `bin/fm-x-reply.sh`, or the watcher to "answer faster"; the cadence is handled by the session-start bootstrap step.
 
 ## Relay activation and ownership contract
 

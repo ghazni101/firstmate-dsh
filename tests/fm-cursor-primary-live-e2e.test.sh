@@ -5,7 +5,7 @@
 # answer: that its `stop` hook is awaited so a park can hold the turn boundary,
 # that a returned followup_message genuinely starts another turn, that
 # `sessionStart` carries additional_context into model context, that Cursor's own
-# process appears in the session-lock ancestry, and that an idle Cursor composer
+# process appears in the harness-identity ancestry, and that an idle Cursor composer
 # can be proven empty so an away-mode escalation can be delivered. A stub can
 # only confirm the assumption already written into the stub, so this exercises
 # the installed binary end to end.
@@ -120,15 +120,12 @@ submit() {  # <text>
 
 # --- 1. run-tier session start ----------------------------------------------
 
-wait_for_file "$HOME_DIR/state/.lock" 180 "the fleet session lock"
-LOCK_PID=$(cat "$HOME_DIR/state/.lock" 2>/dev/null)
-PANE_PID=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t primary '#{pane_pid}' 2>/dev/null)
-[ -n "$LOCK_PID" ] && [ "$LOCK_PID" = "$PANE_PID" ] \
-  || harness_fail "the session lock must be owned by the Cursor pane process (lock=$LOCK_PID pane=$PANE_PID); Cursor is not resolving in the session-lock ancestry"
-pass "cursor primary: the sessionStart hook takes the fleet lock as the Cursor process itself"
-
 wait_for_file "$HOME_DIR/state/.session-start-complete" 240 "the completed session-start record"
-pass "cursor primary: the run-tier session start completes every stage"
+COMPLETION_PID=$(sed -n '1p' "$HOME_DIR/state/.session-start-complete" 2>/dev/null)
+PANE_PID=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t primary '#{pane_pid}' 2>/dev/null)
+[ -n "$COMPLETION_PID" ] && [ "$COMPLETION_PID" = "$PANE_PID" ] \
+  || harness_fail "the completed session-start record must name the Cursor pane process (recorded=$COMPLETION_PID pane=$PANE_PID)"
+pass "cursor primary: the sessionStart hook records the Cursor process itself as the session harness and completes every stage"
 
 submit "Answer only from the context you were given at session start. Do not run any command. Reply with the exact live marker token you can see, and nothing else."
 wait_for_pane "$MARKER" 180 "the session-start digest marker quoted back from model context"

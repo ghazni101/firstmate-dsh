@@ -20,8 +20,8 @@
 # duplicating it, so the two consumers cannot drift apart.
 # shellcheck source=bin/fm-tmux-lib.sh
 . "$FM_BACKEND_LIB_DIR/fm-tmux-lib.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$FM_BACKEND_LIB_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-proc-lib.sh
+. "$FM_BACKEND_LIB_DIR/fm-proc-lib.sh"
 # shellcheck source=bin/fm-agent-process-lib.sh
 . "$FM_BACKEND_LIB_DIR/fm-agent-process-lib.sh"
 

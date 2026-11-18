@@ -14,7 +14,7 @@ printf '{}\n' > "$HOME/.pi/agent/trust.json"
 unset CLAUDE_CONFIG_DIR TMUX
 
 # A source checkout with a stubbed mate launch: it creates the same observable
-# mate window/lock and opt-out material, without contacting a model.
+# mate window/session start and opt-out material, without contacting a model.
 cp -R "$ROOT/bin/." "$TMP_ROOT/source/bin/"
 cp "$ROOT/AGENTS.md" "$TMP_ROOT/source/AGENTS.md"
 cat > "$TMP_ROOT/source/bin/fm-home-seed.sh" <<'SH'
@@ -32,12 +32,12 @@ cat > "$TMP_ROOT/source/bin/fm-spawn.sh" <<'SH'
 lab_tmux() { tmux -S "${TMUX_TMPDIR:?}/tmux-$(id -u)/default" "$@"; }
 lab_tmux new-window -d -t firstmate: -n "fm-$1" -c "$FM_HOME/../mate" 'exec sleep 45' || exit 1
 pid=$(lab_tmux display-message -p -t "firstmate:=fm-$1" '#{pane_pid}')
-printf '%s\n' "$pid" > "$FM_HOME/../mate/state/.lock"
+printf '%s\n' "$pid" > "$FM_HOME/../mate/state/.session-start-complete"
 printf 'window=firstmate:fm-%s\n' "$1" > "$FM_HOME/state/$1.meta"
 SH
 cat > "$TMP_ROOT/fakebin/claude" <<'SH'
 #!/usr/bin/env bash
-: > "$FM_HOME/state/.session-start-complete"
+printf '%s\n' "$$" > "$FM_HOME/state/.session-start-complete"
 exec sleep 45
 SH
 chmod +x "$TMP_ROOT/source/bin/"{fm-home-seed,fm-spawn}.sh "$TMP_ROOT/fakebin/claude"

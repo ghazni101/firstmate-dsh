@@ -95,7 +95,7 @@ An attended turn queues nothing: its captain rows reach main through the host's 
 The host's engine runs with these settings:
 
 - `FM_SUPERVISION_ACTOR=branch`.
-- The session-lock holder as `FM_LEASE_HOLDER_PID`.
+- The session's harness process as `FM_LEASE_HOLDER_PID`.
 - The primary's harness pin.
 
 So every guarded script treats it exactly as it treats the Pi branch.
@@ -123,7 +123,7 @@ It also passes the close through unchanged, with no added line, when any of thes
 - The home names no usable engine.
 - A tool its turns need is missing: the engine executable, node, jq, or one of perl, timeout, or gtimeout to bound the turn.
 - The primary has no verified dialog mirror.
-- The main session's lock holder cannot be identified.
+- The main session's harness process cannot be identified.
 - The session is cooling down after engine errors; see [The broken-session latch](#the-broken-session-latch).
 
 A close the engine takes is handled as in [One wake](#one-wake), with the dialog mirror at the head of the wake message.
@@ -160,7 +160,7 @@ A captain prompt whose hook write fails is not mirrored, so the engine may judge
 
 Claude and Cursor have writers, proven against the real harness to record the session's dialog from its first captain prompt, so only they run the attended posture.
 Codex has no verified dialog-mirror writer yet, including on its native Stop-park path, so attended host handling remains pass-through.
-Grok and OpenCode have no writer, because their session takes the fleet lock during its first turn, so that turn's captain prompt could never be recorded.
+Grok and OpenCode have no writer, so that first captain prompt could never be recorded.
 omp has no verified writer, because no omp was available to prove one against.
 
 ## One wake
@@ -300,8 +300,8 @@ The latch belongs to one main session, engine, and model, so a new main session 
 
 ### Lost ownership
 
-When the host loses session-lock ownership or its auto-arm generation, it stands down silently and leaves continuity to whoever owns it now.
-A host that starts without that ownership stands down before activation.
+When the session that launched the host is gone or its auto-arm generation is stale, it stands down silently and leaves continuity to whoever owns it now.
+A host that starts without that proof stands down before activation.
 So it never stops the owner's host or watcher or releases its leases.
 
 ### A host that dies without a close
@@ -401,7 +401,7 @@ Today the only verified engine is Claude's print mode, measured on Claude Code 2
   So the engine can never fire the home's own Stop or SessionStart hooks.
   A home's own rules reach the engine only through the optional `config/branch-prompt-include.md` ([configuration](configuration.md#home-branch-prompt-include-configbranch-prompt-includemd)).
 - `--bare` is unusable because it never reads claude.ai OAuth.
-- From inside the engine's shell the primary is not in the harness ancestry, so the engine can never act as the session-lock owner.
+- From inside the engine's shell the primary is not in the harness ancestry, so the engine can never act as the session.
 
 **Permissions**
 
@@ -455,7 +455,7 @@ Each arm owner's own suite covers its host mode against a stub host.
 |---|---|
 | `tests/fm-supervision-host-drain.test.sh` | Report surface, dispatch entry, and the drain's `BRANCH OUTCOMES` section against the shared stub-engine fixtures. |
 | `tests/fm-supervision-host.test.sh` | Drives the real host against a stub engine for wakes, closes, the dialog mirror, and return outcomes, in both postures. |
-| `tests/fm-supervision-host-park.test.sh` | Latch, park boundary, compaction, and lock ownership against the same stub-engine fixtures. |
+| `tests/fm-supervision-host-park.test.sh` | Latch, park boundary, compaction, and session identity against the same stub-engine fixtures. |
 | `tests/fm-supervision-host-hook.test.sh` | Claude Stop-hook re-arm, successor take-over, lost hand-back continuations, and guarded retry submission. |
 | `tests/fm-claude-stop-autoarm.test.sh` | The Claude arm owner's host mode against a stub host. |
 | `tests/fm-cursor-primary.test.sh` | The Cursor arm owner's host mode against a stub host. |

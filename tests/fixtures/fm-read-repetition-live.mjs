@@ -38,7 +38,6 @@ export default function(pi) {
     parameters: Type.Object({ command: Type.String() }),
     async execute() { executions++; save(); return { content: [{ type: "text", text: "unchanged fixture" }], details: {} }; } });
   pi.on("session_start", () => {
-    writeFileSync(process.env.FM_HOME + "/state/.lock", process.pid + "\\n");
     writeFileSync(process.env.FM_HOME + "/state/.pi-turnend-extension-loaded", "sha256:synthetic\\n" + process.pid + "\\n");
   });
   pi.on("input", (event) => { if (event.text === "RESET_ONCE") faux.setResponses(calls(1)); });

@@ -69,7 +69,6 @@ unset FM_SUPERVISION_ENGINE_CLAUDE_BIN FM_SUPERVISION_ACTOR FM_BRANCH_REPORT_TUR
 unset FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_CONFIG_OVERRIDE PI_CODING_AGENT
 
 FM_HOME="$FM" PATH="$LAB/tmuxbin:$PATH" "$FAKE_CLAUDE" -c '
-  printf "%s\n" "$$" > "$FM_HOME/state/.lock"
   printf "%s\n" "$$" >> "$1/claude-pids"
   "$FM_HOME/bin/fm-supervision-host.sh" park > "$1/host.out" 2>&1
   printf "%s\n" "$?" > "$1/host.rc"
@@ -99,7 +98,6 @@ diagnose() {
 }
 
 wait_until 300 watcher_live || fail "the host never started a watcher cycle ($CLAUDE_VERSION)"$'\n'"$(diagnose)"
-lock_before=$(cat "$FM/state/.lock")
 
 printf 'done [at=%s]: the demo cleanup finished; nothing else is needed\n' "$(date +%s)" >> "$FM/state/demo.status"
 wait_until "$HOST_TIMEOUT_POLLS" settled_at_least 1 || fail "the first engine turn never settled ($CLAUDE_VERSION)"$'\n'"$(diagnose)"
@@ -111,10 +109,6 @@ grep -q '"task":"demo"' "$FM/state/branch-outcomes.jsonl" \
 ! grep -q 'demo.status' "$FM/state/.wake-queue" 2>/dev/null \
   || fail "the engine did not acknowledge its wake ($CLAUDE_VERSION)"$'\n'"$(diagnose)"
 [ ! -e "$FM/state/.claude-autoarm-epoch" ] || fail "a lab Stop hook fired inside the engine ($CLAUDE_VERSION)"
-[ "$(cat "$FM/state/.lock")" = "$lock_before" ] || fail "the engine rewrote the session lock ($CLAUDE_VERSION)"
-if FM_HOME="$FM" "$FM/bin/fm-lease.sh" check demo >/dev/null 2>&1; then
-  fail "a branch lease outlived the engine turn ($CLAUDE_VERSION)"
-fi
 wait_until 100 watcher_live || fail "the host is not parked on a live successor after handling ($CLAUDE_VERSION)"
 printf '# first turn: %s\n' "$(grep '	handled	' "$FM/state/.supervision-host.log" | head -n 1 | cut -f2-5)"
 printf '# outcome: %s\n' "$(head -n 1 "$FM/state/branch-outcomes.jsonl")"

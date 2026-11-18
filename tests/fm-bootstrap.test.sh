@@ -1252,38 +1252,6 @@ SH
   pass "bootstrap: FM_BOOTSTRAP_NETWORK partitions one run into local and network halves"
 }
 
-test_network_sweeps_recheck_lock_ownership() {
-  local case_dir fakebin fake_root marker out
-  case_dir="$TMP_ROOT/network-lock-handoff"
-  mkdir -p "$case_dir/home/config" "$case_dir/home/projects" "$case_dir/home/state"
-  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
-  printf '222222\n' > "$case_dir/home/state/.lock"
-  fakebin=$(make_fake_toolchain "$case_dir")
-  fake_root="$case_dir/root"
-  marker="$case_dir/fleet-sync.started"
-  mkdir -p "$fake_root/bin"
-  cat > "$fake_root/bin/fm-fleet-sync.sh" <<'SH'
-#!/usr/bin/env bash
-: > "${FM_FAKE_FLEET_SYNC_STARTED_MARKER:?}"
-SH
-  chmod +x "$fake_root/bin/fm-fleet-sync.sh"
-
-  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$fake_root" \
-    FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_BOOTSTRAP_NETWORK=only \
-    FM_BOOTSTRAP_NETWORK_LOCK_PID=111111 FM_FAKE_FLEET_SYNC_STARTED_MARKER="$marker" \
-    "$ROOT/bin/fm-bootstrap.sh")
-  assert_absent "$marker" "a stale worker refreshed project clones after lock handoff"
-  assert_contains "$out" "changed before dead-secondmate relaunch" \
-    "the stale worker did not report the refused liveness sweep"
-  assert_contains "$out" "changed before secondmate convergence" \
-    "the stale worker did not report the refused convergence sweep"
-  assert_contains "$out" "changed before pending handoff delivery" \
-    "the stale worker did not report the refused handoff sweep"
-  assert_contains "$out" "changed before project clone refresh" \
-    "the stale worker did not report the refused clone refresh"
-  pass "bootstrap: every deferred mutating sweep rechecks fleet-lock ownership"
-}
-
 # The verdict costs three subprocesses, so a caller that already has it can hand
 # it over - but only one hop, and never onward into a spawned agent's
 # environment, where it could outlive a tasks-axi upgrade.
@@ -1309,7 +1277,6 @@ test_network_phases_record_per_step_elapsed_times() {
   case_dir="$TMP_ROOT/network-timings"
   mkdir -p "$case_dir/home/config" "$case_dir/home/state" "$case_dir/home/data" "$case_dir/home/projects"
   printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
-  printf '%s\n' $$ > "$case_dir/home/state/.lock"
   fakebin=$(make_fake_toolchain "$case_dir")
   # A real clone with a real origin, so fm-fleet-sync.sh genuinely iterates it.
   fm_git_init_commit "$case_dir/home/projects/alpha"
@@ -1321,7 +1288,7 @@ test_network_phases_record_per_step_elapsed_times() {
   log="$case_dir/timings.tsv"
   PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$ROOT" \
     FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_BOOTSTRAP_NETWORK=only \
-    FM_BOOTSTRAP_NETWORK_LOCK_PID=$$ FM_TIMING_LOG="$log" FM_TIMING_EPOCH_MS=0 \
+    FM_TIMING_LOG="$log" FM_TIMING_EPOCH_MS=0 \
     "$ROOT/bin/fm-bootstrap.sh" >/dev/null 2>&1
 
   assert_present "$log" "the network phase recorded no elapsed times at all"
@@ -1346,7 +1313,6 @@ test_network_phases_record_per_step_elapsed_times() {
   rm -f "$log"
   PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$ROOT" \
     FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_BOOTSTRAP_NETWORK=only \
-    FM_BOOTSTRAP_NETWORK_LOCK_PID=$$ \
     "$ROOT/bin/fm-bootstrap.sh" >/dev/null 2>&1
   assert_absent "$log" "a run that never asked for timings recorded them anyway"
   pass "bootstrap: each deferred network phase, secondmate, and clone records its own elapsed time"
@@ -1945,7 +1911,6 @@ test_fleet_sync_timeout_is_computed_before_launch
 test_routine_bootstrap_confirmations_are_silent
 test_routine_bootstrap_contract_runs_under_system_bash
 test_network_phase_partitions_the_run
-test_network_sweeps_recheck_lock_ownership
 test_network_phases_record_per_step_elapsed_times
 test_tasks_axi_verdict_handoff_is_consumed_once
 test_crew_dispatch_active_rules_are_verbose_bootstrap_info

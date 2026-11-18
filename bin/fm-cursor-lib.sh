@@ -260,7 +260,7 @@ fm_cursor_argv0_is_cursor() {  # <argv0>
 
 # True when the process described by command name $1 and structured argv0 $3 is
 # Cursor. The single owner of Cursor process identity for the ancestry walk
-# (bin/fm-session-lock-lib.sh), harness detection (bin/fm-harness.sh), pane
+# (bin/fm-proc-lib.sh), harness detection (bin/fm-harness.sh), pane
 # liveness (bin/backends/tmux.sh), and worker-server discovery (bin/fm-spawn.sh).
 #
 # Accepted: an exact cursor-agent command name; a MainThread or bare
