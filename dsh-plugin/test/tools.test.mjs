@@ -53,7 +53,7 @@ test('the plugin is inert unless enabled', () => {
   assert.equal(context.listeners.size, 0)
 })
 
-test('enabling registers exactly the eight tools and the identity listeners', async () => {
+test('enabling registers exactly the ten tools and the identity listeners', async () => {
   const home = makeHome({ scripts: {
     'fm-bearings-snapshot.sh': STATUS_SCRIPT,
     'fm-tasks-axi.sh': TASKS_SCRIPT,
@@ -62,7 +62,7 @@ test('enabling registers exactly the eight tools and the identity listeners', as
   try {
     const surface = await boot({ home })
     assert.deepEqual(surface.tools.map((tool) => tool.name).sort(),
-      ['firstmate_native_delivery', 'firstmate_native_inbox', 'firstmate_native_lease', 'firstmate_native_reconcile', 'firstmate_native_run', 'firstmate_native_start', 'firstmate_native_status', 'firstmate_native_tasks'])
+      ['firstmate_native_delivery', 'firstmate_native_engine_inbox', 'firstmate_native_escalate', 'firstmate_native_inbox', 'firstmate_native_lease', 'firstmate_native_reconcile', 'firstmate_native_run', 'firstmate_native_start', 'firstmate_native_status', 'firstmate_native_tasks'])
     assert.ok(surface.listeners.has('agent/created'))
     assert.ok(surface.listeners.has('agent/disposed'))
     for (const tool of surface.tools) {
