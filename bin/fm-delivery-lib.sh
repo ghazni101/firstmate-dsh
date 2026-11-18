@@ -40,9 +40,7 @@
 # Sourced by bin/fm-delivery.sh and bin/fm-spawn.sh. set -u safe; requires
 # FM_HOME (or FM_DATA_OVERRIDE) resolved before calling.
 
-# shellcheck disable=SC2034 # Public result consumed by sourcing callers.
 FM_DELIVERY_VERSION='fm-delivery-v1'
-# shellcheck disable=SC2034 # Public result consumed by sourcing callers.
 FM_DELIVERY_MODE_SET='no-mistakes direct-PR local-only'
 FM_DELIVERY_REFUSE_EXIT=6
 
@@ -163,18 +161,13 @@ fm_delivery_field() {
 # Returns 1 when no record exists.
 fm_delivery_read() {
   local key=$1 file
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_KEY=$key
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_TASK=
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_PR_URL=
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_BRANCH=
   FM_DELIVERY_PROJECT=
   FM_DELIVERY_MODE=
   FM_DELIVERY_YOLO=
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_DECIDED_AT=
   FM_DELIVERY_REASON=
   case "$key" in
@@ -183,16 +176,12 @@ fm_delivery_read() {
   esac
   file=$(fm_delivery_record_path "$key")
   [ -r "$file" ] || return 1
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_TASK=$(fm_delivery_field "$file" task)
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_PR_URL=$(fm_delivery_field "$file" pr_url)
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_BRANCH=$(fm_delivery_field "$file" branch)
   FM_DELIVERY_PROJECT=$(fm_delivery_field "$file" project)
   FM_DELIVERY_MODE=$(fm_delivery_field "$file" delivery)
   FM_DELIVERY_YOLO=$(fm_delivery_field "$file" yolo)
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_DECIDED_AT=$(fm_delivery_field "$file" decided_at)
   FM_DELIVERY_REASON=$(fm_delivery_field "$file" reason)
   [ -n "$FM_DELIVERY_MODE" ] || return 1
@@ -304,13 +293,10 @@ fm_delivery_resolve() {
 
   FM_DELIVERY_RESOLVED_MODE=$mode
   FM_DELIVERY_RESOLVED_YOLO=$yolo
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_RESOLVED_SOURCE=$source
   FM_DELIVERY_RESOLVED_TASK=${task:-}
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_RESOLVED_PR=${pr:-}
   FM_DELIVERY_RESOLVED_REASON=$reason
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_RESOLVED_SHADOWED=$shadowed
   FM_DELIVERY_RESOLVED_YOLO_SOURCE=$yolo_source
 }
@@ -347,7 +333,6 @@ fm_delivery_write() {
     printf 'previous=%s\n' "$previous"
   } >"$tmp" || { rm -f "$tmp"; return 1; }
   mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
-  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
   FM_DELIVERY_WRITTEN_PATH=$file
   return 0
 }
