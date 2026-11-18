@@ -347,7 +347,7 @@ fm_send_count_colons() { # <string>
 }
 
 fm_send_resolve_target() { # <raw-target>
-  local raw=$1 meta pane_meta target backend assumed colons id session hint
+  local raw=$1 meta pane_meta target backend assumed id session hint
 
   RESOLVED_TARGET=""
   TARGET_BACKEND=""

@@ -505,12 +505,6 @@ send_interrupt_keys() {
     || die "interrupt key $key reached task $ID, but $clear did not, so its composer still holds the cancelled prompt; clear it before the next lifecycle action"
 }
 
-prepare_interrupt_ack() {
-  INTERRUPT_ACK_SOURCE=$(fm_control_interrupt_ack_source "$HARNESS")
-  INTERRUPT_ACK_LOG=
-  INTERRUPT_ACK_RUN=
-  return 0
-}
 
 interrupt_cancel_claim() {
   printf 'unconfirmed'
@@ -523,7 +517,6 @@ interrupt_cancel_claim() {
 # dismissed revert picker is reported beside the claim.
 deliver_interrupt() {
   local cancel
-  prepare_interrupt_ack
   send_interrupt_keys
   if [ "$INTERRUPT_ARMED" = no ]; then
     cancel=not-running
