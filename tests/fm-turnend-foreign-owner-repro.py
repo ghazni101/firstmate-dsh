@@ -1,9 +1,27 @@
 #!/usr/bin/env python3
-"""Executable regression for the foreign session-lock owner turn-end loop.
+"""Executable regression for Claude turn-end supervision ownership.
 
-This is adapted from Appendix A of the downstream reproduction report. It
-runs the shipped lock, Claude auto-arm, and turn-end guard scripts against
-isolated synthetic primary homes and harness-shaped processes.
+The retired fleet session lock is gone: a native session owns its home by
+identity, and the identity is the harness process this firing descends from
+(bin/fm-proc-lib.sh fm_harness_ancestry_pid). This reproduction drives the
+shipped auto-arm ledger and the shipped turn-end guard against isolated
+synthetic primary homes and harness-shaped processes, and pins what remains:
+
+  - a generation claim records the claiming process identity (ledger line 2)
+    and the harness identity it was taken under (line 3), and is OPEN only
+    while its owner is live, identity-matched, and reachable from the current
+    harness process;
+  - a concurrent firing from the same session defers to the open claim, and the
+    guard steps aside for it; once the session dies the claim closes and the
+    guard blocks again;
+  - a fresh terminal rewake explains the stale beacon to the guard, and an aged
+    one does not;
+  - a legacy state/.lock naming a live foreign holder is inert: it is not
+    created, not consulted by the claim, and not modified;
+  - the guard's strict watcher-lock model still accepts only a live,
+    identity-matched watcher with a fresh beacon.
+
+It is adapted from Appendix A of the downstream reproduction report.
 """
 import json
 import os
@@ -15,19 +33,17 @@ import tempfile
 import time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-LAB = pathlib.Path(tempfile.mkdtemp(prefix="fm-turnend-foreign-owner-"))
+LAB = pathlib.Path(tempfile.mkdtemp(prefix="fm-turnend-ownership-"))
 OUT = LAB / "evidence"
 OUT.mkdir()
 # Basename must be an exact FM_HARNESS_NAMES entry. Linux procps comm= is the
-# 15-char kernel name, so "synthetic-claude" becomes "synthetic-claud" and
-# never matches the claude regex, so fm-lock.sh exits without writing .lock.
+# 15-char kernel name, so the symlink stays short and unambiguous.
 FAKE = LAB / "claude"
 FAKE.symlink_to("/bin/bash")
 PROCS = []
 
-# The suite may itself run inside a Claude session. Its CLAUDE_CODE_SESSION_ID
-# and CLAUDE_PID are scrubbed so the foreign-owner negative control below is
-# genuinely id-less; the same-session positive control sets its own.
+# The suite may itself run inside a harness session. Its markers are scrubbed so
+# only the synthetic harness processes below can answer an ancestry walk.
 BASE_ENV = {
     k: v
     for k, v in os.environ.items()
@@ -35,6 +51,9 @@ BASE_ENV = {
         ("FM_", "HERDR_", "PI_", "CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PID", "GROK_", "CURSOR_")
     )
 }
+BASE_ENV.pop("CLAUDECODE", None)
+
+PAYLOAD = json.dumps({"session_id": "synthetic-native", "stop_hook_active": True})
 
 
 def make(name):
@@ -63,13 +82,13 @@ def make(name):
     return root, env
 
 
-def run(env, command):
+def run(env, command, timeout=60):
     return subprocess.run(
         [str(FAKE), "-c", command],
         env=env,
         text=True,
         capture_output=True,
-        timeout=30,
+        timeout=timeout,
     )
 
 
@@ -78,6 +97,7 @@ def start(env, command, name):
     process = subprocess.Popen(
         [str(FAKE), "-c", command],
         env=env,
+        stdin=subprocess.DEVNULL,
         stdout=output,
         stderr=subprocess.STDOUT,
         start_new_session=True,
@@ -93,50 +113,31 @@ def until(test, seconds=20, message="condition timed out"):
     while time.monotonic() < deadline:
         if test():
             return
-        time.sleep(0.1)
+        time.sleep(0.05)
     raise RuntimeError(message() if callable(message) else message)
-
-
-def session_lock_text(path):
-    try:
-        if path.is_symlink() or not path.is_file():
-            return None
-        text = path.read_text().strip()
-    except OSError:
-        return None
-    return text if text.isdigit() else None
-
-
-PAYLOAD = json.dumps({"session_id": "synthetic-second", "stop_hook_active": True})
-
-
-def guard(env, label, prefix=""):
-    process = run(
-        env,
-        prefix + "printf '%s\\n' '" + PAYLOAD + "' | \"$FM_ROOT_OVERRIDE/bin/fm-turnend-guard.sh\" --claude",
-    )
-    print(label, "rc=" + str(process.returncode), "stdout=" + repr(process.stdout), "stderr=" + repr(process.stderr), flush=True)
-    return process
-
-
-def autoarm(env, label):
-    process = run(
-        env,
-        "printf '%s\\n' '" + PAYLOAD + "' | \"$FM_ROOT_OVERRIDE/bin/fm-claude-stop-autoarm.sh\"; "
-        "rc=$?; printf 'autoarm_rc=%s\\n' \"$rc\"; true",
-    )
-    print(label, "rc=" + str(process.returncode), "stdout=" + repr(process.stdout), "stderr=" + repr(process.stderr), flush=True)
-    return process
 
 
 def stop(process):
     if process.poll() is None:
-        os.killpg(process.pid, signal.SIGTERM)
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             process.wait()
+
+
+def field(epoch, name):
+    for token in epoch.splitlines()[0].split():
+        if token.startswith(name + "="):
+            return token.split("=", 1)[1]
+    return ""
 
 
 def require(condition, message):
@@ -144,152 +145,125 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
+def guard(env, label):
+    process = run(
+        env,
+        "printf '%s\\n' '" + PAYLOAD + "' | \"$FM_ROOT_OVERRIDE/bin/fm-turnend-guard.sh\" --claude",
+    )
+    print(
+        label,
+        "rc=" + str(process.returncode),
+        "stdout=" + repr(process.stdout[:400]),
+        "stderr=" + repr(process.stderr[:400]),
+        flush=True,
+    )
+    return process
+
+
 try:
-    root, env = make("nonowner")
-    owner = start(
-        env,
-        '"$FM_ROOT_OVERRIDE/bin/fm-lock.sh" && touch "$FM_HOME/state/owner-ready" && while :; do sleep 1; done',
-        "owner-idle.txt",
+    root, env = make("native")
+    state = root / "state"
+    (state / "payload.json").write_text(PAYLOAD + "\n")
+    session_script = (
+        'FAKE="' + str(FAKE) + '"\n'
+        '. "$FM_HOME/bin/fm-wake-lib.sh"\n'
+        '. "$FM_HOME/bin/fm-proc-lib.sh"\n'
+        'printf "%s\\n" "$$" > "$FM_HOME/state/harness-pid"\n'
+        'fm_autoarm_claim_next "$FM_HOME/state" synthetic-native '
+        '|| { printf "claim_next failed\\n" > "$FM_HOME/state/error"; exit 1; }\n'
+        'printf "%s\\n" "$FM_AUTOARM_MY_GEN" > "$FM_HOME/state/gen"\n'
+        '"$FAKE" -c \'. "$FM_HOME/bin/fm-wake-lib.sh"; '
+        'fm_autoarm_claim_open "$FM_HOME/state" synthetic-native; '
+        'printf "%s\\n" "$?" > "$FM_HOME/state/open-rc"\'\n'
+        '"$FAKE" -c \'. "$FM_HOME/bin/fm-wake-lib.sh"; '
+        'fm_autoarm_claim_next "$FM_HOME/state" synthetic-native; '
+        'printf "%s\\n" "$?" > "$FM_HOME/state/next-rc"\'\n'
+        '"$FAKE" -c \'cat "$FM_HOME/state/payload.json" | '
+        '"$FM_ROOT_OVERRIDE/bin/fm-turnend-guard.sh" --claude; '
+        'printf "%s\\n" "$?" > "$FM_HOME/state/guard-open-rc"\'\n'
+        "while :; do sleep 0.2; done\n"
     )
-    lock_path = root / "state/.lock"
-    until(
-        lambda: session_lock_text(lock_path) is not None,
-        message=lambda: "synthetic owner did not publish a readable state/.lock; owner log="
-        + (OUT / "owner-idle.txt").read_text(errors="replace"),
-    )
-    until(
-        lambda: (root / "state/owner-ready").exists(),
-        message="synthetic owner published state/.lock but did not reach owner-ready",
-    )
-    beat = root / "state/.last-watcher-beat"
-    beat.touch()
-    old_time = time.time() - 600
-    os.utime(beat, (old_time, old_time))
-    lock_owner = session_lock_text(lock_path)
-    require(lock_owner is not None, "state/.lock vanished after the owner-ready wait")
-    print("SETUP live synthetic owner=", owner.pid, "lock=", lock_owner, flush=True)
+    session = start(env, session_script, "session.txt")
+    until(lambda: (state / "guard-open-rc").is_file(), message="the live session never finished its probes")
+    until(lambda: (state / "harness-pid").is_file(), message="the live session never recorded its harness pid")
 
-    acquisition = run(
-        env,
-        '"$FM_ROOT_OVERRIDE/bin/fm-lock.sh"; rc=$?; printf "lock_rc=%s\\n" "$rc"; true',
-    )
-    print("second-session acquisition", "rc=" + str(acquisition.returncode), "stdout=" + repr(acquisition.stdout), "stderr=" + repr(acquisition.stderr), flush=True)
-    require("lock_rc=1" in acquisition.stdout, "foreign session unexpectedly acquired the session lock")
-    require("another live firstmate session holds the lock" in acquisition.stderr, "lock refusal lost its ownership diagnostic")
-
-    auto = autoarm(env, "nonowner autoarm")
-    require(auto.returncode == 0, "foreign-owner auto-arm must exit safely")
-    require(not (root / "state/.claude-autoarm-epoch").exists(), "foreign-owner auto-arm must not claim a generation")
-
-    for number in range(1, 6):
-        result = guard(env, f"nonowner stop {number}")
-        require(result.returncode == 0, f"foreign-owner Stop {number} must end safely")
-        require("SUPERVISION IS OWNED BY ANOTHER LIVE SESSION" in result.stdout, "foreign-owner Stop lost its clear diagnostic")
-        require("cannot and should not arm or repair" in result.stdout, "diagnostic did not explain the safe ownership boundary")
-    require(not (root / "state/.turnend-claude-blocks").exists(), "foreign-owner guard must not consume its block budget")
-    print("FIXED repeated non-owner Stops: all five ended safely", flush=True)
-
-    beat.touch()
-    fresh = guard(env, "fresh-beat-only counterfactual")
-    require(fresh.returncode == 0, "a fresh leftover beat must not restore foreign-owner blocking")
-
-    stop(owner)
-    replacement = start(
-        env,
-        'printf \'%s\\n\' \'{"session_id":"replacement","stop_hook_active":true}\' | "$FM_ROOT_OVERRIDE/bin/fm-claude-stop-autoarm.sh"; printf "replacement_rc=%s\\n" "$?"; sleep 1',
-        "replacement.txt",
-    )
-    until(
-        lambda: (root / "state/.watch.lock/pid").is_file(),
-        message="replacement owner did not publish state/.watch.lock/pid",
-    )
-    watcher_pid = (root / "state/.watch.lock/pid").read_text().strip()
-    print("COUNTERFACTUAL dead original owner: watcher=", watcher_pid, flush=True)
-    healthy = guard(env, "replacement-owned healthy watcher")
-    require(healthy.returncode == 0, "a replacement owning session must still recover supervision")
-    stop(replacement)
-
-    # Positive control: a live harness-shaped process outside the owner's
-    # ancestry that carries the owner's own trusted session id is the same
-    # session, so the lock accepts it and re-anchors line 1 onto that process's
-    # CLAUDE_PID, keeping the recorded id; its Stop is held to the owner's own
-    # guard instead of ending as a foreign session. A different id against the
-    # re-anchored lock keeps the refusal and names the recorded id.
-    same, same_env = make("same-session")
-    same_env["CLAUDE_CODE_SESSION_ID"] = "synthetic-same"
-    same_owner = start(
-        same_env,
-        'export CLAUDE_PID=$$; "$FM_ROOT_OVERRIDE/bin/fm-lock.sh" && touch "$FM_HOME/state/owner-ready" && while :; do sleep 1; done',
-        "same-owner.txt",
-    )
-    same_lock = same / "state/.lock"
-    until(
-        lambda: session_lock_text(same_lock) is not None,
-        message=lambda: "same-session owner did not publish a readable state/.lock; owner log="
-        + (OUT / "same-owner.txt").read_text(errors="replace"),
-    )
-    until(
-        lambda: (same / "state/owner-ready").exists(),
-        message="same-session owner published state/.lock but did not reach owner-ready",
-    )
-    same_lock_owner = session_lock_text(same_lock)
+    harness_pid = (state / "harness-pid").read_text().strip()
+    require((state / "gen").read_text().strip() == "1", "the first firing did not claim generation 1")
+    require((state / "open-rc").read_text().strip() == "0", "the live session's own claim was not open")
     require(
-        (same / "state/.lock-session").read_text().strip() == "synthetic-same",
-        "the owner did not record its trusted session id beside the lock",
+        (state / "next-rc").read_text().strip() == "2",
+        "a concurrent firing from the same session did not defer to the open claim",
     )
-    same_beat = same / "state/.last-watcher-beat"
-    same_beat.touch()
-    os.utime(same_beat, (old_time, old_time))
-    accepted = start(
-        same_env,
-        'export CLAUDE_PID=$$; printf "%s\\n" "$$" > "$FM_HOME/state/accepted-pid"; '
-        '"$FM_ROOT_OVERRIDE/bin/fm-lock.sh"; printf "%s\\n" "$?" > "$FM_HOME/state/accepted-rc.tmp"; '
-        'mv "$FM_HOME/state/accepted-rc.tmp" "$FM_HOME/state/accepted-rc"; '
-        "while :; do sleep 1; done",
-        "same-accepted.txt",
+    require(
+        (state / "guard-open-rc").read_text().strip() == "0",
+        "the guard did not step aside for the open generation claim",
     )
-    until(
-        lambda: (same / "state/accepted-rc").exists(),
-        message="the same-session acquisition did not finish",
-    )
-    accepted_pid = (same / "state/accepted-pid").read_text().strip()
-    accepted_log = (OUT / "same-accepted.txt").read_text(errors="replace")
-    print("same-session acquisition", "rc=" + (same / "state/accepted-rc").read_text().strip(), "pid=" + accepted_pid, "output=" + repr(accepted_log), flush=True)
-    require((same / "state/accepted-rc").read_text().strip() == "0", "the same session id was refused as a foreign live owner")
-    require(same_owner.poll() is None, "the original owner exited, so the re-anchor proves nothing over a live line 1")
-    require(accepted_pid != same_lock_owner, "the same-session acquisition ran as the original owner")
-    require(session_lock_text(same_lock) == accepted_pid, "a same-session confirmation outside the owner's ancestry did not re-anchor line 1 onto its own CLAUDE_PID")
-    require((same / "state/.lock-session").read_text().strip() == "synthetic-same", "a same-session confirmation changed the recorded id")
-    refused = run(
-        same_env | {"CLAUDE_CODE_SESSION_ID": "synthetic-other"},
-        'export CLAUDE_PID=$$; "$FM_ROOT_OVERRIDE/bin/fm-lock.sh"; rc=$?; printf "lock_rc=%s\\n" "$rc"; true',
-    )
-    print("other-session acquisition", "rc=" + str(refused.returncode), "stdout=" + repr(refused.stdout), "stderr=" + repr(refused.stderr), flush=True)
-    require("lock_rc=1" in refused.stdout, "a different session id acquired the re-anchored lock")
-    require(f"pid {accepted_pid}, session synthetic-same" in refused.stderr, "the refusal did not name the re-anchored pid and the recorded session id")
-    same_stop = guard(same_env, "same-session stop", prefix="export CLAUDE_PID=$$; ")
-    require(same_stop.returncode == 2, "a same-session Stop must be held to the owner's own guard, not ended as a foreign session")
-    require("SUPERVISION IS OWNED BY ANOTHER LIVE SESSION" not in same_stop.stdout, "a same-session Stop took the foreign-owner exit")
-    other_stop = guard(same_env | {"CLAUDE_CODE_SESSION_ID": "synthetic-other"}, "other-session stop", prefix="export CLAUDE_PID=$$; ")
-    require(other_stop.returncode == 0, "a different-session Stop must still end safely")
-    require("SUPERVISION IS OWNED BY ANOTHER LIVE SESSION" in other_stop.stdout, "a different-session Stop lost the foreign-owner diagnostic")
-    require(session_lock_text(same_lock) == accepted_pid, "a Stop moved the re-anchored lock line")
-    print("FIXED same-session id re-anchors the lock onto its own process; a different id is still foreign", flush=True)
-    stop(same_owner)
+    require(not (state / ".lock").exists(), "the native home grew a fleet session lock")
+    epoch_text = (state / ".claude-autoarm-epoch").read_text()
+    require(field(epoch_text, "owner_pid") == harness_pid, "the arming claim did not bind the harness process")
+    lines = epoch_text.splitlines()
+    require(len(lines) >= 2 and lines[1].strip(), "the arming claim recorded no mandatory owner identity")
+    require(len(lines) >= 3 and lines[2].strip(), "the arming claim recorded no harness identity")
+    print("SETUP live session=", harness_pid, "claim=", epoch_text.splitlines()[0], flush=True)
 
-    single, single_env = make("single-idle")
-    stale = single / "state/.last-watcher-beat"
-    stale.touch()
-    os.utime(stale, (old_time, old_time))
-    sole_owner = run(
-        single_env,
-        '"$FM_ROOT_OVERRIDE/bin/fm-lock.sh"; . "$FM_ROOT_OVERRIDE/bin/fm-session-lock-lib.sh"; '
-        'if fm_session_lock_owned_by_self "$FM_HOME/state"; then printf "single_owner_verified=1\\n"; fi; '
-        'printf \'%s\\n\' \'{"session_id":"synthetic-second","stop_hook_active":true}\' | '
-        '"$FM_ROOT_OVERRIDE/bin/fm-turnend-guard.sh" --claude; rc=$?; printf "single_owner_guard_rc=%s\\n" "$rc"; true',
+    # The session dies: the open claim closes and the guard blocks again.
+    stop(session)
+    blocked = guard(env, "dead-session guard")
+    require(blocked.returncode == 2, "a claim whose session died must not keep the guard silent")
+    require("TURN WOULD END BLIND - SUPERVISION IS OFF" in blocked.stderr, "the dead-session guard lost its watcher banner")
+
+    # A fresh terminal rewake (committed by the Stop-owned auto-arm) explains the
+    # stale beacon for one handling turn; an aged one does not.
+    (state / ".claude-autoarm-epoch").write_text(
+        "epoch=2 owner_pid=1 outcome=rewake updated_at=%d\nlinux-starttime=1 cmdline-hex=00\n" % int(time.time())
     )
-    print("single owner, no autoarm firing", "rc=" + str(sole_owner.returncode), "stdout=" + repr(sole_owner.stdout), "stderr=" + repr(sole_owner.stderr), flush=True)
-    require("single_owner_guard_rc=2" in sole_owner.stdout, "a sole owner without supervision must retain the guard")
+    fresh = guard(env, "fresh rewake guard")
+    require(fresh.returncode == 0, "a fresh terminal rewake did not explain the stale beacon")
+    require(fresh.stdout == "" and fresh.stderr == "", "a healthy handling turn produced output: " + repr(fresh.stdout + fresh.stderr))
+    old = time.time() - 600
+    os.utime(state / ".claude-autoarm-epoch", (old, old))
+    aged = guard(env, "aged rewake guard")
+    require(aged.returncode == 2, "an aged rewake still silenced the guard")
+    require("TURN WOULD END BLIND - SUPERVISION IS OFF" in aged.stderr, "the aged-rewake guard lost its watcher banner")
+
+    # A legacy lock naming a live foreign holder is inert: the claim never reads
+    # it and never touches it.
+    (state / ".lock").write_text("%d\n" % os.getpid())
+    claimed = run(
+        env,
+        '. "$FM_HOME/bin/fm-wake-lib.sh"; '
+        'fm_autoarm_claim_next "$FM_HOME/state"; printf "claim_rc=%s\\n" "$?"',
+    )
+    print("legacy foreign lock claim", "stdout=" + repr(claimed.stdout), "stderr=" + repr(claimed.stderr), flush=True)
+    require("claim_rc=0" in claimed.stdout, "a legacy foreign lock still blocked the generation claim")
+    require(
+        (state / ".lock").read_text().strip() == str(os.getpid()),
+        "the generation claim modified the inert legacy lock",
+    )
+    require(
+        int(field((state / ".claude-autoarm-epoch").read_text(), "epoch")) >= 3,
+        "the generation claim after the legacy lock did not advance the ledger",
+    )
+
+    # The strict watcher-lock model: a live identity-matched watcher with a fresh
+    # beacon is healthy; a dead one is not, however fresh the beacon.
+    watcher = start(env, "sleep 60", "watcher.txt")
+    identity = run(env, '. "$FM_HOME/bin/fm-wake-lib.sh"; fm_pid_identity %d' % watcher.pid).stdout.strip()
+    require(identity, "could not compute the synthetic watcher identity")
+    lockdir = state / ".watch.lock"
+    lockdir.mkdir()
+    (lockdir / "pid").write_text("%d\n" % watcher.pid)
+    (lockdir / "fm-home").write_text(str(root) + "\n")
+    (lockdir / "watcher-path").write_text(str(root / "bin/fm-watch.sh") + "\n")
+    (lockdir / "pid-identity").write_text(identity + "\n")
+    (state / ".last-watcher-beat").touch()
+    healthy = guard(env, "live watcher guard")
+    require(healthy.returncode == 0, "a live identity-matched watcher with a fresh beacon was not healthy")
+    stop(watcher)
+    dead = guard(env, "dead watcher guard")
+    require(dead.returncode == 2, "a dead watcher lock did not block the turn end")
+    require("TURN WOULD END BLIND - SUPERVISION IS OFF" in dead.stderr, "the dead-watcher guard lost its banner")
+    print("FIXED native identity, generation claims, and the watcher-lock model behave", flush=True)
     print("COMPLETE", flush=True)
 finally:
     for process in reversed(PROCS):

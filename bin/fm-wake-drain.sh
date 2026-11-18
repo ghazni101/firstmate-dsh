@@ -27,8 +27,6 @@ SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd
 . "$SCRIPT_DIR/fm-line-cap-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
-# shellcheck source=bin/fm-lease-lib.sh
-. "$SCRIPT_DIR/fm-lease-lib.sh"
 # shellcheck source=bin/fm-supervision-engine-lib.sh
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
 # shellcheck source=bin/fm-afk-contract.sh
@@ -53,9 +51,10 @@ BRANCH_OUTCOMES_RC=0
 case "$PRESENTATION_LOCK_TIMEOUT" in ''|*[!0-9]*|0) PRESENTATION_LOCK_TIMEOUT=10 ;; esac
 
 # --- per-actor consume (docs/watcher-continuity.md "Per-actor acknowledgement") --
-# main (FM_SUPERVISION_ACTOR unset or "main", via fm-lease-lib.sh's fm_lease_actor
-# - the same actor identity fm-send.sh/fm-control.sh/fm-teardown.sh already use)
-# claims every row not already granted to branch, then drains and acks only
+# The actor identity is the environment's, not the lease's: the two-actor
+# main/branch lease that used to own it is retired, while the wake queue's
+# per-actor partition still serves the supervision branch.
+# main claims every row not already granted to branch, then drains and acks only
 # that claimed set. branch (FM_SUPERVISION_ACTOR=branch, injected
 # deterministically by the Pi branch extension's bash tool - never agent
 # memory) drains and acks only the row set the extension granted to it.
@@ -74,7 +73,11 @@ case "$PRESENTATION_LOCK_TIMEOUT" in ''|*[!0-9]*|0) PRESENTATION_LOCK_TIMEOUT=10
 # not a cutoff comparison, is what makes a mixed main-only + task-local queue
 # safe to split: the branch's ack can never remove a row it was not granted,
 # so it can never swallow a main-owned row still waiting for main.
-ACTOR=$(fm_lease_actor) || exit 2
+case "${FM_SUPERVISION_ACTOR:-main}" in
+  '' | main) ACTOR=main ;;
+  branch) ACTOR=branch ;;
+  *) printf 'fm-wake-drain: unrecognized actor %s\n' "$FM_SUPERVISION_ACTOR" >&2; exit 2 ;;
+esac
 ELIGIBLE_ROWS_FILE="$STATE/.branch-eligible-rows"
 ELIGIBLE_OWNER_FILE="$STATE/.branch-eligible-owner"
 MAIN_ROWS_FILE="$STATE/.main-eligible-rows"

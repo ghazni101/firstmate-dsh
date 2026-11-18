@@ -38,7 +38,7 @@ Pi's `.pi/extensions/fm-primary-pi-watch.ts`, omp's `.omp/extensions/fm-primary-
 Each adapter:
 
 - Starts the next arm before delivering the wake prompt.
-- Checks current session-lock ownership at launch.
+- Checks that the launching session's harness process is still the one it armed for.
 - Preserves one child or scheduled retry at a time.
 - Applies bounded exponential retry after an unexpected or failed close.
 
@@ -95,21 +95,14 @@ While supervision is still needed and away mode remains inactive, an actionable 
 StopFailure-driven continuations are paced rather than dropped during persistent API errors; after waiting, the hook stands down silently if away mode appeared or supervision is no longer needed.
 The script header owns the storm-bound mechanics, [configuration](configuration.md#environment-variables) lists the cooldown override, and [StopFailure verification](verification/supervision.md#stopfailure-auto-arm) records the Herdr-hosted evidence and deterministic regression entry point.
 
-### Claude session-lock ownership
+### Claude session identity
 
-The hook handles the session lock as follows:
+The fleet session lock is gone, so the hook no longer asks whether this session owns one.
 
-- A well-formed session-lock owner is a numeric PID, or a tagged `win:<pid>` value on a Cygwin-family Git Bash host.
-  The shared `fm_session_lock_pid_blocks_reclaim` verdict in `bin/fm-session-lock-lib.sh` is the one decision every recovery caller applies to that identity: an all-zero, proven-dead, reused non-harness, or live-but-unsignalable record stays reclaimable, while a readable verified harness and a live owner whose identity cannot be read keep recovery inert.
-  That library also owns the process-info fallback used when the `ps` binary cannot execute.
-- An absent lock keeps the competing hook inert: with no recorded owner there is nothing stale to recover.
-- A malformed, empty, or otherwise unusable record is not an identity, so it never reaches that verdict: the competing hook stays inert, and a later `bin/fm-lock.sh` acquisition replaces the record.
-
-Whether the session owns that lock is the shared `fm_session_lock_owned_by_self` verdict in `bin/fm-session-lock-lib.sh`.
-That verdict accepts either of two cases:
-
-- A recorded pid inside the current harness ancestry.
-- A live lock recorded under this same trusted Claude session id.
+- What it binds a generation to is the session's own harness process, `fm_harness_ancestry_pid` in `bin/fm-proc-lib.sh`.
+  That value is a numeric pid, or a tagged `win:<pid>` value on a Cygwin-family Git Bash host, and the library owns the process-info fallback used when the `ps` binary cannot execute.
+- A recovered or recorded identity is applied through `fm_harness_pid_alive` and `fm_session_pid_identity` in the same library, so an all-zero, proven-dead, reused non-harness, or live-but-unsignalable value stays recoverable while a readable verified harness keeps recovery inert.
+- An unresolvable harness process means no session can receive a rewake, so the competing hook stays inert.
 
 With that verdict, a background session keeps arming after its transient helper chain is recycled.
 [`turnend-guard.md`](turnend-guard.md#guard-predicates) owns the Claude guard's behavior when that live owner is genuinely another session.
@@ -470,7 +463,7 @@ It then simulates actionable and empty child closes against the actual Pi and Op
 - Holds one branch delivery open to prove successive actionable closes still restore their own successors, and that the queued wakes then arrive in order.
 - Proves a close whose delivery waits behind that held delivery keeps the handoff its own successor confirmed instead of reporting a healthy newer successor to main as a restoration failure.
 - Verifies single-flight behavior for the restoration pump and for delivery separately.
-- Changes the session lock before close to prove ownership is rechecked.
+- Changes the recognised harness process before close to prove ownership is rechecked.
 - Hangs each successor arm to prove bounded fallback delivery includes the typed restoration failure.
 - Lets a Pi successor's descendant print readiness after the arm exits to prove restoration retries until a live successor exists before delivery.
 - Lets a verified Pi successor exit after delivery while a descendant holds its pipes to prove the exit alone schedules the bounded retry.
@@ -548,10 +541,10 @@ It checks that a newly appended keyed decision is classified without rereading e
 - Stale and live session owners.
 - Unchanged AFK and need boundaries.
 - Single-flight.
-- Supersession of a dead session's orphaned claim by the replacement session's first Stop, including a resumed session that carries the dead one's conversation id, and a claim with no readable session lock.
-- A recycled background bridge keeping its live claim on the trusted session id pinned to the lock holder's recorded session-lock identity.
-- The Windows/Git Bash session-lock readers for the supervision-host key, claim read-back, and mid-turn health, plus untagged-value parity with the numeric helpers, in `tests/fm-session-lock-windows-consumers.test.sh`.
-- The ps-free identity route and its fail-closed refusals when the `ps` binary cannot execute, in `tests/fm-session-lock-ps-denied.test.sh`.
+- Supersession of a dead session's orphaned claim by the replacement session's first Stop, including a resumed session that carries the dead one's conversation id, and a claim whose session has no identifiable harness process.
+- A recycled background bridge keeping its live claim on the trusted session id pinned to the harness-process identity recorded at claim time.
+- The Windows/Git Bash readers for the supervision-host key, claim read-back, and mid-turn health, plus untagged-value parity with the numeric helpers.
+- The ps-free identity route and its fail-closed refusals when the `ps` binary cannot execute.
 - Bounded failure retries.
 - Benign live-watcher cycle ends.
 - One-notice failure episodes.

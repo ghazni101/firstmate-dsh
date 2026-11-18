@@ -567,13 +567,6 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 # leases).
 # shellcheck source=bin/fm-lease-lib.sh
 . "$SCRIPT_DIR/fm-lease-lib.sh"
-# Role partition: forced teardown discards work, and the supervision branch
-# never discards anything - only an ordinary landed-work teardown is branch
-# territory (contract: bin/fm-lease-lib.sh).
-if [ "$FORCE" = --force ] && [ "$(fm_lease_actor)" = branch ]; then
-  echo "error: forced teardown refused - the supervision branch cannot discard work" >&2
-  exit "$FM_LEASE_REFUSE_EXIT"
-fi
 fm_lease_guard "$ID" "teardown (fm-teardown)"
 
 META="$STATE/$ID.meta"

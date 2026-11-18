@@ -3192,13 +3192,12 @@ if (!tool) throw new Error("Pi watch tool was not registered");
 
 const lock = `${process.env.FM_HOME}/state/.lock`;
 const callArm = () => tool.execute("tool-call-lock", {}, undefined, undefined, {});
-const assertMissingLock = (result, label) => {
-  if (result.details?.ok !== false) throw new Error(`${label} unexpectedly armed: ${JSON.stringify(result.details)}`);
-  if (!result.details.message.includes("no live session holds the lock")) {
-    throw new Error(`${label} missing no-live-session guidance: ${result.details.message}`);
-  }
-  if (!result.details.message.includes("bin/fm-session-start.sh") || !result.details.message.includes("re-arm")) {
-    throw new Error(`${label} missing reclaim and re-arm guidance: ${result.details.message}`);
+// A home with no legacy record, a malformed one, or a provably dead holder is
+// this session's native home: the arm starts. Only a LIVE legacy holder this
+// process does not descend from still refuses.
+const expectOwned = (result, label) => {
+  if (result.details?.ok !== true) {
+    throw new Error(`${label} did not arm under native ownership: ${JSON.stringify(result.details)}`);
   }
   if (result.details.message.includes("held by another firstmate session")) {
     throw new Error(`${label} was misreported as a live other holder: ${result.details.message}`);
@@ -3206,15 +3205,12 @@ const assertMissingLock = (result, label) => {
 };
 
 if (existsSync(lock)) unlinkSync(lock);
-assertMissingLock(await callArm(), "absent lock");
+expectOwned(await callArm(), "absent lock");
 writeFileSync(lock, "999999\n");
-assertMissingLock(await callArm(), "dead lock holder");
+expectOwned(await callArm(), "dead lock holder");
 for (const value of ["unknown\n", "1\n", "2\n3\n"]) {
   writeFileSync(lock, value);
-  const unknown = await callArm();
-  if (unknown.details?.ok !== false || !unknown.details.message.includes("read-only")) {
-    throw new Error(`unknown ownership unexpectedly armed: ${JSON.stringify(unknown.details)}`);
-  }
+  expectOwned(await callArm(), `malformed lock ${JSON.stringify(value)}`);
 }
 
 const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
@@ -3222,35 +3218,31 @@ try {
   writeFileSync(lock, `${other.pid}\n`);
   const liveOther = await callArm();
   if (liveOther.details?.ok !== false) throw new Error(`live other holder unexpectedly armed: ${JSON.stringify(liveOther.details)}`);
-  if (liveOther.details.message !== "watcher: read-only - session lock is held by another firstmate session") {
+  if (liveOther.details.message !== "watcher: read-only - a legacy session lock is held by another live firstmate session") {
     throw new Error(`unexpected live-other response: ${liveOther.details.message}`);
   }
 } finally {
   other.kill("SIGTERM");
 }
 
-if (existsSync(process.env.FM_ARM_LOG)) throw new Error("watcher arm ran without lock ownership");
+if (!existsSync(process.env.FM_ARM_LOG)) throw new Error("no watcher arm ran for any owned lock state");
 writeFileSync(lock, `${process.pid}\n`);
 const owned = await callArm();
-if (owned.details?.ok !== true || !owned.details.message.includes("started Pi extension arm child")) {
-  throw new Error(`owned lock did not arm: ${JSON.stringify(owned.details)}`);
-}
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 20));
-}
-if (!existsSync(process.env.FM_ARM_LOG)) throw new Error("owned lock did not run the watcher arm");
+if (owned.details?.ok !== true) throw new Error(`owned lock did not arm: ${JSON.stringify(owned.details)}`);
 EOF
 )
   status=$?
-  expect_code 0 "$status" "Pi watcher arm must distinguish owned, live-other, and missing or dead session locks"
+  expect_code 0 "$status" "Pi watcher arm must own absent, malformed, or dead locks and refuse only a live other holder"
   [ -z "$out" ] || fail "Pi lock-ownership arm test printed output: $out"
-  pass "Pi watcher arm distinguishes all session lock ownership states"
+  pass "Pi watcher arm owns absent, malformed, or dead locks and refuses only a live other holder"
 }
 
-# On Windows the session lock may hold a tagged win:<pid> (bin/fm-session-lock-lib.sh),
+# On Windows the session lock may hold a tagged win:<pid> (bin/fm-proc-lib.sh),
 # and native Node sees that Windows pid directly, so the arm reads a tagged holder
-# by its digits. A malformed tag, and any tag off Windows, stays no identity. The
-# platform is set per call so every host exercises both sides.
+# by its digits. A malformed tag, a dead holder, and any tag off Windows are no
+# usable foreign owner, so they fall back to native ownership; only a LIVE other
+# tagged holder refuses. The platform is set per call so every host exercises
+# both sides.
 test_pi_arm_reads_a_windows_tagged_session_lock() {
   local repo home plugin log out status
   repo="$TMP_ROOT/pi-tagged-lock-root"
@@ -3293,30 +3285,31 @@ async function armOn(name, value) {
     Object.defineProperty(process, "platform", platform);
   }
 }
-const otherHolder = "watcher: read-only - session lock is held by another firstmate session";
-const expectRefused = (result, label, message) => {
-  if (result.details?.ok !== false) throw new Error(`${label} unexpectedly armed: ${JSON.stringify(result.details)}`);
-  if (!result.details.message.includes(message)) throw new Error(`${label} gave the wrong refusal: ${result.details.message}`);
+const otherHolder = "watcher: read-only - a legacy session lock is held by another live firstmate session";
+const expectOwned = (result, label) => {
+  if (result.details?.ok !== true) throw new Error(`${label} did not arm under native ownership: ${JSON.stringify(result.details)}`);
+  if (result.details.message.includes("held by another firstmate session")) {
+    throw new Error(`${label} was misreported as a live other holder: ${result.details.message}`);
+  }
 };
 
 const dead = spawnSync(process.execPath, ["-e", "0"], { stdio: "ignore" }).pid;
-expectRefused(await armOn("win32", `win:${dead}`), "a dead tagged holder", "no live session holds the lock");
+expectOwned(await armOn("win32", `win:${dead}`), "a dead tagged holder");
 const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
 try {
-  expectRefused(await armOn("win32", `win:${other.pid}`), "a live other tagged holder", otherHolder);
+  const liveOther = await armOn("win32", `win:${other.pid}`);
+  if (liveOther.details?.ok !== false) throw new Error(`a live other tagged holder unexpectedly armed: ${JSON.stringify(liveOther.details)}`);
+  if (liveOther.details.message !== otherHolder) throw new Error(`a live other tagged holder gave the wrong refusal: ${liveOther.details.message}`);
 } finally {
   other.kill("SIGTERM");
 }
 for (const value of ["win:", `win:${process.pid}x`, `WIN:${process.pid}`, "win:1"]) {
-  expectRefused(await armOn("win32", value), `the malformed tagged lock ${value}`, otherHolder);
+  expectOwned(await armOn("win32", value), `the malformed tagged lock ${value}`);
 }
-expectRefused(await armOn("linux", `win:${process.pid}`), "a tagged lock off Windows", otherHolder);
-if (existsSync(process.env.FM_ARM_LOG)) throw new Error("watcher arm ran without owning the tagged lock");
+expectOwned(await armOn("linux", `win:${process.pid}`), "a tagged lock off Windows");
 
 const owned = await armOn("win32", `win:${process.pid}`);
-if (owned.details?.ok !== true || !owned.details.message.includes("started Pi extension arm child")) {
-  throw new Error(`an owned tagged lock did not arm: ${JSON.stringify(owned.details)}`);
-}
+if (owned.details?.ok !== true) throw new Error(`an owned tagged lock did not arm: ${JSON.stringify(owned.details)}`);
 for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
@@ -3324,9 +3317,9 @@ if (!existsSync(process.env.FM_ARM_LOG)) throw new Error("an owned tagged lock d
 EOF
 )
   status=$?
-  expect_code 0 "$status" "Pi watcher arm must read a Windows-tagged session lock only on Windows"
+  expect_code 0 "$status" "Pi watcher arm owns dead or malformed tagged locks and refuses only a live other tagged holder"
   [ -z "$out" ] || fail "Pi tagged-lock arm test printed output: $out"
-  pass "Pi watcher arm reads a Windows-tagged session lock only on Windows"
+  pass "Pi watcher arm owns dead or malformed tagged locks and refuses only a live other tagged holder"
 }
 
 # A Pi command started from inside the live session, such as the `pi --help`
@@ -5314,6 +5307,7 @@ SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" node 2>&1 <<'EOF'
 import { existsSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
@@ -5324,21 +5318,28 @@ const hooks = await mod.FmPrimaryWatchArm({
   worktree: process.env.WORKTREE,
 });
 const event = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
-writeFileSync(`${process.env.FM_HOME}/state/.lock`, "999999\n");
-await hooks.event(event);
-// The hook starts its attempt without awaiting it, and the plugin answers a
-// second attempt from the one already in flight. Join that attempt through the
-// coordinator rather than waiting a fixed span: refusing an unowned lock walks
-// git and ps probes that can outlast any such span, and the owned-lock event
-// below would then be answered from the refusal instead of arming.
-const refusal = await globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test", client);
-if (refusal !== "read-only") {
-  console.error(`expected a read-only refusal without the session lock, got ${refusal}`);
-  process.exit(1);
-}
-if (existsSync(process.env.FM_ARM_LOG)) {
-  console.error("watch arm ran without owning the session lock");
-  process.exit(1);
+// Ownership is lost only to a LIVE foreign holder; an absent or dead legacy
+// record belongs to this native home.
+const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+try {
+  writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${other.pid}\n`);
+  await hooks.event(event);
+  // The hook starts its attempt without awaiting it, and the plugin answers a
+  // second attempt from the one already in flight. Join that attempt through
+  // the coordinator rather than waiting a fixed span: refusing an unowned lock
+  // walks git and ps probes that can outlast any such span, and the owned-lock
+  // event below would then be answered from the refusal instead of arming.
+  const refusal = await globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test", client);
+  if (refusal !== "read-only") {
+    console.error(`expected a read-only refusal under a live foreign holder, got ${refusal}`);
+    process.exit(1);
+  }
+  if (existsSync(process.env.FM_ARM_LOG)) {
+    console.error("watch arm ran without owning the session lock");
+    process.exit(1);
+  }
+} finally {
+  other.kill("SIGTERM");
 }
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event(event);

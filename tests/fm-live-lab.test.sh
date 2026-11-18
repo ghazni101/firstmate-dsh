@@ -59,7 +59,7 @@ digest() { shasum -a 256 "$1" | awk '{print $1}'; }
 # builds, with a live private tmux server. Every readiness input starts in its
 # passing state.
 make_lab() {
-  local root="$TMP_ROOT/$1" harness=$2 claude_dir=${3:-} home tmux_dir lock_pid
+  local root="$TMP_ROOT/$1" harness=$2 claude_dir=${3:-} home tmux_dir session_pid
   home="$root/home"
   mkdir -p "$root"
   "$ROOT/bin/fm-lab-home.sh" create "$home" >/dev/null || fail "lab home create"
@@ -104,15 +104,15 @@ make_lab() {
   mkdir -p "$home/projects/notes"
   printf 'paused [at=1]: waiting on gate file %s to exist\n' "$home/data/$WORKER_ID/gate" > "$home/state/$WORKER_ID.status"
 
-  lock_pid=$(lab_tmux "$root" display-message -p -t firstmate:=main '#{pane_pid}')
-  printf '%s\n' "$lock_pid" > "$home/state/.lock"
-  printf '%s\n' "$(lab_tmux "$root" display-message -p -t "firstmate:=fm-$MATE_ID" '#{pane_pid}')" > "$root/mate/state/.lock"
+  session_pid=$(lab_tmux "$root" display-message -p -t firstmate:=main '#{pane_pid}')
+  printf '%s\n' "$session_pid" > "$home/state/.session-start-complete"
+  printf '%s\n' "$(lab_tmux "$root" display-message -p -t "firstmate:=fm-$MATE_ID" '#{pane_pid}')" > "$root/mate/state/.session-start-complete"
   start_watcher "$home"
   printf 'host\t%s\tx\n' "$(start_sleeper)" > "$home/state/.supervision-host"
   printf '%s\n' \
     '{"seq":1,"epoch":1,"key":"k","id":"a","tag":"captain","text":"probe"}' \
     '{"seq":2,"epoch":2,"key":"k","id":"b","tag":"main","text":"LABREADY"}' > "$home/state/.host-mirror.jsonl"
-  write_pi_markers "$home" "$lock_pid"
+  write_pi_markers "$home" "$session_pid"
   [ "$harness" = claude ] && node -e 'const fs=require("node:fs");const [s,h,r]=process.argv.slice(1);fs.writeFileSync(s,JSON.stringify({keep:1,projects:{[h]:{hasTrustDialogAccepted:true},[r+"/mate"]:{hasTrustDialogAccepted:true},"/elsewhere/project":{hasTrustDialogAccepted:true}}},null,2)+"\n")' \
     "${claude_dir:-$HOME}/.claude.json" "$home" "$root"
   printf '%s\n' "$root"
@@ -150,7 +150,7 @@ start_watcher() {  # <home>: a live process holding a matching watcher lock
   touch "$home/state/.last-watcher-beat"
 }
 
-write_pi_markers() {  # <home> <lock-pid>
+write_pi_markers() {  # <home> <session-pid>
   local home=$1 pid=$2
   v() { FM_HOME="$home" bash -c '. "$1/bin/fm-wake-lib.sh"; fm_pi_extension_version "$1/.pi/extensions/$2"' _ "$home" "$1"; }
   printf '%s\n%s\ngeneration=1 phase=active\n' "$(v fm-primary-pi-watch.ts)" "$pid" > "$home/state/.pi-watch-extension-loaded"
@@ -178,13 +178,13 @@ for name in primary probe trust mirror host watcher mate worker treehouse; do
 done
 pass "a ready Claude lab passes every readiness check"
 
-# primary: the lab session lock must name a live process (session start ran).
-printf '999999\n' > "$CH/state/.lock"
+# primary: the lab session start must have recorded a live process.
+printf '999999\n' > "$CH/state/.session-start-complete"
 run_check "$C"
-expect_code 1 "$CHECK_RC" "a dead session lock is not ready"
-assert_contains "$CHECK_OUT" "fail primary: the lab session lock names no live process" "primary names the dead lock"
-lab_tmux "$C" display-message -p -t firstmate:=main '#{pane_pid}' > "$CH/state/.lock"
-pass "primary fails when session start never took the lab lock"
+expect_code 1 "$CHECK_RC" "a dead session start record is not ready"
+assert_contains "$CHECK_OUT" "fail primary: the lab records no live session" "primary names the dead session record"
+lab_tmux "$C" display-message -p -t firstmate:=main '#{pane_pid}' > "$CH/state/.session-start-complete"
+pass "primary fails when session start never completed"
 
 # primary: a lab home that is a linked worktree is not the genuine primary
 # checkout a mirrored Claude primary needs.
@@ -199,7 +199,7 @@ run_check "$WT_CASE"
 assert_contains "$CHECK_OUT" "fail primary: the lab home is not a primary checkout" "primary refuses a linked-worktree home"
 lab_tmux "$C" kill-window -t firstmate:=main
 lab_tmux "$C" new-window -d -t firstmate: -n main -c "$CH" "printf 'LABREADY-$NONCE\n'; exec sleep 600"
-lab_tmux "$C" display-message -p -t firstmate:=main '#{pane_pid}' > "$CH/state/.lock"
+lab_tmux "$C" display-message -p -t firstmate:=main '#{pane_pid}' > "$CH/state/.session-start-complete"
 pass "primary fails when the primary runs in a linked worktree instead of the lab's primary checkout"
 
 # probe: the nonce reply proves the model is accepted and a turn completed.
@@ -258,10 +258,10 @@ lab_tmux "$C" kill-window -t "firstmate:=fm-$MATE_ID"
 run_check "$C"
 assert_contains "$CHECK_OUT" "fail mate: the $MATE_ID window is not running" "mate names its missing window"
 lab_tmux "$C" new-window -d -t firstmate: -n "fm-$MATE_ID" -c "$C/mate" 'exec sleep 600'
-rm -f "$C/mate/state/.lock"
+rm -f "$C/mate/state/.session-start-complete"
 run_check "$C"
-assert_contains "$CHECK_OUT" "fail mate: the mate holds no session lock yet" "mate needs its own session lock"
-lab_tmux "$C" display-message -p -t "firstmate:=fm-$MATE_ID" '#{pane_pid}' > "$C/mate/state/.lock"
+assert_contains "$CHECK_OUT" "fail mate: the mate records no live session yet" "mate needs its own session start record"
+lab_tmux "$C" display-message -p -t "firstmate:=fm-$MATE_ID" '#{pane_pid}' > "$C/mate/state/.session-start-complete"
 pass "mate fails when its window is gone or it never reached its charter"
 
 # Opt-out readiness must observe the mate's inherited material and its real
@@ -326,8 +326,8 @@ assert_contains "$CHECK_OUT" "ok trust: Pi trust store unchanged" "the Pi trust 
 assert_not_contains "$CHECK_OUT" "mirror" "a Pi lab has no host mirror check"
 rm -f "$PH/state/.pi-branch-extension-loaded"
 run_check "$P"
-assert_contains "$CHECK_OUT" "fail extensions: fm-branch-supervision.ts is not loaded by the lock holder" "the missing branch extension is named"
-printf '%s\n' "$(sed -n 1p "$PH/state/.lock")" > "$PH/state/.pi-branch-extension-loaded"
+assert_contains "$CHECK_OUT" "fail extensions: fm-branch-supervision.ts is not loaded by the session" "the missing branch extension is named"
+printf '%s\n' "$(sed -n 1p "$PH/state/.session-start-complete")" > "$PH/state/.pi-branch-extension-loaded"
 printf 'stale\n' > "$PH/state/.pi-turnend-extension-loaded"
 run_check "$P"
 assert_contains "$CHECK_OUT" "fail extensions: fm-primary-turnend-guard.ts is not loaded at its current build" "a stale turn-end build is named"

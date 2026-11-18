@@ -451,7 +451,7 @@ when the call names a home other than the session's. None takes a lease, because
 | `firstmate_native_lease` | (in-process lease library) | `acquire`, `renew`, `release`, `inspect`, `reap` one task lease. The returned token is the fencing token. |
 | `firstmate_native_run` | one allowlisted `bin/fm-*.sh` | Read-only scripts run directly; a mutating script requires a `task` and runs under that task's lease (taken for the call, or the caller's held `token`), exporting `FM_LEASE_HOME/TASK/TOKEN/SESSION/OWNER`. Session-lifecycle scripts are refused. |
 | `firstmate_native_reconcile` | (in-process loop tick) | One reconciliation tick; dry-run by default, `apply` executes authored rules under leases, `hint` delivers a follow-up when captain attention is needed. |
-| `firstmate_native_start` | `fm-fleet-snapshot.sh`, `fm-inbox.sh`, lease directory | Read-only native startup input: identity, readiness, backlog/task summary, held leases, queued durable wakes, and whether `state/.lock` merely exists. Never runs session-start and never takes the lock. |
+| `firstmate_native_start` | `fm-fleet-snapshot.sh`, `fm-inbox.sh`, lease directory | Read-only native startup input: identity, readiness, backlog/task summary, held leases, and queued durable wakes. Never runs session-start and never mutates anything. |
 | `firstmate_native_delivery` | `fm-delivery.sh` | Resolve, read, write, clear, or list a per-PR/per-task delivery decision (no-mistakes vs direct delivery). Task-scoped writes hold the task lease. Owned by [`delivery-decisions.md`](delivery-decisions.md). |
 
 Shape of every result:

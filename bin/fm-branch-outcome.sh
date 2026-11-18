@@ -126,14 +126,13 @@
 #     field is true, and mark those leading routine rows read. Stop before the
 #     first captain row because only Pi's sequence-keyed visible entry may
 #     acknowledge that row. Prints nothing when nothing replayable is unread.
-#     Run it only when the session holds the lock (fm-session-start.sh owns the
-#     call site).
+#     Run it only from a session start (fm-session-start.sh owns the call site).
 #   fm-branch-outcome.sh seed-tail
 #     Under the lock, when the store has rows and the display tail copy is
 #     absent, validate only the newest complete rows within the display-tail
 #     row and byte budget and write the copy from them; otherwise read and
-#     change nothing. fm-session-start.sh runs it at every locked session
-#     start, on every harness and away posture, before the drain.
+#     change nothing. fm-session-start.sh runs it at every session start, on
+#     every harness and away posture, before the drain.
 set -eu
 
 SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"

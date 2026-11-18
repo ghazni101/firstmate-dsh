@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""fm-procinfo.py - ps-free process facts for bin/fm-session-lock-lib.sh.
+"""fm-procinfo.py - ps-free process facts for bin/fm-proc-lib.sh.
 
 Prints one line: <ppid>TAB<comm>TAB<args> for the pid given as argv[1],
 using only sysctl(3) - the same kernel state `ps` reads, just without
 executing /bin/ps. It exists because an EDR-style policy can deny the
-ps binary's exec outright (even `ps -V`), and a session lock whose
-identity walk needs ps can then never be acquired at all.
+ps binary's exec outright (even `ps -V`), and a harness-ancestry
+walk that needs ps can then never identify the session at all.
 
 Identity keeps ps's exact shape on macOS: comm is argv[0] and args is
 the full argv joined with spaces, both taken from the kernel's per-
 process argv region - the same region ps itself reports. That is a
-correctness requirement, not a preference: the session lock compares a
-process's identity across routes, and any process ps calls a verified
-harness while this route calls it a non-harness turns a foreign
-owner's fail-closed refusal into a lock takeover. A resolved exec path
+correctness requirement, not a preference: the ancestry walk compares
+a process's identity across routes, and any process ps calls a
+verified harness while this route calls it a non-harness turns a
+session into an unidentifiable one. A resolved exec path
 (libproc proc_pidpath) is deliberately NOT reported - it is a
 different fact that disagrees with ps for renamed, symlinked, or
 argv[0]-wrapping harnesses, which is precisely the population the

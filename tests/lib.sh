@@ -705,7 +705,7 @@ SH
 # fm_fake_blind_ancestry <fakebin>
 # Blind the parent-chain walks: a query of the FIELD-FIRST per-pid form those walks
 # use - `ps -o comm=|args=|ppid= -p <pid>`, the shape in bin/fm-harness.sh,
-# bin/fm-session-lock-lib.sh, bin/fm-sessionstart-nudge.sh and bin/fm-backend.sh's
+# bin/fm-proc-lib.sh, bin/fm-sessionstart-nudge.sh and bin/fm-backend.sh's
 # cmux ancestor detection - reports a bash ancestor terminating at pid 1, so ancestry
 # proves nothing and the marker a case sets is the only evidence left. A case that pins
 # its harness with a marker (CLAUDECODE=1 and friends) needs this, because a structural

@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # fm-session-start.sh - one command for the whole session start.
 #
-# Collapses AGENTS.md sections 3 (bootstrap) and 5 (recovery) into ONE script
-# producing ONE ordered digest, so a session starts in one or two turns
+# Collapses AGENTS.md sections 3 (session start) and 5 (recovery) into ONE
+# script producing ONE ordered digest, so a session starts in one or two turns
 # instead of the six-plus separate reads the old docs required: run
 # fm-bootstrap.sh, then separately read data/projects.md, data/secondmates.md,
 # data/captain.md, data/captain-shared.md, data/learnings.md, then run
-# fm-lock.sh, fm-wake-drain.sh, then read data/backlog.md, every state/*.meta,
+# fm-wake-drain.sh, then read data/backlog.md, every state/*.meta,
 # and every state/*.status.
 # Every one of those reads is UNCONDITIONAL at every session start, so they
 # belong in a script, not in N agent turns.
 #
-# COMPOSITION, NOT DUPLICATION: this script calls fm-lock.sh, fm-bootstrap.sh,
+# COMPOSITION, NOT DUPLICATION: this script calls fm-bootstrap.sh,
 # fm-wake-drain.sh, and fm-startup-network.sh as real subprocesses and prints
 # their real output. It never re-implements their logic; all
-# sequencing/formatting logic added here stays local to this file. Those four
+# sequencing/formatting logic added here stays local to this file. Those
 # scripts remain fully working
 # standalone with unchanged default behavior - other flows (fm-bootstrap.sh
 # install <tools> after consent, /updatefirstmate, the afk daemon, existing
@@ -23,23 +23,30 @@
 # sweeps - is an opt-in FM_BOOTSTRAP_DETECT_ONLY=1 flag on fm-bootstrap.sh
 # itself (default unset/0 = unchanged behavior), not a fork.
 #
-# ORDERING, and why LOCK now runs before BOOTSTRAP (the old AGENTS.md order
-# was bootstrap-then-lock):
+# SESSION IDENTITY, NOT A LOCK. A native session is identified by the DSH
+# session header plus home resolution, so the session that runs this digest
+# owns its home outright: there is nothing to acquire, nothing to refuse, and
+# no read-only posture (docs/dsh-native-architecture.md section 3). The
+# durable anchor is the harness process this digest runs under, read once here
+# (bin/fm-proc-lib.sh) and recorded in state/.session-start-complete and the
+# AGENTS.md baseline at the end.
 #
-#   1. lock          - acquire the per-home session lock FIRST, before any
-#                       mutating step runs.
+# ORDERING:
+#
+#   1. session identity - the harness process this start runs under.
 #   1b. home role    - the resolved firstmate-repository role line
 #                      (bin/fm-role.sh report), purely local, no network.
-#   2. bootstrap      - home-local stale Herdr projection cleanup runs only
-#                       when this session actually holds the lock. Detect-only
-#                       diagnostics always run. Bootstrap's six MUTATING sweeps
+#   2. bootstrap      - home-local stale Herdr projection cleanup, then
+#                       detect-only diagnostics and bootstrap's six MUTATING sweeps
 #                       (same-home backlog reconciliation,
 #                       secondmate convergence, secondmate liveness, pending remote
-#                       handoff retry, X-mode artifact writes, fleet sync) also run only when
-#                       locked; the four network sweeps run in the deferred
+#                       handoff retry, X-mode artifact writes, fleet sync).
+#                       A re-emit runs only the detect-only diagnostics, because
+#                       the sweeps already ran at this session's own startup;
+#                       the four network sweeps run in the deferred
 #                       stage rather than this synchronous bootstrap section.
 #   3. wake-drain     - presents durable wakes and advances recovery handling
-#                       state, so it only runs when locked. The local bounded
+#                       state. The local bounded
 #                       inactive-outcome startup scan runs in the deferred worker.
 #                       First, on every harness and away posture, it seeds the
 #                       outcome store's display tail copy when that is absent
@@ -82,7 +89,7 @@
 # So no step between here and the last line below makes an external-network
 # call. The five that did - `gh auth status`, secondmate liveness, secondmate
 # convergence, pending remote handoff delivery, and the fleet-sync fetch - are
-# started as one detached bounded worker right after the lock (step 1) and
+# started as one detached bounded worker right after session identity and
 # harvested at step 7 without ever blocking on it. The bounded inactive-outcome
 # startup scan joins that worker because its local current-state reads can also
 # be slow. bin/fm-startup-network.sh owns that stage and its safety argument;
@@ -109,34 +116,21 @@
 # contract that only arrives after the payload it governs is the first thing a
 # truncated digest loses, and it carries the truncation caveat that keeps it
 # honest when a stage below it never ran.
-# The LOCK/BOOTSTRAP/WAKE-QUEUE safety preamble keeps its order: it establishes
-# mutation authority and this turn's work queue before anything else is read.
+# The IDENTITY/BOOTSTRAP/WAKE-QUEUE preamble keeps its order: it establishes this
+# session's identity and this turn's work queue before anything else is read.
 #
 # On a Pi primary, the supervision-block step also checks whether Pi's two
 # tracked primary extensions are loaded and prints a PI_WATCH_EXTENSION
 # reminder line when one is missing.
 #
-# Why lock first: the old documented order (bootstrap, THEN lock) let a
-# SECOND concurrent session run bootstrap's mutating sweeps - converging
-# secondmate homes, retrying pending handoff outboxes and receiver wakes, writing
-# X-mode artifacts, and fetching or fast-forwarding every project clone - before
-# ever discovering another session already holds the lock. Two sessions racing
-# those sweeps is exactly the hazard the lock exists to prevent, so locking first closes the
-# hole outright: only the session that actually wins the lock ever touches
-# shared mutable state.
-#
-# The tradeoff this ordering accepts: a refused (read-only) session must not
-# go dark. So on refusal, bootstrap still runs (in FM_BOOTSTRAP_DETECT_ONLY=1
-# mode) for its local read-only detect lines - missing tools, the worktree-tangle
-# check, the harness override, crew-dispatch validation, tasks-axi and quota-axi
-# tool checks, and tasks-axi availability - none of which mutate shared state
-# and all of which are safe to compute without verified lock ownership.
-# It deliberately skips the network-only GitHub-auth probe because a read-only
-# session has no dispatch, spawn, steer, or merge action for that verdict to gate.
-# Only projection cleanup, the six bootstrap mutating sweeps, and wake-queue
-# presentation are skipped.
-# The context and fleet-state digests
-# below are always read-only, so they run unconditionally in both modes.
+# WHY THE SWEEPS ARE UNGATED. The retired fleet session lock existed to stop two
+# sessions racing bootstrap's mutating sweeps - converging secondmate homes,
+# retrying pending handoff outboxes and receiver wakes, writing X-mode artifacts,
+# and fetching or fast-forwarding every project clone. With the lock gone, a
+# native session owns its home by identity and there is no second owner to
+# elect against, so a start runs its own home's sweeps and nothing else. A
+# re-emit skips them because they already ran at this session's startup, not
+# because ownership is in question.
 #
 # BACKLOG DIGEST: the startup listing is a RECOVERY input, not a reporting
 # surface, so it carries what this turn can act on and nothing else.
@@ -202,9 +196,7 @@
 #
 # Usage: fm-session-start.sh [--reemit] [--source <source>]
 #   Prints the full ordered digest to stdout and always exits 0: this is a
-#   reporting command, not a gate. A lock refusal is reported as a loud
-#   banner inline, never a silent failure or a non-zero exit that would make
-#   an agent skip the rest of the digest.
+#   reporting command, not a gate.
 #
 #   --reemit  This process ALREADY took the helm at its own startup and has
 #             only lost its context (a /clear or a compaction). Skip the
@@ -215,21 +207,16 @@
 #             artifact writes) - and
 #             re-emit the rest. Wake-queue presentation is NOT skipped: queued
 #             records are this turn's work queue, they arrived after startup,
-#             and a session that owns the lock is exactly the session that must
-#             handle and acknowledge them. Lock acquisition still runs, because
-#             ownership must be re-verified rather than assumed: fm-lock.sh
-#             already treats a lock owned through shared ancestry or a trusted
-#             same-session Claude id as its own, so the re-emit proceeds, while
-#             a lock another live session took meanwhile still produces the
-#             ordinary read-only path. A re-emit prints a short RE-EMIT CUE
+#             and this session is the one that must handle and acknowledge them.
+#             A re-emit prints a short RE-EMIT CUE
 #             first, so a harness that spills a large output and shows only its
 #             head still tells the model to read the saved full output.
 #
 #   --source  The native session-open source, supplied only by
-#             fm-sessionstart-run.sh. A genuine `startup` that owns the active
-#             session lock records AGENTS.md's SHA-256 baseline only after the
-#             digest completion record is published, keyed to that lock's
-#             harness pid. No resume, clear, reset, compact, or other rebuild
+#             fm-sessionstart-run.sh. A genuine `startup` records AGENTS.md's
+#             SHA-256 baseline only after the digest completion record is
+#             published, keyed to this session's harness process. No resume,
+#             clear, reset, compact, or other rebuild
 #             creates or replaces it. Pi and pi-signed compaction are the only
 #             supported stale-cache rebuild pair: a missing baseline, a baseline
 #             for another harness pid, or a changed hash causes the complete
@@ -279,7 +266,7 @@ done
 # The ordered stage list is the contract behind the truncation banner: the child
 # names the stage it is entering, and the parent reports every stage at or after
 # that one as never emitted. Keep it in the exact order the digest prints.
-SESSION_START_STAGES='lock role bootstrap wake-queue supervision-instructions read-once fleet-state network-checks context next-step'
+SESSION_START_STAGES='identity role bootstrap wake-queue supervision-instructions read-once fleet-state network-checks context next-step'
 
 stage() {  # <stage-name>: breadcrumb for the parent's truncation banner
   [ -n "${FM_SESSION_START_STAGE_FILE:-}" ] || return 0
@@ -288,8 +275,8 @@ stage() {  # <stage-name>: breadcrumb for the parent's truncation banner
 
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-proc-lib.sh
+. "$SCRIPT_DIR/fm-proc-lib.sh"
 
 if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
   SESSION_START_BUDGET=${FM_SESSION_START_TIMEOUT:-120}
@@ -616,12 +603,13 @@ hash_file_sha256() {
 
 # The baseline describes instructions this true session started with, not the
 # most recently emitted instructions. It is intentionally immutable for this
-# lock owner: every later stale-context rebuild needs the current file again.
-write_agents_baseline() {  # <lock-pid> <agents-hash>
-  local lock_pid=$1 agents_hash=$2 tmp
-  [ -n "$lock_pid" ] && [ -n "$agents_hash" ] || return 1
+# session's harness process: every later stale-context rebuild needs the current
+# file again.
+write_agents_baseline() {  # <session-pid> <agents-hash>
+  local session_pid=$1 agents_hash=$2 tmp
+  [ -n "$session_pid" ] && [ -n "$agents_hash" ] || return 1
   tmp=$(mktemp "$STATE/.session-start-agents-baseline.XXXXXX" 2>/dev/null) || return 1
-  if printf '%s\n%s\n' "$lock_pid" "$agents_hash" > "$tmp" 2>/dev/null \
+  if printf '%s\n%s\n' "$session_pid" "$agents_hash" > "$tmp" 2>/dev/null \
     && mv -f "$tmp" "$AGENTS_BASELINE_FILE" 2>/dev/null; then
     return 0
   fi
@@ -630,13 +618,13 @@ write_agents_baseline() {  # <lock-pid> <agents-hash>
 }
 
 agents_baseline_drifted() {  # <rebuilding-session-pid>
-  local lock_pid=$1 baseline_pid baseline_hash current_hash
+  local session_pid=$1 baseline_pid baseline_hash current_hash
   [ -f "$AGENTS_BASELINE_FILE" ] && [ ! -L "$AGENTS_BASELINE_FILE" ] || return 0
   baseline_pid=$(sed -n '1p' "$AGENTS_BASELINE_FILE" 2>/dev/null || true)
   baseline_hash=$(sed -n '2p' "$AGENTS_BASELINE_FILE" 2>/dev/null || true)
   current_hash=$(hash_file_sha256 "$FM_ROOT/AGENTS.md" 2>/dev/null || true)
   [ -n "$current_hash" ] || return 0
-  [ "$baseline_pid" = "$lock_pid" ] && [ "$baseline_hash" = "$current_hash" ] && return 1
+  [ "$baseline_pid" = "$session_pid" ] && [ "$baseline_hash" = "$current_hash" ] && return 1
   return 0
 }
 
@@ -644,17 +632,17 @@ agents_baseline_drifted() {  # <rebuilding-session-pid>
 # working Firstmate delivery path arrive here. Claude fresh-reads on reset, and
 # Codex has no tracked interactive reset delivery path.
 agents_refresh_required() {  # <rebuilding-session-pid>
-  local lock_pid=$1
+  local session_pid=$1
   case "$PRIMARY_HARNESS:$SESSION_SOURCE" in
     pi:compact|pi-signed:compact) ;;
     *) return 1 ;;
   esac
-  agents_baseline_drifted "$lock_pid"
+  agents_baseline_drifted "$session_pid"
 }
 
 print_agents_refresh_if_required() {  # <rebuilding-session-pid>
-  local lock_pid=$1
-  agents_refresh_required "$lock_pid" || return 0
+  local session_pid=$1
+  agents_refresh_required "$session_pid" || return 0
   section "CURRENT AGENTS.md - INSTRUCTION REFRESH"
   if [ -f "$FM_ROOT/AGENTS.md" ]; then
     cat <<'EOF'
@@ -682,7 +670,7 @@ if [ "$REEMIT" -eq 1 ]; then
   printf 'and data/learnings.md under %s now if any of them is missing below.\n' "$DATA"
   section "SESSION START (CONTEXT RE-EMIT) - $FM_HOME"
   printf 'This session already took the helm at its own startup and has only lost its\n'
-  printf 'context. Lock ownership is re-verified and the durable records below are\n'
+  printf 'context. This session still owns its home by identity, and the durable records below are\n'
   printf 'reprinted, but the sweeps startup already reconciled - project clone refresh,\n'
   printf 'secondmate convergence and liveness, pending remote handoff\n'
   printf 'retry, X-mode artifact writes, and stale Herdr child cleanup - are NOT repeated.\n'
@@ -690,31 +678,20 @@ if [ "$REEMIT" -eq 1 ]; then
 else
   section "SESSION START - $FM_HOME"
 fi
-# --- 1. lock -----------------------------------------------------------
-stage lock
-subsection "LOCK"
-LOCK_OUT=$("$SCRIPT_DIR/fm-lock.sh" 2>&1)
-LOCK_RC=$?
-printf '%s\n' "$LOCK_OUT"
-READ_ONLY=0
-if [ "$LOCK_RC" -ne 0 ]; then
-  READ_ONLY=1
-  BAR='●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-  {
-    printf '%s\n' "$BAR"
-    printf '●  READ-ONLY SESSION - FLEET LOCK OWNERSHIP WAS NOT VERIFIED\n'
-    printf '●  %s\n' "$LOCK_OUT"
-    printf '●  Skipping every mutating step: stale Herdr child cleanup,\n'
-    printf '●  secondmate convergence, secondmate liveness, pending remote handoff retry,\n'
-    printf '●  X-mode artifacts, fleet sync, and wake-queue drain. Detect-only bootstrap\n'
-    printf '●  diagnostics and the rest of this read-only-safe digest still ran below.\n'
-    printf '●  Operate read-only until this resolves - do not spawn, steer, merge, or\n'
-    printf '●  otherwise mutate fleet state from this session.\n'
-    printf '%s\n' "$BAR"
-  }
+# --- 1. session identity -------------------------------------------------
+# No lock stage. A native session is identified by the DSH session header
+# and home resolution, so this session owns its home outright: there is
+# nothing to acquire, nothing to refuse, and no read-only posture
+# (docs/dsh-native-architecture.md section 3).
+stage identity
+subsection "SESSION ID"
+SESSION_PID=$(fm_harness_ancestry_pid 2>/dev/null || true)
+if [ -n "$SESSION_PID" ]; then
+  printf 'harness process %s\n' "$SESSION_PID"
+else
+  printf 'harness process: not identified on this host\n'
 fi
-REBUILDING_SESSION_PID=$(fm_harness_ancestry_pid 2>/dev/null || true)
-print_agents_refresh_if_required "$REBUILDING_SESSION_PID"
+print_agents_refresh_if_required "$SESSION_PID"
 
 # --- 1b. home role -------------------------------------------------------
 # This home's firstmate-repository role: user/operator unless an explicit
@@ -725,31 +702,29 @@ subsection "HOME ROLE"
 FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-role.sh" report 2>/dev/null \
   || printf 'fm-role: unknown (bin/fm-role.sh report failed)\n'
 
-if [ "$READ_ONLY" -eq 0 ]; then
-  if [ "$REEMIT" -eq 0 ]; then
-    rm -f "$COMPLETION_FILE" 2>/dev/null || true
-  fi
-  fm_trace_context_session_start "$CONFIG" "$STATE/.trace-context-effective"
-  # A full locked start publishes this home's current structured summary.
-  # Publication is side-band and best-effort, so it can never change the
-  # session-start result. A context re-emit is not another session start.
-  if [ "$REEMIT" -eq 0 ]; then
-    "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
-  fi
-  # Every network call and the potentially slow inactive-outcome startup scan
-  # are launched HERE, detached and bounded, so they run concurrently with the
-  # whole digest below instead of in front of it. Step 7 harvests whatever has
-  # finished, without ever waiting.
-  # --reemit passes --locked 0 for the same reason it runs bootstrap detect-only:
-  # this process already ran the mutating sweeps at its own startup, so only the
-  # read-only GitHub-auth probe is owed. A read-only session starts nothing at
-  # all: it holds no mutation authority for the sweeps, and it must not spawn,
-  # steer, or merge anyway, so it has no action left for an auth verdict to gate.
-  NETWORK_STAGE_LOCKED=1
-  [ "$REEMIT" -eq 0 ] || NETWORK_STAGE_LOCKED=0
-  "$SCRIPT_DIR/fm-startup-network.sh" start \
-    --locked "$NETWORK_STAGE_LOCKED" --harvest-pid $$ >/dev/null 2>&1 || true
+if [ "$REEMIT" -eq 0 ]; then
+  rm -f "$COMPLETION_FILE" 2>/dev/null || true
+  # Each home session resolves its trace-context inputs ONCE; a re-emit is the
+  # same session, so it must not re-freeze a decision the startup already made.
+  fm_trace_context_session_start "$CONFIG" "$STATE/.trace-context-effective" "$SESSION_PID"
 fi
+# A full start publishes this home's current structured summary.
+# Publication is side-band and best-effort, so it can never change the
+# session-start result. A context re-emit is not another session start.
+if [ "$REEMIT" -eq 0 ]; then
+  "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
+fi
+# Every network call and the potentially slow inactive-outcome startup scan
+# are launched HERE, detached and bounded, so they run concurrently with the
+# whole digest below instead of in front of it. Step 7 harvests whatever has
+# finished, without ever waiting.
+# --reemit passes --mutating 0 for the same reason it runs bootstrap detect-only:
+# this process already ran the mutating sweeps at its own startup, so only the
+# read-only GitHub-auth probe is owed.
+NETWORK_STAGE_MUTATING=1
+[ "$REEMIT" -eq 0 ] || NETWORK_STAGE_MUTATING=0
+"$SCRIPT_DIR/fm-startup-network.sh" start \
+  --mutating "$NETWORK_STAGE_MUTATING" --harvest-pid $$ >/dev/null 2>&1 || true
 
 # --- 2. bootstrap --------------------------------------------------------
 # FM_BOOTSTRAP_NETWORK=skip on every path: bootstrap's own network half is what
@@ -757,12 +732,8 @@ fi
 # re-block this digest and race the worker's sweeps against themselves.
 stage bootstrap
 subsection "BOOTSTRAP"
-if [ "$READ_ONLY" -eq 1 ]; then
-  BOOT_OUT=$(FM_BOOTSTRAP_DETECT_ONLY=1 FM_BOOTSTRAP_NETWORK=skip \
-    FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" \
-    FM_TASKS_AXI_CHECK_REASON="$TASKS_AXI_CHECK_REASON" "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1)
-elif [ "$REEMIT" -eq 1 ]; then
-  BOOT_OUT=$(FM_BOOTSTRAP_DETECT_ONLY=1 FM_BOOTSTRAP_LOCKED=1 FM_BOOTSTRAP_NETWORK=skip \
+if [ "$REEMIT" -eq 1 ]; then
+  BOOT_OUT=$(FM_BOOTSTRAP_DETECT_ONLY=1 FM_BOOTSTRAP_TANGLE_REPAIR=1 FM_BOOTSTRAP_NETWORK=skip \
     FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" \
     FM_TASKS_AXI_CHECK_REASON="$TASKS_AXI_CHECK_REASON" "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1)
 else
@@ -787,42 +758,28 @@ fi
 # Presented records are this turn's first work queue and remain durable until
 # post-handling acknowledgement. The drain's separate OPEN DECISIONS section
 # remains actionable even when that queue is empty (AGENTS.md sections 3 and 8).
-# The drain also runs fm-guard.sh internally on the locked path, so the
-# tangle/watcher-liveness alarms land right here too, ahead of the bulk digest
-# below. The read-only path never touches the queue because it lacks mutation
-# authority, and another session may be actively handling it. It still runs
-# fm-guard.sh directly with non-mutating advisory text, so the same alarms
-# surface without repair commands.
+# The drain also runs fm-guard.sh internally, so the tangle/watcher-liveness
+# alarms land right here too, ahead of the bulk digest below.
 stage wake-queue
 subsection "WAKE QUEUE"
-if [ "$READ_ONLY" -eq 1 ]; then
-  QLEN=0
-  [ -s "$STATE/.wake-queue" ] && QLEN=$(grep -c . "$STATE/.wake-queue" 2>/dev/null || printf '0')
-  printf 'skipped (read-only session) - %s record(s) remain queued because this session lacks verified fleet-lock ownership.\n' "$QLEN"
-  GUARD_OUT=$(FM_GUARD_READ_ONLY=1 "$SCRIPT_DIR/fm-guard.sh" 2>&1)
-  [ -n "$GUARD_OUT" ] && printf '%s\n' "$GUARD_OUT"
-else
-  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-branch-outcome.sh" seed-tail >/dev/null 2>&1 || true
-  # Pi supervision-branch recovery, locked path only: clear leases whose
-  # supervising session died, and surface outcomes the branch stored durably
-  # that never reached main (docs/pi-supervision-branch.md). Gated to the
-  # pi/pi-signed primary so a non-Pi home runs neither step - homes on any
-  # other harness stay entirely untouched (captain-decided criterion).
-  if [ "$PRIMARY_HARNESS" = pi ] || [ "$PRIMARY_HARNESS" = pi-signed ]; then
-    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-lease.sh" sweep 2>/dev/null || true
-    BRANCH_REPLAY_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-      "$SCRIPT_DIR/fm-branch-outcome.sh" startup-replay 2>&1) || BRANCH_REPLAY_OUT=
-    if [ -n "$BRANCH_REPLAY_OUT" ]; then
-      printf '%s\n' "$BRANCH_REPLAY_OUT"
-    fi
-  fi
-  DRAIN_OUT=$("$SCRIPT_DIR/fm-wake-drain.sh" 2>&1)
-  if [ -n "$DRAIN_OUT" ]; then
-    printf '%s\n' "$DRAIN_OUT"
-  else
-    printf '(no queued wakes)\n'
+FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-branch-outcome.sh" seed-tail >/dev/null 2>&1 || true
+# Pi supervision-branch recovery: surface outcomes the branch stored durably
+# that never reached main (docs/pi-supervision-branch.md). Gated to the
+# pi/pi-signed primary so a non-Pi home runs no branch step.
+if [ "$PRIMARY_HARNESS" = pi ] || [ "$PRIMARY_HARNESS" = pi-signed ]; then
+  BRANCH_REPLAY_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    "$SCRIPT_DIR/fm-branch-outcome.sh" startup-replay 2>&1) || BRANCH_REPLAY_OUT=
+  if [ -n "$BRANCH_REPLAY_OUT" ]; then
+    printf '%s\n' "$BRANCH_REPLAY_OUT"
   fi
 fi
+DRAIN_OUT=$("$SCRIPT_DIR/fm-wake-drain.sh" 2>&1)
+if [ -n "$DRAIN_OUT" ]; then
+  printf '%s\n' "$DRAIN_OUT"
+else
+  printf '(no queued wakes)\n'
+fi
+
 
 # --- 4. supervision operating instructions ----------------------------------
 stage supervision-instructions
@@ -837,13 +794,12 @@ if [ "$PRIMARY_HARNESS" = pi ] || [ "$PRIMARY_HARNESS" = pi-signed ]; then
   PI_TURNEND_EXT="$FM_ROOT/.pi/extensions/fm-primary-turnend-guard.ts"
   PI_WATCH_MARKER="$STATE/.pi-watch-extension-loaded"
   PI_TURNEND_MARKER="$STATE/.pi-turnend-extension-loaded"
-  PI_LOCK="$STATE/.lock"
   PI_RESTART_COMMAND=$PRIMARY_HARNESS
   [ "$PRIMARY_HARNESS" != pi ] || PI_RESTART_COMMAND='plain pi'
   PI_WATCH_VERSION=$(fm_pi_extension_version "$PI_EXT" || printf '')
   PI_TURNEND_VERSION=$(fm_pi_extension_version "$PI_TURNEND_EXT" || printf '')
-  if ! fm_pi_extension_loaded "$PI_WATCH_MARKER" "$PI_WATCH_VERSION" "$PI_LOCK" active \
-    || ! fm_pi_extension_loaded "$PI_TURNEND_MARKER" "$PI_TURNEND_VERSION" "$PI_LOCK"; then
+  if ! fm_pi_extension_loaded "$PI_WATCH_MARKER" "$PI_WATCH_VERSION" "$SESSION_PID" active \
+    || ! fm_pi_extension_loaded "$PI_TURNEND_MARKER" "$PI_TURNEND_VERSION" "$SESSION_PID"; then
     printf 'PI_WATCH_EXTENSION: not loaded - approve Pi project trust once per clone, then restart %s so %s and %s auto-load for turn-end guard and background wake coverage; use -e %s -e %s only if project hooks are not trusted\n' "$PI_RESTART_COMMAND" "$PI_TURNEND_EXT" "$PI_EXT" "$PI_TURNEND_EXT" "$PI_EXT"
   fi
 fi
@@ -857,11 +813,10 @@ if [ "$PRIMARY_HARNESS" = omp ]; then
   OMP_TURNEND_EXT="$FM_ROOT/.omp/extensions/fm-primary-turnend-guard.ts"
   OMP_WATCH_MARKER="$STATE/.omp-watch-extension-loaded"
   OMP_TURNEND_MARKER="$STATE/.omp-turnend-extension-loaded"
-  OMP_LOCK="$STATE/.lock"
   OMP_WATCH_VERSION=$(fm_pi_extension_version "$OMP_EXT" || printf '')
   OMP_TURNEND_VERSION=$(fm_pi_extension_version "$OMP_TURNEND_EXT" || printf '')
-  if ! fm_pi_extension_loaded "$OMP_WATCH_MARKER" "$OMP_WATCH_VERSION" "$OMP_LOCK" \
-    || ! fm_pi_extension_loaded "$OMP_TURNEND_MARKER" "$OMP_TURNEND_VERSION" "$OMP_LOCK"; then
+  if ! fm_pi_extension_loaded "$OMP_WATCH_MARKER" "$OMP_WATCH_VERSION" "$SESSION_PID" \
+    || ! fm_pi_extension_loaded "$OMP_TURNEND_MARKER" "$OMP_TURNEND_VERSION" "$SESSION_PID"; then
     OMP_HOME_PHYS=$(cd -P "$FM_HOME" 2>/dev/null && pwd -P || printf '%s' "$FM_HOME")
     OMP_ROOT_PHYS=$(cd -P "$FM_ROOT" 2>/dev/null && pwd -P || printf '%s' "$FM_ROOT")
     if [ "$OMP_HOME_PHYS" = "$OMP_ROOT_PHYS" ]; then
@@ -872,7 +827,7 @@ if [ "$PRIMARY_HARNESS" = omp ]; then
     fi
     # Warning only: name the cause when existing facts establish it.
     OMP_MARKER_PID=$(sed -n '2p' "$OMP_WATCH_MARKER" 2>/dev/null || true)
-    OMP_CURRENT_PID=${REBUILDING_SESSION_PID:-$(sed -n '1p' "$OMP_LOCK" 2>/dev/null || true)}
+    OMP_CURRENT_PID=$SESSION_PID
     if [ -n "$OMP_MARKER_PID" ] && [ -n "$OMP_CURRENT_PID" ] && [ "$OMP_MARKER_PID" != "$OMP_CURRENT_PID" ]; then
       printf 'OMP_WATCH_CAUSE: the extension marker %s names pid %s, which is not this session (pid %s)\n' "$OMP_WATCH_MARKER" "$OMP_MARKER_PID" "$OMP_CURRENT_PID"
     fi
@@ -880,7 +835,6 @@ if [ "$PRIMARY_HARNESS" = omp ]; then
 fi
 "$SCRIPT_DIR/fm-supervision-instructions.sh" \
   --harness "$PRIMARY_HARNESS" \
-  --read-only "$READ_ONLY" \
   --afk "$AFK_PRESENT" \
   --afk-mode "$AFK_MODE" \
   --x-mode "$X_MODE_PRESENT"
@@ -1036,14 +990,7 @@ fi
 # printed, and whatever it has not is named as not yet confirmed.
 stage network-checks
 section "NETWORK CHECKS"
-if [ "$READ_ONLY" -eq 1 ]; then
-  printf 'skipped (read-only session) - GitHub authentication, project clone refresh,\n'
-  printf 'secondmate liveness and convergence, and pending handoff delivery were not run.\n'
-  printf 'They need the fleet lock, and this session must not spawn, steer, or merge, so it\n'
-  printf 'has no action they would gate. The session holding the lock runs them.\n'
-else
-  "$SCRIPT_DIR/fm-startup-network.sh" harvest --pid $$ 2>&1 || true
-fi
+"$SCRIPT_DIR/fm-startup-network.sh" harvest --pid $$ 2>&1 || true
 
 # --- 8. context digest -----------------------------------------------------
 # Last of the bulk sections deliberately: curated memory is stable session to
@@ -1061,14 +1008,7 @@ print_file_or_absent "$DATA/learnings.md" "data/learnings.md"
 # --- 9. closing reminder -----------------------------------------------
 stage next-step
 section "NEXT STEP"
-if [ "$READ_ONLY" -eq 1 ]; then
-  cat <<'EOF'
-This session did not acquire the fleet lock. Stay read-only: do not arm,
-drain, spawn, steer, merge, or repair fleet state from here. Only a session
-with verified fleet-lock ownership may perform mutable follow-up.
-
-EOF
-elif [ "$AFK_PRESENT" -eq 1 ] && [ "$AFK_MODE" = quiet ]; then
+if [ "$AFK_PRESENT" -eq 1 ] && [ "$AFK_MODE" = quiet ]; then
   cat <<'EOF'
 Quiet mode is active. Follow the supervision operating instructions block
 above: load /quiet and ensure the daemon is running, because the daemon owns
@@ -1102,9 +1042,9 @@ The digest above is complete for this session start. The READ-ONCE CONTRACT
 section near the top of it governs what may still be read from disk.
 EOF
 
-if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
+if [ "$REEMIT" -eq 0 ]; then
   COMPLETION_RECORDED=0
-  COMPLETION_PID=$(cat "$STATE/.lock" 2>/dev/null || true)
+  COMPLETION_PID=$SESSION_PID
   fm_session_pid_valid "$COMPLETION_PID" || COMPLETION_PID=
   COMPLETION_TMP=$(mktemp "$STATE/.session-start-complete.XXXXXX" 2>/dev/null || true)
   if [ -n "$COMPLETION_PID" ] && [ -n "$COMPLETION_TMP" ] \

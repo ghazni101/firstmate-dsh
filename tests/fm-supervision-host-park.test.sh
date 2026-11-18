@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Behavior tests for the supervision host latch, park boundary, compaction, and lock ownership
+# Behavior tests for the supervision host latch, park boundary, compaction, and session identity
 # (bin/fm-supervision-host.sh, docs/supervision-host.md). Shared fixtures live
 # in tests/supervision-host-helpers.sh.
 #
-# The loop cases run the real host, arm, watcher, wake grant, drain, outcome
-# store, and lease scripts in a fixture home. The host runs as a child of a fake
-# harness (a bash symlink named "claude") whose pid is the home's session lock,
+# The loop cases run the real host, arm, watcher, wake grant, drain, and outcome
+# store in a fixture home. The host runs as a child of a fake harness (a bash
+# symlink named "claude") whose pid is the home's session harness,
 # and its engine is a stub named by FM_SUPERVISION_ENGINE_CLAUDE_BIN that does
 # what a branch turn does through the same scripts, so the real argument
 # construction, bounding, and reaping are exercised without a model. A real
@@ -578,27 +578,11 @@ test_unverified_engine_hands_every_away_wake_to_main() {
   pass "host: a home naming an unverified engine hands every away wake to main with the reason"
 }
 
-test_host_outside_the_lock_owner_stands_down() {
-  local home out rc other
-  home=$(make_home not-owner attended)
-  "$FAKE_CLAUDE" -c 'sleep 30' &
-  other=$!
-  printf '%s\n' "$other" >> "$home/claude-pids"
-  printf '%s\n' "$other" > "$home/state/.lock"
-  out=$(FM_HOME="$home" PATH="$home/fakebin:$PATH" "$HOST" park 2>&1); rc=$?
-  expect_code 0 "$rc" "a host that does not own supervision exits 0"
-  assert_contains "$out" "supervision-host stood down: this session does not own supervision" "the stand-down must say why"
-  watcher_live "$home" && fail "a host that does not own supervision started a watcher"
-  kill -TERM "$other" 2>/dev/null || true
-  pass "host: a host outside the session-lock owner stands down without arming"
-}
-
-test_tagged_lock_holder_reaches_the_engine_whole() {
+test_tagged_session_pid_reaches_the_engine_whole() {
   local home first
   home=$(make_home tagged-holder away)
-  echo hold-lease > "$home/stub-mode"
   # A Windows/Git Bash home: uname reports MINGW and ps -W lists the session
-  # harness the lock names as win:7204; every other ps question is the real one.
+  # harness the session names as win:7204; every other ps question is the real one.
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" MINGW64_NT-10.0-26200\n' > "$home/fakebin/uname"
   cat > "$home/fakebin/ps" <<'SH'
 #!/usr/bin/env bash
@@ -607,7 +591,6 @@ printf '%s\n' '      PID    PPID    PGID     WINPID   TTY         UID    STIME C
 printf '%s\n' '  4201508       0       0       7204  ?              0 22:24:48 C:\Users\u\.local\bin\claude.exe'
 SH
   chmod +x "$home/fakebin/uname" "$home/fakebin/ps"
-  printf 'win:7204\n' > "$home/state/.lock"
   env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID \
     FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     CLAUDE_PID=7204 CLAUDE_CODE_SESSION_ID=tagged-session \
@@ -616,22 +599,19 @@ SH
   append_status "$home" 'step one'
   wait_until 250 handled_at_least "$home" 1 || fail "tagged: the wake was not handled: $(cat "$home/host.out"; cat "$home/state/.supervision-host.log")"
   first="$home/engine-call.1"
-  assert_re '^holder=win:7204$' "$first" "the engine's lease holder must be the tagged session-lock holder, whole"
-  assert_re '^branch win:7204 [0-9]+ live$' "$home/engine-lease.log" \
-    "the engine's lease must record the tagged holder whole and read live"
+  assert_re '^holder=win:7204$' "$first" "the engine's holder must be the tagged session harness pid, whole"
   kill -TERM "$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")"
   wait_until_deadline 60 host_exited "$home" || fail "tagged: the host did not stop on TERM"
-  pass "host: a Windows-tagged session-lock holder reaches the engine's lease whole"
+  pass "host: a Windows-tagged session harness pid reaches the engine whole"
 }
 
 test_superseded_host_leaves_the_owner_untouched() {
-  local home owner watcher lock_pid
+  local home owner watcher session_pid
   home=$(make_home superseded away)
   # One fake harness runs the owner host, then, on a signal file, a second host
   # under an auto-arm generation the ledger has already superseded.
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     "$FAKE_CLAUDE" -c '
-      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       "$0" park > "$FM_HOME/host.out" 2>&1 &
       while [ ! -e "$FM_HOME/go-second" ]; do sleep 0.1; done
@@ -642,10 +622,8 @@ test_superseded_host_leaves_the_owner_untouched() {
   wait_until 150 watcher_live "$home" || fail "superseded: the owner host never started a watcher cycle"
   owner=$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")
   watcher=$(cat "$home/state/.watch.lock/pid")
-  lock_pid=$(cat "$home/state/.lock")
-  printf 'epoch=2 owner_pid=%s outcome=arming\n' "$lock_pid" > "$home/state/.claude-autoarm-epoch"
-  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID="$lock_pid" "$LEASE" claim demo >/dev/null 2>&1 \
-    || fail "fixture: could not hold a branch lease"
+  session_pid=$(sed -n '1p' "$home/claude-pids")
+  printf 'epoch=2 owner_pid=%s outcome=arming\n' "$session_pid" > "$home/state/.claude-autoarm-epoch"
   : > "$home/go-second"
   wait_until 200 sh -c '[ -s "$1" ]' _ "$home/host2.rc" || fail "superseded: the second host did not return"
   expect_code 0 "$(cat "$home/host2.rc")" "a superseded host exits 0"
@@ -656,7 +634,6 @@ test_superseded_host_leaves_the_owner_untouched() {
   if [ "$(cat "$home/state/.watch.lock/pid" 2>/dev/null)" != "$watcher" ] || ! kill -0 "$watcher" 2>/dev/null; then
     fail "a superseded host stopped the owner's watcher"
   fi
-  FM_HOME="$home" "$LEASE" check demo 2>/dev/null | grep -q '^branch ' || fail "a superseded host released the owner's branch leases"
   kill -TERM "$owner"
   wait_until 200 sh -c '! kill -0 "$1" 2>/dev/null && ! kill -0 "$2" 2>/dev/null' _ "$owner" "$watcher" \
     || fail "superseded: the owner host did not stop on TERM"
@@ -681,6 +658,5 @@ fm_test_run \
   test_first_cycle_status_streams_and_owner_options_reach_it \
   test_unchanged_held_outcome_reaches_the_captain_once_until_a_new_event \
   test_unverified_engine_hands_every_away_wake_to_main \
-  test_host_outside_the_lock_owner_stands_down \
-  test_tagged_lock_holder_reaches_the_engine_whole \
+  test_tagged_session_pid_reaches_the_engine_whole \
   test_superseded_host_leaves_the_owner_untouched

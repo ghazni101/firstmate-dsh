@@ -138,10 +138,9 @@ remote_env() {
   "$@"
 }
 
-# Freeze the parent home's trace-context decision the way a locked session start
+# Freeze the parent home's trace-context decision the way a session start
 # does, hermetically against an ambient FM_TRACE_CONTEXT.
 freeze_parent_session() {
-  printf '%s\n' "$$" > "$PARENT/state/.lock"
   (
     unset FM_TRACE_CONTEXT
     fm_trace_context_session_start "$PARENT/config" "$PARENT/state/.trace-context-effective"

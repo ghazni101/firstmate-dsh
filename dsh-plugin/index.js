@@ -23,7 +23,7 @@
  *    the session-lifecycle scripts are refused.
  *
  * It does not inject a session-start digest, arm supervision, host a watcher or
- * daemon, enter a posture, gate on `state/.lock`, or mutate anything outside a
+ * daemon, enter a posture, claim a home-wide owner, or mutate anything outside a
  * held task lease. The per-task lease library lives in `./src/lease.js`, its CLI
  * in `./bin/fm-lease.mjs`, and its bash adapter in `./lib/fm-lease2-lib.sh`.
  *
@@ -31,7 +31,7 @@
  *
  * @module @local/dsh-plugin-firstmate-native
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { deliveryAction, resolveDelivery } from './src/delivery.js'
@@ -74,7 +74,6 @@ const PLUGIN_DIR = fileURLToPath(new URL('.', import.meta.url)).replace(/[\\/]+$
 /** Engine scripts the command channel never runs: their owner is the plugin itself. */
 const CHANNEL_DENIED_SCRIPTS = new Set([
   'fm-session-start.sh',
-  'fm-lock.sh',
   'fm-watch.sh',
   'fm-watch-arm.sh',
   'fm-watch-checkpoint.sh',
@@ -677,7 +676,7 @@ export function apply(ctx, config = {}) {
   ctx.tools.register(defineTool({
     name: 'firstmate_native_start',
     description:
-      'Read-only native session start for this session\'s home: identity, inbox readiness, fleet/backlog summary, held task leases, queued durable wakes, and whether a fleet-lock file happens to exist. It composes the native startup input without running session-start, without taking the fleet lock, and without mutating anything.',
+      'Read-only native session start for this session\'s home: identity, inbox readiness, fleet/backlog summary, held task leases, and queued durable wakes. It composes the native startup input without running session-start and without mutating anything.',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     timeoutMs: 180000,
     async execute(_args, exec) {
@@ -731,8 +730,6 @@ export function apply(ctx, config = {}) {
           rows: leases,
         },
         wake_queue: { queued: wakeQueueCount(home) },
-        // Reported for diagnostics only. The native path never reads this file.
-        lock_file_present: existsSync(join(home, 'state', '.lock')),
         snapshot_error: snapshot === null
           ? `fm-fleet-snapshot.sh ${snapshotResult.timedOut ? 'timed out' : `exited ${snapshotResult.code}`}`
           : null,

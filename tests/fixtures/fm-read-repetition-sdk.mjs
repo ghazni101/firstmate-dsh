@@ -24,7 +24,6 @@ try {
     for (const file of ["fm-primary-read-repetition.ts", "lib/fm-primary-read-repetition-policy.ts"])
       cpSync(join(source, ".pi/extensions", file), join(extensions, file));
     if (mode !== "default-off") writeFileSync(join(repo, "config/read-repetition.json"), '{"enabled":true}');
-    writeFileSync(join(repo, "state/.lock"), `${process.pid}\n`);
     writeFileSync(join(repo, "state/.pi-turnend-extension-loaded"), `sha256:synthetic\n${process.pid}\n`);
     for (const key of ["FM_TASK_ID", "FM_TASK_INBOX", "FM_SUPERVISION_ACTOR"]) delete process.env[key];
     Object.assign(process.env, { FM_HOME: repo, FM_ROOT_OVERRIDE: repo, FM_CONFIG_OVERRIDE: join(repo, "config"), FM_STATE_OVERRIDE: join(repo, "state"), PI_CODING_AGENT_DIR: agentDir });

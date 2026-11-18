@@ -128,8 +128,7 @@ make_spawn_case() {
   fakebin=$(make_spawn_fakebin "$case_dir/fake")
   mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config"
   printf 'claude\n' > "$home/config/crew-harness"
-  printf '%s\n' "$$" > "$home/state/.lock"
-  printf '%s off\n' "$$" > "$home/state/.trace-context-effective"
+  printf '%s off\n' "$(trace_owner)" > "$home/state/.trace-context-effective"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   touch "$home/state/.last-watcher-beat"
   id=$name-z1
@@ -180,17 +179,22 @@ run_spawn_tc() {
     "$SPAWN" "$@" --mode no-mistakes --yolo off 2>&1
 }
 
+# trace_owner: the session identity bin/fm-spawn.sh computes for itself, so a
+# fixture's frozen record belongs to the same session that will read it.
+trace_owner() {
+  bash -c '. "$1"; fm_harness_ancestry_pid 2>/dev/null || true' _ "$ROOT/bin/fm-proc-lib.sh"
+}
+
 start_trace_session() {
   local home=$1 tc=${2-}
-  printf '%s\n' "$$" > "$home/state/.lock"
   if [ -n "$tc" ]; then
     FM_TRACE_CONTEXT="$tc" fm_trace_context_session_start \
-      "$home/config" "$home/state/.trace-context-effective"
+      "$home/config" "$home/state/.trace-context-effective" "$(trace_owner)"
   else
     (
       unset FM_TRACE_CONTEXT
       fm_trace_context_session_start \
-        "$home/config" "$home/state/.trace-context-effective"
+        "$home/config" "$home/state/.trace-context-effective" "$(trace_owner)"
     )
   fi
 }
@@ -544,7 +548,6 @@ test_two_routed_tasks_through_one_secondmate_root_distinct_traces() {
   mkdir -p "$sm/data" "$sm/projects" "$sm/state" "$sm/config"
   printf 'claude\n' > "$sm/config/crew-harness"
   : > "$sm/config/trace-context"
-  printf '%s\n' "$$" > "$sm/state/.lock"
   touch "$sm/state/.last-watcher-beat"
   start_trace_session "$sm"
   # The Secondmate's own launch-time carrier: exported once into its pane shell

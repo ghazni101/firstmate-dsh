@@ -62,9 +62,9 @@
 # Each reply is stamped with a durable per-home sequence, so the receipts cursor
 # is a strict total order and two replies recorded in the same second are both
 # readable. One reply per note: a second one is refused.
-# `ready` is the read-only primary-readiness projection (lock, wake-consumer
-# health, away posture, observation time). It never acquires the session lock
-# and never infers liveness from a lock file, a session, or a pane.
+# `ready` is the read-only primary-readiness projection (the calling session's
+# harness process, wake-consumer health, away posture, observation time). It
+# never acquires anything and never infers liveness from a pane.
 #
 # Configuration. A region, a model id and an AWS profile name somebody's account
 # and somebody's choices, so this file carries no default for any of them. Each is
@@ -846,17 +846,20 @@ PY
 cmd_ready() {
   [ "$#" -eq 0 ] || die "usage: fm-inbox.sh ready"
   need_python
-  # shellcheck source=bin/fm-session-lock-lib.sh
-  . "$SELF_DIR/fm-session-lock-lib.sh"
+  # shellcheck source=bin/fm-proc-lib.sh
+  . "$SELF_DIR/fm-proc-lib.sh"
   load_wake_lib || true
-  local lock_state=unknown lock_pid="" live_harness=unknown
+  local session_pid="" session_identity="" harness_alive=unknown
   local consumer_state=unknown consumer_reason="" beacon_age=""
   local posture=unknown can_receive=unknown observed
   observed=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  fm_session_lock_inspect "$STATE"
-  lock_state=$FM_LOCK_INSPECT_STATE
-  lock_pid=$FM_LOCK_INSPECT_PID
-  live_harness=$FM_LOCK_INSPECT_LIVE_HARNESS
+  # The identity this projection reports is the calling session's own: the
+  # native design records no fleet-wide owner to read instead.
+  session_pid=$(fm_harness_ancestry_pid 2>/dev/null || true)
+  if [ -n "$session_pid" ]; then
+    session_identity=$(fm_session_pid_identity "$session_pid" 2>/dev/null || true)
+    fm_session_pid_alive "$session_pid" && harness_alive=true || harness_alive=false
+  fi
 
   if [ -e "$STATE/.afk" ]; then
     if command -v fm_afk_mode >/dev/null 2>&1; then
@@ -883,13 +886,13 @@ cmd_ready() {
 
   # The supervision model belongs to the INSPECTED home, not to whoever ran
   # this command. An explicit FM_SUPERVISION_MODEL still wins; otherwise
-  # classify the lock-holder pid through fm-harness.sh ancestry. No holder,
-  # or a walk that names nothing, is honest unknown - never the caller's
-  # own harness, and never a durable per-home model record.
+  # classify the inspected home's session through fm-harness.sh ancestry. No
+  # identifiable session, or a walk that names nothing, is honest unknown -
+  # never the caller's own harness, and never a durable per-home model record.
   local resolved_model harness anc
   resolved_model=${FM_SUPERVISION_MODEL:-}
-  if [ -z "$resolved_model" ] && [ "$lock_state" = held ] && [ -n "$lock_pid" ]; then
-    anc=$("$SELF_DIR/fm-harness.sh" ancestry "$lock_pid" 2>/dev/null || true)
+  if [ -z "$resolved_model" ] && [ -n "$session_pid" ]; then
+    anc=$("$SELF_DIR/fm-harness.sh" ancestry "$session_pid" 2>/dev/null || true)
     harness=${anc#* }
     case "$harness" in
       claude|cursor|agy) resolved_model=autoarm ;;
@@ -924,32 +927,32 @@ cmd_ready() {
     fi
   fi
 
-  case "$lock_state:$consumer_state" in
-    held:healthy) can_receive=true ;;
-    free:*|stale:*|*:down) can_receive=false ;;
+  case "$consumer_state" in
+    healthy) can_receive=true ;;
+    down) can_receive=false ;;
     *) can_receive=unknown ;;
   esac
 
-  python3 - "$lock_state" "$lock_pid" "$live_harness" \
+  python3 - "$session_pid" "$session_identity" "$harness_alive" \
     "$consumer_state" "$consumer_reason" "$beacon_age" \
     "$posture" "$can_receive" "$observed" "$FM_HOME" <<'PY'
 import json, sys
 from pathlib import Path
-(lock_state, lock_pid, live_harness, consumer_state, consumer_reason,
+(session_pid, session_identity, harness_alive, consumer_state, consumer_reason,
  beacon_age, posture, can_receive, observed, home) = sys.argv[1:11]
-live_val = True if live_harness == "true" else False if live_harness == "false" else None
+live_val = True if harness_alive == "true" else False if harness_alive == "false" else None
 recv = True if can_receive == "true" else False if can_receive == "false" else "unknown"
-pid_val = int(lock_pid) if lock_pid.isdigit() else None
+pid_val = int(session_pid) if session_pid.isdigit() else None
 age_val = int(beacon_age) if beacon_age.isdigit() else None
 home_label = "/".join(Path(home).parts[-2:]) if home else home
 json.dump({
-    "schema": "fm-primary-ready.v1",
+    "schema": "fm-primary-ready.v2",
     "home": home_label,
     "observed_at": observed,
-    "lock": {
-        "state": lock_state,
+    "session": {
         "pid": pid_val,
-        "live_harness": live_val,
+        "identity": session_identity or None,
+        "harness_alive": live_val,
     },
     "wake_consumer": {
         "state": consumer_state,

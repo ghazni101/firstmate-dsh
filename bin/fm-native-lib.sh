@@ -12,13 +12,15 @@
 #   - Task ownership is the DSH per-task lease (state/leases/<task>.lease): TTL,
 #     heartbeat, fencing token, no fleet-lock dependence.
 #   - The two-actor `main`/`branch` partition does not exist: there is no branch
-#     actor in the native design, so `fm_lease_forbid_branch` is a no-op.
+#     actor in the native design, so `fm_lease_forbid_branch` returns 0 here.
+#     bin/fm-lease-lib.sh keeps the refusal for a home that has not opted in,
+#     where the branch actor can still be marking its own processes.
 #   - A mutation must present the live token and the holding session
 #     (FM_LEASE_TOKEN, FM_LEASE_SESSION, and the matching FM_LEASE_TASK) that the
 #     native channel or reconciliation loop exported when it took the lease. A
 #     direct shell invocation without those variables is refused loudly rather
 #     than mutating an unowned task.
-#   - The fleet lock (state/.lock) is never read or written by this path.
+#   - No home-wide session record is read or written by this path.
 #
 # OPT-IN. The home creates `config/dsh-native-lease` and records the plugin
 # package root in `config/native-plugin-dir` (or exports FM_NATIVE_PLUGIN_DIR).

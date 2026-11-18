@@ -5,14 +5,13 @@
 #
 # Coverage:
 #   - absent-file markers vs empty-but-present files in the context digest
-#   - the lock-refusal read-only path: banner leads, every mutating step is
-#     skipped (including bootstrap's seven mutating sweeps, verified by their
-#     ABSENCE), the digest still completes
+#   - the identity stage: the native session anchor replaces the retired lock
+#     stage, and no read-only posture exists to enter
 #   - output section ordering: the safety preamble leads unchanged, live fleet
 #     state precedes the curated memory a truncated tail may take, and the
 #     read-once contract precedes both
-#   - context-aware next-step guidance for read-only, AFK, X mode, and normal
-#     watcher ownership
+#   - context-aware next-step guidance for AFK, X mode, and normal watcher
+#     ownership
 #   - status-tail bounding, default and FM_SESSION_START_STATUS_TAIL override
 #   - the per-line status-tail cap and its truncation marker
 #   - startup backlog composition: done rows dropped, every in-flight/held/
@@ -21,14 +20,13 @@
 #   - orphan status logs whose task meta has already disappeared
 #   - per-task endpoint-liveness lines for a live and a dead recorded target,
 #     tmux and herdr both
-#   - composition: the script invokes the real fm-lock.sh/fm-bootstrap.sh/
+#   - composition: the script invokes the real fm-bootstrap.sh/
 #     fm-wake-drain.sh (their real, distinctive output appears verbatim), it
 #     does not reimplement their logic
 #   - the deferred startup stage: slow network and inactive current-state reads
 #     do not delay the digest, the work still runs and lands durable findings, a
-#     network result surfaces exactly once (inline or as a wake, never both), a
-#     read-only session declares the checks it skipped, and the tasks-axi
-#     compatibility verdict is paid for once per session start
+#     network result surfaces exactly once (inline or as a wake, never both),
+#     and the tasks-axi compatibility verdict is paid for once per session start
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -205,7 +203,7 @@ SH
   chmod +x "$fakebin/tasks-axi"
 }
 
-# make_fake_ps_claude <fakebin>: harness_pid()/holder_alive() (fm-lock.sh) walk
+# make_fake_ps_claude <fakebin>: harness_pid()/holder_alive() (bin/fm-proc-lib.sh) walk
 # `ps` output looking for a harness command name; this fake reports EVERY
 # queried pid as a live `claude` harness unless a stable harness pid is set.
 make_fake_ps_claude() {
@@ -794,7 +792,7 @@ EOF
     and .home == $home
     and (.generated_epoch | type) == "number"
   ' "$home/state/home-summary.json" >/dev/null \
-    || fail "a locked session start did not publish the home summary ledger"
+    || fail "a session start did not publish the home summary ledger"
   assert_contains "$out" "data/projects.md" "digest did not label the projects.md section"
   assert_contains "$out" "- demo [no-mistakes] - a demo project (added 2026-07-01)" "digest did not print projects.md content"
   assert_contains "$out" "fm-role: user (default)" "digest did not report the home's firstmate-repository role"
@@ -818,97 +816,8 @@ EOF
   pass "context digest distinguishes ABSENT, empty-but-present, and populated files"
 }
 
-# --- lock refusal: read-only path --------------------------------------------
-
-test_lock_refusal_read_only_path() {
-  local rec root home fakebin holder_pid out status
-  rec=$(new_world lock-refusal)
-  IFS='|' read -r root home fakebin <<EOF
-$rec
-EOF
-  make_fake_toolchain "$fakebin"
-  make_fake_ps_claude "$fakebin"
-
-  # A live secondmate meta with a window pointed at nothing real - if the
-  # bootstrap sweep's secondmate_sync ran (a MUTATING step), it would try to
-  # fast-forward this "home" and/or report a SECONDMATE_SYNC/NUDGE_SECONDMATES
-  # line. Absence of any such line is this test's proof that
-  # FM_BOOTSTRAP_DETECT_ONLY=1 actually suppressed the mutating sweep.
-  mkdir -p "$home/other-secondmate/state"
-  fm_write_secondmate_meta "$home/state/sm-x.meta" "$home/other-secondmate" "firstmate:fm-sm-x" alpha
-  append_wake "$home/state" signal sm-x "done: surfaced before refusal" || fail "seed wake failed"
-  git -C "$root" checkout -q -B fm/read-only-tangle
-
-  sleep 300 &
-  holder_pid=$!
-  printf '%s\n' "$holder_pid" > "$home/state/.lock"
-
-  status=0
-  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
-  kill "$holder_pid" 2>/dev/null || true
-  wait "$holder_pid" 2>/dev/null || true
-
-  expect_code 0 "$status" "fm-session-start.sh must exit 0 even on a lock refusal"
-  assert_contains "$out" "READ-ONLY SESSION" "read-only banner missing on lock refusal"
-  assert_contains "$out" "another live firstmate session holds the lock" "read-only banner did not surface fm-lock.sh's own error text"
-  assert_contains "$out" "Skipping every mutating step" "read-only banner did not explain what was skipped"
-  assert_contains "$out" "skipped (read-only session)" "wake-queue section did not report itself skipped"
-  assert_contains "$out" "WATCHER DOWN - SUPERVISION IS OFF" "read-only guard did not surface watcher-liveness alarm"
-  assert_contains "$out" "queued wakes pending - left untouched because this session lacks verified fleet-lock ownership" "read-only guard did not leave queued wakes untouched without verified lock ownership"
-  assert_contains "$out" "TANGLE: primary checkout on feature branch 'fm/read-only-tangle'" "read-only bootstrap did not surface the tangle diagnostic"
-  assert_contains "$out" "read-only session must leave restore work" "read-only tangle diagnostic did not explain restore ownership"
-  assert_contains "$out" "Stay read-only: do not arm" "read-only next step did not block direct watcher repair"
-  assert_not_contains "$out" "drain them with bin/fm-wake-drain.sh" "read-only guard printed a mutating drain instruction"
-  assert_not_contains "$out" "After draining queued wakes" "read-only guard printed a drain-then-rearm instruction"
-  assert_not_contains "$out" "run bin/fm-watch-arm.sh" "read-only guard printed a mutating watcher-arm instruction"
-  assert_not_contains "$out" "git -C $root checkout main" "read-only bootstrap printed a state-changing checkout remediation"
-
-  # Detect-only bootstrap diagnostics still ran (the fakebin's PATH excludes
-  # tasks-axi, so bootstrap's own read-only tool-detection line fires
-  # deterministically regardless of what is installed on the test host).
-  assert_contains "$out" "MISSING: tasks-axi (install:" "detect-only bootstrap diagnostics did not run on the read-only path"
-
-  # The mutating secondmate sweep must NOT have run: no SECONDMATE_SYNC/
-  # NUDGE_SECONDMATES line, and the sowed secondmate meta's target dir is
-  # untouched (fm-ff-lib would have tried to fast-forward it otherwise).
-  assert_not_contains "$out" "SECONDMATE_SYNC" "mutating secondmate sweep ran during a lock refusal"
-  assert_not_contains "$out" "NUDGE_SECONDMATES" "mutating secondmate sweep ran during a lock refusal"
-
-  # The rest of the digest (read-only-safe) still completed.
-  assert_contains "$out" "FLEET STATE" "fleet-state digest section missing on the read-only path"
-  assert_contains "$out" "NEXT STEP" "closing reminder missing on the read-only path"
-
-  pass "a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest"
-}
-
-test_lock_write_failure_read_only_path() {
-  local rec root home fakebin out status
-  rec=$(new_world lock-write-failure)
-  IFS='|' read -r root home fakebin <<EOF
-$rec
-EOF
-  make_fake_toolchain "$fakebin"
-  make_fake_ps_claude "$fakebin"
-  append_wake "$home/state" signal task-a "done: must remain queued" || fail "seed wake failed"
-  chmod 0500 "$home/state"
-
-  status=0
-  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
-  chmod 0700 "$home/state"
-
-  expect_code 0 "$status" "fm-session-start.sh must exit 0 when lock publication fails"
-  assert_contains "$out" "cannot write session lock" "lock publication failure was not surfaced"
-  assert_contains "$out" "READ-ONLY SESSION" "lock publication failure did not force a read-only session"
-  assert_contains "$out" "FLEET LOCK OWNERSHIP WAS NOT VERIFIED" "lock publication failure was misreported as a live holder"
-  assert_contains "$out" "lacks verified fleet-lock ownership" "lock publication failure did not explain why queued wakes remain untouched"
-  assert_not_contains "$out" "ANOTHER LIVE FIRSTMATE SESSION HOLDS THE FLEET LOCK" "lock publication failure falsely claimed a live lock holder"
-  [ -s "$home/state/.wake-queue" ] || fail "lock publication failure allowed the wake queue to mutate"
-
-  pass "session start stays read-only when lock ownership cannot be published"
-}
-
-test_trace_context_effective_state_is_frozen_after_lock() {
-  local rec root home fakebin out frozen
+test_trace_context_effective_state_is_frozen_at_startup() {
+  local rec root home fakebin frozen
   rec=$(new_world trace-context-session-state)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -927,103 +836,13 @@ EOF
     || fail "a new session start must freeze an env-on override over an absent config flag"
   frozen=$(cat "$home/state/.trace-context-effective")
 
-  sleep 300 &
-  holder_pid=$!
-  printf '%s\n' "$holder_pid" > "$home/state/.lock"
-  out=$(FM_TRACE_CONTEXT=off run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-  kill "$holder_pid" 2>/dev/null || true
-  wait "$holder_pid" 2>/dev/null || true
-  assert_contains "$out" "READ-ONLY SESSION" "trace-context refusal fixture did not enter read-only mode"
+  env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+    FM_TRACE_CONTEXT=off FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+    "$SESSION_START" --reemit >/dev/null
   [ "$(cat "$home/state/.trace-context-effective")" = "$frozen" ] \
-    || fail "a lock-refused session must not mutate the frozen trace-context state"
+    || fail "a context re-emit must not mutate the frozen trace-context state"
 
-  pass "locked session start freezes trace context and lock refusal leaves it unchanged"
-}
-
-# Wait until <dir> holds <count> entries. Forty workers poll this at once, so
-# the count is a builtin glob rather than a find pipeline (no process per
-# poll), and the wait ends early once the directory is gone, the suite has
-# died, or FM_TEST_STUB_MAX_BLOCK_SECONDS has passed, so an interrupted run
-# cannot leave forty pollers spinning under init.
-lock_concurrency_barrier() {  # <dir> <count>
-  local dir=$1 want=$2 start=$SECONDS entries
-  while [ -d "$dir" ] && kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null \
-    && [ $((SECONDS - start)) -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do
-    entries=("$dir"/*)
-    [ -e "${entries[0]}" ] || entries=()
-    [ "${#entries[@]}" -lt "$want" ] || return 0
-    sleep 0.05
-  done
-  return 1
-}
-
-test_session_lock_concurrent_single_winner() {
-  local rec root home fakebin ready completed winners pids i pid count
-  rec=$(new_world lock-concurrency)
-  IFS='|' read -r root home fakebin <<EOF
-$rec
-EOF
-  ready="$home/ready"
-  completed="$home/done"
-  winners="$home/winners"
-  mkdir -p "$ready" "$completed"
-  : > "$winners"
-  cat > "$fakebin/ps" <<'SH'
-#!/usr/bin/env bash
-set -u
-pid=
-previous=
-for argument in "$@"; do
-  [ "$previous" = -p ] && pid=$argument
-  previous=$argument
-done
-case "$*" in
-  *"comm="*)
-    if [ -f "$FM_FAKE_LOCK_STATE/harness-$pid" ]; then
-      printf '%s\n' /usr/local/bin/claude
-    else
-      printf '%s\n' /bin/bash
-    fi
-    ;;
-  *"args="*)
-    if [ -f "$FM_FAKE_LOCK_STATE/harness-$pid" ]; then
-      printf '%s\n' claude
-    else
-      printf '%s\n' bash
-    fi
-    ;;
-  *"ppid="*) printf '%s\n' "$FM_FAKE_HARNESS_PID" ;;
-  *) exit 1 ;;
-esac
-SH
-  chmod +x "$fakebin/ps"
-
-  pids=
-  i=1
-  while [ "$i" -le 40 ]; do
-    (
-      harness_pid=$(sh -c 'printf "%s\n" "$PPID"')
-      : > "$home/state/harness-$harness_pid"
-      : > "$ready/$i"
-      lock_concurrency_barrier "$ready" 40
-      if FM_HOME="$home" FM_FAKE_LOCK_STATE="$home/state" \
-        FM_FAKE_HARNESS_PID="$harness_pid" PATH="$fakebin:$BASE_PATH" \
-        "$ROOT/bin/fm-lock.sh" >/dev/null 2>&1; then
-        printf '%s\n' "$harness_pid" >> "$winners"
-      fi
-      : > "$completed/$i"
-      lock_concurrency_barrier "$completed" 40
-    ) &
-    pids="$pids $!"
-    i=$((i + 1))
-  done
-  for pid in $pids; do
-    wait "$pid" 2>/dev/null || true
-  done
-  count=$(awk 'NF { count++ } END { print count + 0 }' "$winners")
-  [ "$count" -eq 1 ] || fail "concurrent session-lock acquisition produced $count winners"
-
-  pass "concurrent session-lock acquisition admits exactly one live harness"
+  pass "session start freezes trace context once and a context re-emit leaves it unchanged"
 }
 
 # --- output ordering ----------------------------------------------------------
@@ -1033,7 +852,7 @@ SH
 # still leads, live fleet identity now outranks curated memory, and the
 # read-once contract arrives before the payload it governs.
 test_output_ordering_diagnostics_lead() {
-  local rec root home fakebin out lock_line boot_line wake_line read_once_line
+  local rec root home fakebin out identity_line boot_line wake_line read_once_line
   local context_line fleet_line next_line inventory_line missing_line
   rec=$(new_world ordering)
   IFS='|' read -r root home fakebin <<EOF
@@ -1049,7 +868,7 @@ EOF
 
   out=$(run_session_start "$home" "$root" "$fakebin:$(fm_test_base_path_sans "$BASE_PATH" node)")
 
-  lock_line=$(printf '%s\n' "$out" | grep -n '^LOCK$' | head -1 | cut -d: -f1)
+  identity_line=$(printf '%s\n' "$out" | grep -n '^SESSION ID$' | head -1 | cut -d: -f1)
   boot_line=$(printf '%s\n' "$out" | grep -n '^BOOTSTRAP$' | head -1 | cut -d: -f1)
   wake_line=$(printf '%s\n' "$out" | grep -n '^WAKE QUEUE$' | head -1 | cut -d: -f1)
   read_once_line=$(printf '%s\n' "$out" | grep -n '^READ-ONCE CONTRACT$' | head -1 | cut -d: -f1)
@@ -1058,15 +877,15 @@ EOF
   next_line=$(printf '%s\n' "$out" | grep -n '^NEXT STEP$' | head -1 | cut -d: -f1)
   inventory_line=$(printf '%s\n' "$out" | grep -n '^--- task-a ---$' | head -1 | cut -d: -f1)
 
-  if [ -z "$lock_line" ] || [ -z "$boot_line" ] || [ -z "$wake_line" ] \
+  if [ -z "$identity_line" ] || [ -z "$boot_line" ] || [ -z "$wake_line" ] \
     || [ -z "$read_once_line" ] || [ -z "$context_line" ] || [ -z "$fleet_line" ] \
     || [ -z "$next_line" ] || [ -z "$inventory_line" ]; then
     fail "one or more section headers missing from digest: $out"
   fi
 
-  # The safety preamble's order is unchanged: mutation authority, then
+  # The safety preamble's order is unchanged: session identity, then
   # diagnostics, then this turn's work queue, before anything bulky is read.
-  [ "$lock_line" -lt "$boot_line" ] || fail "LOCK did not precede BOOTSTRAP"
+  [ "$identity_line" -lt "$boot_line" ] || fail "SESSION ID did not precede BOOTSTRAP"
   [ "$boot_line" -lt "$wake_line" ] || fail "BOOTSTRAP did not precede WAKE QUEUE"
   [ "$wake_line" -lt "$read_once_line" ] || fail "WAKE QUEUE did not precede the read-once contract"
 
@@ -1287,7 +1106,6 @@ EOF
     "the real respawn path did not preserve the Pi harness: $(cat "$home/state/$SESSION_START_SECOND_MATE_ID.meta")"
 
   first_calls=$(grep -c 'new-window' "$log" || true)
-  rm -f "$home/state/.lock"
   run_session_start_secondmate "$root" "$home" "$fakebin" "$mate" "$log" "$spawned" missing >/dev/null
   wait_for_network_stage "$home" "$root" \
     || fail "the second pass's deferred network stage never published"
@@ -1573,10 +1391,10 @@ EOF
   make_fake_toolchain "$fakebin"
   make_fake_ps_claude "$fakebin"
   # Replace the harness ps with one that TERMs the digest process itself when
-  # fm-lock.sh invokes it: the shape where the digest child dies mid-stage
+  # the digest invokes it: the shape where the digest child dies mid-stage
   # from something other than its runtime bound, which the parent used to
   # swallow silently (no banner, exit 0, rest of the digest gone).
-  # ps sits below fm-lock.sh below the digest bash, so walk /proc upward.
+  # ps sits below a command substitution of the digest bash, so walk /proc upward.
   # Flattened cmdline matching alone is useless: timeout's bash -c inner shell
   # and the timeout wrapper carry the script path as an ARGV element, and the
   # lock stage's own command substitution leaves a subshell whose argv is
@@ -1593,7 +1411,7 @@ EOF
 #!/usr/bin/env bash
 set -u
 case "\$(tr '\\0' ' ' < /proc/\$PPID/cmdline 2>/dev/null)" in
-  *fm-lock.sh*)
+  *fm-session-start.sh*)
     pid=\$PPID
     target=
     matched=0
@@ -1621,10 +1439,10 @@ SH
   assert_contains "$out" \
     "STARTUP TRUNCATED - SESSION START DIED UNEXPECTEDLY (exit 143, not its runtime bound)" \
     "a digest child killed mid-stage did not name its abnormal death"
-  assert_contains "$out" 'stopped during the "lock" stage' \
+  assert_contains "$out" 'stopped during the "identity" stage' \
     "the abnormal-death banner did not name the stage that never finished"
   assert_contains "$out" \
-    "wake-queue supervision-instructions read-once fleet-state network-checks context next-step" \
+    "bootstrap wake-queue supervision-instructions read-once fleet-state network-checks context next-step" \
     "the abnormal-death banner did not list every stage that never ran"
   assert_not_contains "$out" "RUNTIME BOUND" \
     "an abnormal death was misreported as the runtime bound firing"
@@ -1657,18 +1475,19 @@ EOF
 
   out=$(run_session_start "$home" "$root" "$fakebin:$(fm_test_base_path_sans "$BASE_PATH" node)")
 
-  # fm-lock.sh's own exact success text.
-  assert_contains "$out" "lock acquired: harness pid" "fm-lock.sh's real output did not appear (composition, not reimplementation)"
+  # The identity stage's own exact text: the native session anchor that
+  # replaced the retired lock stage.
+  assert_contains "$out" "SESSION ID" "the identity stage did not run"
   # fm-bootstrap.sh's own exact MISSING-tool line format.
   assert_contains "$out" "MISSING: node (install:" "fm-bootstrap.sh's real detect line did not appear verbatim"
   # fm-wake-drain.sh's real drained record (raw tab-separated queue line).
   assert_contains "$out" "$(printf 'signal\ttask-z.status\tneeds-decision: pick a library')" "fm-wake-drain.sh's real drained record did not appear"
   assert_contains "$out" "wake annotation: latest wake-EVENT observed at drain, not current state: task-z.status: needs-decision: pick a library" "fm-session-start.sh did not preserve the drain's separate annotation line"
 
-  pass "fm-session-start.sh composes the real fm-lock.sh, fm-bootstrap.sh, and fm-wake-drain.sh output verbatim"
+  pass "fm-session-start.sh composes the real identity, fm-bootstrap.sh, and fm-wake-drain.sh output verbatim"
 }
 
-test_branch_outcome_replay_respects_captain_barrier_and_lease_sweep() {
+test_branch_outcome_replay_respects_captain_barrier() {
   local rec root home fakebin out
   rec=$(new_world branch-recovery)
   IFS='|' read -r root home fakebin <<EOF
@@ -1677,29 +1496,22 @@ EOF
   make_fake_toolchain "$fakebin"
   make_fake_ps_harness "$fakebin" pi
 
-  # A crash window the locked start must preserve: the supervision branch
-  # stored a leading routine row and a captain row that never reached Pi, plus one lease whose
-  # supervising process died and one still held by a live process.
+  # A crash window a session start must preserve: the supervision branch stored
+  # a leading routine row and a captain row that never reached Pi.
   FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" append \
     --task task-a --verdict routine --summary 'worker recovered automatically' >/dev/null \
     || fail "could not seed the unread routine branch outcome"
   FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" append \
     --task task-b --verdict captain --summary 'PR https://example.com/pr/b checks green' >/dev/null \
     || fail "could not seed the unread branch outcome"
-  printf 'branch\t999999\t123\n' > "$home/state/.lease-task-dead"
-  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID=$$ "$ROOT/bin/fm-lease.sh" claim task-live --actor branch \
-    || fail "could not seed the live lease"
-
   out=$(run_pi_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   assert_contains "$out" "BRANCH OUTCOMES (handled by the supervision branch, not yet seen by this session):" \
-    "locked start did not replay the leading routine branch outcome"
+    "a session start did not replay the leading routine branch outcome"
   assert_contains "$out" "worker recovered automatically" "replayed routine outcome lost its content"
-  assert_not_contains "$out" "https://example.com/pr/b" "locked start crossed the captain delivery barrier"
+  assert_not_contains "$out" "https://example.com/pr/b" "a session start crossed the captain delivery barrier"
   assert_contains "$(FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" unread)" \
-    "https://example.com/pr/b" "locked start marked the unrendered captain outcome read"
-  [ "$(cat "$home/state/.branch-outcomes-cursor")" = 1 ] || fail "locked start advanced past the captain row"
-  [ ! -e "$home/state/.lease-task-dead" ] || fail "locked start left a provably dead lease in place"
-  [ -e "$home/state/.lease-task-live" ] || fail "locked start swept a live lease"
+    "https://example.com/pr/b" "a session start marked the unrendered captain outcome read"
+  [ "$(cat "$home/state/.branch-outcomes-cursor")" = 1 ] || fail "a session start advanced past the captain row"
 
   # Routine replay is one-shot, while the captain row remains held for Pi's
   # sequence-keyed visible-entry reconciliation.
@@ -1709,7 +1521,7 @@ EOF
   esac
   assert_contains "$(FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" unread)" \
     "https://example.com/pr/b" "second start consumed the captain row without a Pi entry"
-  pass "locked Pi session start replays leading routine outcomes, preserves the captain barrier, and sweeps only dead leases"
+  pass "Pi session start replays leading routine outcomes and preserves the captain barrier"
 }
 
 test_non_pi_session_start_leaves_branch_state_untouched() {
@@ -1728,15 +1540,13 @@ EOF
     --task task-b --verdict captain --summary 'unread Pi branch outcome' >/dev/null \
     || fail "could not seed the non-Pi unread branch outcome"
   rm -f "$home/state/.branch-outcomes-cursor"
-  printf 'branch\t999999\t123\n' > "$home/state/.lease-task-dead"
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   case "$out" in
     *"BRANCH OUTCOMES"*|*"unread Pi branch outcome"*) fail "non-Pi session replayed Pi branch outcomes" ;;
   esac
-  [ -e "$home/state/.lease-task-dead" ] || fail "non-Pi session swept a Pi branch lease"
   [ ! -e "$home/state/.branch-outcomes-cursor" ] || fail "non-Pi session marked a Pi branch outcome read"
-  pass "non-Pi session start neither sweeps nor replays Pi branch state"
+  pass "non-Pi session start does not replay Pi branch state"
 }
 
 test_session_start_seeds_the_outcome_display_tail_while_away() {
@@ -1786,7 +1596,7 @@ SH
   chmod +x "$fakebin/gh"
 }
 
-# The locked startup scan may need the same expensive current-state read that a
+# The startup scan may need the same expensive current-state read that a
 # busy validation makes slow. It belongs to the detached startup worker, so the
 # digest must finish while that read is still outstanding; the answer then has to
 # create the ordinary durable inactive-outcome wake rather than disappear
@@ -1934,39 +1744,6 @@ EOF
   assert_grep 'check	startup-network' "$queue" \
     "a result the digest could not print never reached the agent: $(cat "$queue" 2>/dev/null)"
   pass "session start: a deferred result the digest outran still reaches the agent as a wake"
-}
-
-# A read-only session has no lock, so it neither owns the mutating sweeps nor has
-# any action a GitHub-auth verdict would gate. It must say that plainly instead of
-# quietly dropping the checks.
-test_read_only_session_declares_skipped_network_checks() {
-  local rec root home fakebin out
-  rec=$(new_world network-read-only)
-  IFS='|' read -r root home fakebin <<EOF
-$rec
-EOF
-  make_fake_toolchain "$fakebin"
-  make_fake_ps_claude "$fakebin"
-  printf '999999\n' > "$home/state/.lock"
-  cat > "$fakebin/ps" <<'SH'
-#!/usr/bin/env bash
-set -u
-case "$*" in
-  *"-p 999999"*) printf 'claude\n'; exit 0 ;;
-  *"comm="*|*"args="*) printf 'bash\n'; exit 0 ;;
-esac
-exit 0
-SH
-  chmod +x "$fakebin/ps"
-
-  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-
-  assert_contains "$out" "READ-ONLY SESSION" "the read-only fixture did not actually refuse the lock"
-  assert_contains "$out" "skipped (read-only session) - GitHub authentication" \
-    "a read-only session did not declare its skipped network checks"
-  assert_absent "$home/state/.startup-network.status" \
-    "a read-only session started the deferred stage it has no authority for"
-  pass "session start: a read-only session declares its skipped network checks rather than dropping them"
 }
 
 # The compatibility verdict costs three tasks-axi subprocesses and one session
@@ -2253,7 +2030,7 @@ EOF
 
   expect_code 0 "$status" "a truncated session start must still exit 0 so the session can open"
   assert_contains "$out" "SESSION START - $home" "the truncated digest lost the output it had already produced"
-  assert_contains "$out" "LOCK" "the truncated digest lost a stage that had completed"
+  assert_contains "$out" "SESSION ID" "the truncated digest lost a stage that had completed"
   assert_contains "$out" "STARTUP TRUNCATED - SESSION START HIT ITS" "a truncated session start did not say so"
   assert_contains "$out" "RUNTIME BOUND" "the truncation banner did not name the bound it hit"
   assert_contains "$out" 'stopped during the "bootstrap" stage' "the truncation banner did not name the incomplete stage"
@@ -2346,7 +2123,7 @@ EOF
   make_fake_toolchain "$fakebin"
 
   # Only ONE pid in the whole tree is the harness, and it sits at the very top.
-  # fm-session-lock-lib.sh walks a BOUNDED sixteen parents to find it, and the
+  # fm-proc-lib.sh walks a BOUNDED sixteen parents to find it, and the
   # runtime bound spends some of that budget on its own wrapper processes, so
   # this pins that the budget still reaches a realistically deep session.
   cat > "$fakebin/ps" <<'SH'
@@ -2393,12 +2170,10 @@ SH
     FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
     bash -c 'export FM_FAKE_HARNESS_PID=$$; exec "$1" 8 "$2"' _ "$nest" "$SESSION_START")
 
-  assert_contains "$out" "lock acquired: harness pid" \
+  assert_contains "$out" "harness process " \
     "the runtime bound's wrapper processes pushed the harness out of the bounded ancestry walk"
-  assert_not_contains "$out" "READ-ONLY SESSION" \
-    "a session start eight shells below its harness was wrongly refused the lock"
 
-  pass "the runtime bound leaves enough ancestry headroom for a deeply nested session to take the lock"
+  pass "the runtime bound leaves enough ancestry headroom for a deeply nested session to find its harness process"
 }
 
 # --- context re-emit (--reemit) ----------------------------------------------
@@ -2557,41 +2332,6 @@ $(hash_file_for_test "$root/AGENTS.md")" ] \
   pass "true-start AGENTS baselines stay immutable while every drifted Pi compact re-emits the current contract"
 }
 
-test_read_only_pi_compact_refreshes_against_its_own_session_identity() {
-  local rec root home fakebin holder_pid out baseline_before completion_before
-  rec=$(new_world agents-refresh-read-only)
-  IFS='|' read -r root home fakebin <<EOF
-$rec
-EOF
-  make_fake_toolchain "$fakebin"
-  make_fake_ps_harness "$fakebin" pi
-  printf '%s\n' 'READ_ONLY_AGENTS=current' > "$root/AGENTS.md"
-  FM_FAKE_HARNESS=pi run_pi_session_start "$home" "$root" "$fakebin:$BASE_PATH" --source startup >/dev/null
-
-  sleep 300 &
-  holder_pid=$!
-  printf '%s\n%s\n' "$holder_pid" "$(hash_file_for_test "$root/AGENTS.md")" \
-    > "$home/state/.session-start-agents-baseline"
-  printf '%s\n' "$holder_pid" > "$home/state/.lock"
-  baseline_before=$(cat "$home/state/.session-start-agents-baseline")
-  completion_before=$(cat "$home/state/.session-start-complete")
-
-  out=$(FM_FAKE_HARNESS=pi FM_FAKE_LIVE_HOLDER_PID="$holder_pid" \
-    run_pi_session_start "$home" "$root" "$fakebin:$BASE_PATH" --reemit --source compact)
-  kill "$holder_pid" 2>/dev/null || true
-  wait "$holder_pid" 2>/dev/null || true
-
-  assert_contains "$out" "READ-ONLY SESSION" "competing live lock owner did not force read-only mode"
-  assert_contains "$out" "READ_ONLY_AGENTS=current" \
-    "read-only compact trusted another session's equal baseline"
-  [ "$(cat "$home/state/.session-start-agents-baseline")" = "$baseline_before" ] \
-    || fail "read-only compact mutated the competing session's baseline"
-  [ "$(cat "$home/state/.session-start-complete")" = "$completion_before" ] \
-    || fail "read-only compact mutated startup completion state"
-
-  pass "read-only Pi compact refreshes against the rebuilding session identity without mutation"
-}
-
 test_codex_unreachable_reset_sources_do_not_claim_instruction_refresh() {
   local rec root home fakebin startup baseline clear_out compact_out
   rec=$(new_world codex-instruction-refresh)
@@ -2658,8 +2398,8 @@ SH
   pass "instruction baselines require SHA-256 and successful startup completion"
 }
 
-test_reemit_keeps_repair_ownership_with_the_lock_holder() {
-  local rec root home fakebin reemit readonly_out holder_pid
+test_reemit_keeps_repair_ownership() {
+  local rec root home fakebin reemit holder_pid
   rec=$(new_world reemit-tangle)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -2676,25 +2416,7 @@ EOF
   # the lock, so it must still own repair rather than deferring to a lock holder.
   assert_contains "$reemit" "restore the primary with: git -C $root checkout main" \
     "--reemit disowned a repair it is entitled to perform"
-  assert_not_contains "$reemit" "must leave restore work to the session holding the fleet lock" \
-    "--reemit misreported itself as an unlocked read-only session"
-
-  rm -f "$home/state/.lock"
-  sleep 300 &
-  holder_pid=$!
-  printf '%s\n' "$holder_pid" > "$home/state/.lock"
-  readonly_out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
-    env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
-    "$SESSION_START" --reemit)
-  kill "$holder_pid" 2>/dev/null || true
-  wait "$holder_pid" 2>/dev/null || true
-
-  assert_contains "$readonly_out" "READ-ONLY SESSION" \
-    "--reemit assumed lock ownership instead of re-verifying it"
-  assert_contains "$readonly_out" "must leave restore work to the session holding the fleet lock" \
-    "a lock-refused --reemit still claimed repair ownership"
-
-  pass "--reemit re-verifies lock ownership and keeps repair ownership with whoever holds it"
+  pass "--reemit keeps repair ownership with the session that ran the startup"
 }
 
 # --- fleet-state digest: no in-flight tasks ----------------------------------
@@ -2934,9 +2656,9 @@ EOF
   pass "session start rejects a Pi watcher generation left in handoff"
 }
 
-test_pi_diagnostic_accepts_prelock_loaded_marker() {
+test_pi_diagnostic_accepts_prestartup_loaded_marker() {
   local rec root home fakebin out holder_pid
-  rec=$(new_world pi-prelock-loaded-marker)
+  rec=$(new_world pi-prestartup-loaded-marker)
   IFS='|' read -r root home fakebin <<EOF
 $rec
 EOF
@@ -2956,7 +2678,7 @@ EOF
 
   assert_not_contains "$out" "PI_WATCH_EXTENSION: not loaded" "pi diagnostic rejected a current pre-lock loaded marker"
 
-  pass "session start accepts current Pi markers written before lock acquisition"
+  pass "session start accepts current Pi markers written before startup completed"
 }
 
 test_omp_supervision_block_and_diagnostic() {
@@ -3019,9 +2741,9 @@ EOF
   pass "omp diagnostic keeps today's wording for the checkout home and names the establishable cause"
 }
 
-test_omp_diagnostic_accepts_prelock_loaded_marker() {
+test_omp_diagnostic_accepts_prestartup_loaded_marker() {
   local rec root home fakebin out holder_pid
-  rec=$(new_world omp-prelock-loaded-marker)
+  rec=$(new_world omp-prestartup-loaded-marker)
   IFS='|' read -r root home fakebin <<EOF
 $rec
 EOF
@@ -3039,7 +2761,7 @@ EOF
 
   assert_contains "$out" "primary harness: omp" "omp holder ancestry was not detected as omp"
   assert_not_contains "$out" "OMP_WATCH_EXTENSION: not loaded" "omp diagnostic rejected a current pre-lock loaded marker"
-  pass "session start accepts current omp markers written before lock acquisition"
+  pass "session start accepts current omp markers written before startup completed"
 }
 
 test_pi_diagnostic_rejects_missing_turnend_guard_marker() {
@@ -3095,10 +2817,7 @@ EOF
 }
 
 test_context_digest_absent_empty_present
-test_lock_refusal_read_only_path
-test_lock_write_failure_read_only_path
-test_trace_context_effective_state_is_frozen_after_lock
-test_session_lock_concurrent_single_winner
+test_trace_context_effective_state_is_frozen_at_startup
 test_output_ordering_diagnostics_lead
 test_read_once_contract_is_stated_once_before_its_subject
 test_herdr_backend_diagnostics_follow_real_session_start
@@ -3107,7 +2826,6 @@ test_deferred_relaunch_is_always_reported
 test_inactive_reconcile_never_blocks_the_digest
 test_unreachable_network_never_blocks_the_digest
 test_deferred_result_reaches_the_agent_when_the_digest_cannot_print_it
-test_read_only_session_declares_skipped_network_checks
 test_tasks_axi_compatibility_is_probed_once
 test_session_start_preserves_ambiguous_pi_process
 test_session_start_preserves_transiently_unreadable_tmux
@@ -3124,7 +2842,7 @@ test_endpoint_bound_rejects_padded_zero
 test_perl_timeout_fallback_reports_signal_death_nonzero
 test_abnormal_digest_death_banners_and_exits_zero
 test_composition_invokes_real_scripts
-test_branch_outcome_replay_respects_captain_barrier_and_lease_sweep
+test_branch_outcome_replay_respects_captain_barrier
 test_non_pi_session_start_leaves_branch_state_untouched
 test_session_start_seeds_the_outcome_display_tail_while_away
 test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata
@@ -3141,10 +2859,10 @@ test_supervision_block_exactly_one_and_pi_diagnostic
 test_pi_signed_primary_uses_pi_extensions_without_identity_normalization
 test_pi_diagnostic_rejects_stale_loaded_marker
 test_pi_diagnostic_rejects_handoff_generation_marker
-test_pi_diagnostic_accepts_prelock_loaded_marker
+test_pi_diagnostic_accepts_prestartup_loaded_marker
 test_omp_supervision_block_and_diagnostic
 test_omp_diagnostic_checkout_home_keeps_restart_wording_and_names_cause
-test_omp_diagnostic_accepts_prelock_loaded_marker
+test_omp_diagnostic_accepts_prestartup_loaded_marker
 test_pi_diagnostic_rejects_missing_turnend_guard_marker
 test_pi_diagnostic_rejects_previous_session_loaded_marker
 test_runtime_bound_truncates_loudly_and_exits_zero
@@ -3154,9 +2872,8 @@ test_runtime_bound_leaves_harness_ancestry_headroom
 test_reemit_skips_startup_sweeps_but_keeps_the_wake_drain
 test_reemit_cue_survives_the_hook_output_preview
 test_agents_baseline_stays_at_true_start_and_reemits_on_every_drifted_pi_compact
-test_read_only_pi_compact_refreshes_against_its_own_session_identity
 test_codex_unreachable_reset_sources_do_not_claim_instruction_refresh
 test_agents_baseline_requires_sha256_and_successful_completion
-test_reemit_keeps_repair_ownership_with_the_lock_holder
+test_reemit_keeps_repair_ownership
 
 echo "# fm-session-start.test.sh: all assertions passed"

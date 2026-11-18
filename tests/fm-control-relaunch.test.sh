@@ -28,6 +28,8 @@ set -u
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-trace-context-lib.sh"
 # shellcheck source=/dev/null
+. "$ROOT/bin/fm-proc-lib.sh"
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-tasks-axi-lib.sh"
 
 CONTROL="$ROOT/bin/fm-control.sh"
@@ -598,8 +600,7 @@ test_traced_relaunch_keeps_an_armed_pr_poll_authenticated() {
     printf '%s\n' 'pr_head=0123456789012345678901234567890123456789'
     printf '%s\n' 'x_request=request-52'
   } >> "$dir/home/state/rl52.meta"
-  printf '%s\n' "$$" > "$dir/home/state/.lock"
-  printf '%s on\n' "$$" > "$dir/home/state/.trace-context-effective"
+  printf '%s on\n' "$(fm_harness_ancestry_pid 2>/dev/null)" > "$dir/home/state/.trace-context-effective"
   fm_pr_poll_prepare "$dir/home/state" rl52 github \
     https://github.com/example/repo/pull/52 github.com example/repo 52 \
     "$ROOT/bin/fm-pr-poll.sh" \
@@ -626,8 +627,7 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
   local dir control_pid link_pid rc i=0 traceparent prepare launch_release waiting ready release
   dir=$(new_case metadata-race rl28)
   add_ship_task "$dir" rl28 claude
-  printf '%s\n' "$$" > "$dir/home/state/.lock"
-  printf '%s on\n' "$$" > "$dir/home/state/.trace-context-effective"
+  printf '%s on\n' "$(fm_harness_ancestry_pid 2>/dev/null)" > "$dir/home/state/.trace-context-effective"
   make_mv_failure_stub "$dir"
   prepare="$dir/trace-prepare"
   launch_release="$dir/trace-release"
@@ -702,8 +702,7 @@ test_disabled_relaunch_clears_prior_trace_context() {
   add_ship_task "$dir" rl33 claude
   printf '%s\n' 'traceparent=00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01' \
     >> "$dir/home/state/rl33.meta"
-  printf '%s\n' "$$" > "$dir/home/state/.lock"
-  printf '%s off\n' "$$" > "$dir/home/state/.trace-context-effective"
+  printf '%s off\n' "$(fm_harness_ancestry_pid 2>/dev/null)" > "$dir/home/state/.trace-context-effective"
 
   out=$(run_control "$dir" rl33 relaunch --note "crossing trace boundary"); rc=$?
   expect_code 0 "$rc" "disabled relaunch should succeed"$'\n'"$out"

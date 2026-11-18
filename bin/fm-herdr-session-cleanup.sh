@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Retire stale restored-shell Herdr presentation children at locked session start.
+# Retire stale restored-shell Herdr presentation children at session start.
 #
 # Usage: fm-herdr-session-cleanup.sh
 #
-# The caller must already own this Firstmate home's session lock. This script is
+# The caller is this home's own session, which owns it by identity. This script is
 # home-local and considers only the current named Herdr session and ordinary
 # state/*.herdr-presentation journals in the effective FM_HOME. Each candidate
 # is additionally serialized by the existing state/.spawn-<task>.lock and the

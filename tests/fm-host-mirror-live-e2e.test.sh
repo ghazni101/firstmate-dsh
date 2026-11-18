@@ -83,9 +83,9 @@ check() {  # <harness> <version> <root>
   fail "$1 $2: the mirror did not record the captain prompt and main reply: $(cat "$3/state/.host-mirror.jsonl" 2>/dev/null)"
 }
 
-# The harness process records its own pid as the session lock, then execs the
-# harness, so the lock holder is the harness that fires the hooks.
-LOCKED_EXEC='printf "%s\n" "$$" > state/.lock; exec "$@"'
+# The harness process execs the harness, so it is the session that fires the
+# hooks.
+LOCKED_EXEC='exec "$@"'
 
 # These bare tmux launches have no native agent-idle event. Require tmux's
 # Claude-scoped busy read and the shared composer classifier to agree on idle.

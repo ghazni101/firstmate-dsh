@@ -220,7 +220,7 @@ test('a local-only landing needs mode local-only', async () => {
 })
 
 test('a loop config cannot name a supervisor-lifecycle script', () => {
-  const home = loopHome({ config: { rules: [{ when: 'queued', script: 'fm-lock.sh', args: [] }] } })
+  const home = loopHome({ config: { rules: [{ when: 'queued', script: 'fm-watch.sh', args: [] }] } })
   try {
     assert.throws(() => loadLoopConfig({ home }), /owned by the supervisor lifecycle/)
   } finally {

@@ -2,9 +2,9 @@
 /**
  * fm-lease.mjs - command surface for the N-owner per-task lease.
  *
- * This is the adapter bash callers use until the native path replaces
- * bin/fm-lease.sh. It is a thin argument parser over src/lease.js: the protocol
- * is not reimplemented here, and the CLI never decides policy.
+ * This is the adapter bash callers use to reach the native lease protocol. It
+ * is a thin argument parser over src/lease.js: the protocol is not
+ * reimplemented here, and the CLI never decides policy.
  *
  * Usage:
  *   fm-lease.mjs acquire --home <dir> --task <id> [--purpose <text>] [--ttl-ms <n>]

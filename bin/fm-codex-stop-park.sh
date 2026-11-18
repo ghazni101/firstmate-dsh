@@ -17,8 +17,9 @@
 # workers, and foreign session owners retain the existing foreground
 # checkpoint and turn-end guard.
 #
-# state/.codex-park-session binds selection to the native session and fleet
-# lock PID. state/.codex-park.lock is the shared lock library's single-flight
+# state/.codex-park-session binds selection to the native session and the
+# harness process it runs under. state/.codex-park.lock is the shared lock
+# library's single-flight
 # claim. state/.codex-park.json records the claim's PID identity, session,
 # outcome and timestamp; it never acknowledges or alters the wake queue.
 # The arm remains the owner of watcher identity, recovery generations and
@@ -47,8 +48,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-proc-lib.sh
+. "$SCRIPT_DIR/fm-proc-lib.sh"
 # shellcheck source=bin/fm-supervision-lib.sh
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
@@ -97,16 +98,16 @@ registered() {
   [ -f "$SESSION_FILE" ] && [ ! -L "$SESSION_FILE" ] || return 1
   registered_session=$(sed -n '1p' "$SESSION_FILE")
   registered_pid=$(sed -n '2p' "$SESSION_FILE")
-  [ -n "$registered_session" ] && [ "$registered_pid" = "$(cat "$STATE/.lock" 2>/dev/null)" ] || return 1
+  [ -n "$registered_session" ] && [ "$registered_pid" = "$(fm_harness_ancestry_pid 2>/dev/null || true)" ] || return 1
   [ -z "$SESSION" ] || [ "$SESSION" = "$registered_session" ] || return 1
   [ "$(cat "$FALLBACK" 2>/dev/null)" != "$registered_session" ]
 }
 
 capable() {
-  opted_in && fm_primary_scope_matches "$FM_ROOT" "$STATE" && verified_cli \
-    && fm_session_lock_owned_by_self "$STATE" || return 1
+  opted_in && fm_primary_scope_matches "$FM_ROOT" "$STATE" && verified_cli || return 1
   # Only the native SessionStart wrapper supplies this before its receipt is
-  # published; the digest has acquired the session lock before rendering.
+  # published; a session start runs in its own harness ancestry, so the
+  # registered anchor still identifies it.
   [ -n "${FM_CODEX_PARK_SESSION:-}" ] || registered
 }
 
@@ -117,7 +118,7 @@ park_alive() {
   [ "$pid" = "$(cat "$CLAIM/pid" 2>/dev/null)" ] || return 1
   fm_pid_alive "$pid" || return 1
   identity=$(fm_pid_identity "$pid") || return 1
-  anchor=$(cat "$STATE/.lock" 2>/dev/null) || return 1
+  anchor=$(fm_harness_ancestry_pid 2>/dev/null) || return 1
   jq -e --arg session "$SESSION" --arg identity "$identity" --arg anchor "$anchor" \
     '.session == $session and .identity == $identity and .anchor == $anchor' "$RECORD" >/dev/null 2>&1
 }
@@ -150,7 +151,7 @@ settle_idle() {
 
 deliver() {
   local message=$1
-  fm_session_lock_owned_by_self "$STATE" && registered || return 1
+  registered || return 1
   fm_run_timed "$DELIVERY_TIMEOUT" "$CODEX_COMMAND" queue --thread "$SESSION" --message "$message" > "$STATE/.codex-park-delivery.tmp.$$" 2>&1
   local rc=$?
   rm -f "$STATE/.codex-park-delivery.tmp.$$"
@@ -190,8 +191,8 @@ if [ "$MODE" = --session-start ]; then
   fi
   printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-sessionstart-run.sh"
   rc=$?
-  if [ -n "${FM_CODEX_PARK_SESSION:-}" ] && fm_session_lock_owned_by_self "$STATE"; then
-    printf '%s\n%s\n' "$SESSION" "$(cat "$STATE/.lock")" > "$SESSION_FILE.tmp.$$" \
+  if [ -n "${FM_CODEX_PARK_SESSION:-}" ]; then
+    printf '%s\n%s\n' "$SESSION" "$(fm_harness_ancestry_pid 2>/dev/null || true)" > "$SESSION_FILE.tmp.$$" \
       && mv -f "$SESSION_FILE.tmp.$$" "$SESSION_FILE"
   fi
   exit "$rc"
@@ -244,7 +245,7 @@ fi
 OWNED=1
 trap cleanup EXIT
 trap 'record interrupted; exit 0' HUP INT TERM
-ANCHOR=$(cat "$STATE/.lock")
+ANCHOR=$(fm_harness_ancestry_pid 2>/dev/null || true)
 IDENTITY=$(fm_pid_identity "$$") || exit 1
 previous=$(jq -r '.outcome // empty' "$RECORD" 2>/dev/null || true)
 previous_session=$(jq -r '.session // empty' "$RECORD" 2>/dev/null || true)
@@ -262,7 +263,7 @@ fi
 OUT=$(mktemp "$STATE/.codex-park-output.XXXXXX") || exit 1
 attempt=0
 while [ "$attempt" -lt 2 ]; do
-  registered && fm_session_lock_owned_by_self "$STATE" || exit 0
+  registered || exit 0
   if [ -e "$STATE/.afk" ]; then record idle; exit 0; fi
   fm_supervision_needed "$STATE" || settle_idle
   arm=("$SCRIPT_DIR/fm-watch-arm.sh")
@@ -277,8 +278,7 @@ while [ "$attempt" -lt 2 ]; do
   CHILD=$!
   record waiting || exit 1
   while fm_pid_alive "$CHILD"; do
-    if [ -e "$STATE/.afk" ] || ! fm_session_lock_owned_by_self "$STATE" \
-      || ! registered; then
+    if [ -e "$STATE/.afk" ] || ! registered; then
       record idle
       exit 0
     fi

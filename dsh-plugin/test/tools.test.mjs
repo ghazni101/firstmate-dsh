@@ -443,7 +443,7 @@ test('firstmate_native_run refuses the session-lifecycle scripts', async () => {
   try {
     const surface = await boot({ home })
     await assert.rejects(
-      toolNamed(surface.tools, 'firstmate_native_run').execute({ script: 'fm-lock.sh' }, execFor(surface.agent)),
+      toolNamed(surface.tools, 'firstmate_native_run').execute({ script: 'fm-watch.sh' }, execFor(surface.agent)),
       /owned by the plugin/,
     )
     await assert.rejects(
@@ -523,7 +523,6 @@ test('firstmate_native_start composes the digest without the fleet lock', async 
     assert.equal(digest.leases.held, 1)
     assert.equal(digest.leases.rows[0].task, 'fm-a')
     assert.equal(digest.wake_queue.queued, 2)
-    assert.equal(digest.lock_file_present, false)
     assert.equal(existsSync(join(home, 'state', '.lock')), false)
     await toolNamed(surface.tools, 'firstmate_native_lease').execute(
       { action: 'release', task: 'fm-a', token: lease.token },

@@ -1151,16 +1151,44 @@ unit_supervision_host_other_harnesses_run_no_away_daemon() {
 }
 
 # An opted-in Claude home for the /quiet units: the verified engine (a stub),
-# this shell as the main session's lock holder, and a valid dialog mirror, so
-# the attended supervision host runs. quiet_in <home> runs a command there.
+# this shell as the main session's harness (a fake ps reports it from every
+# child's ancestry), and a valid dialog mirror, so the attended supervision host
+# runs. quiet_in <home> runs a command there.
 QUIET_MIRROR='{"seq":1,"key":"k","tag":"captain","text":"watch the fleet"}'
+QUIET_SESSION_PID=$$
 quiet_home() {  # <home>
-  mkdir -p "$1/state" "$1/config"
+  local real_ps
+  real_ps=$(command -v ps)
+  mkdir -p "$1/state" "$1/config" "$1/fakebin"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$1/claude-engine"
   chmod +x "$1/claude-engine"
   printf 'claude\n' > "$1/config/supervision-host"
-  printf '%s\n' "$$" > "$1/state/.lock"
   printf '%s\n' "$QUIET_MIRROR" > "$1/state/.host-mirror.jsonl"
+  # A fake process table that makes this shell the session's harness ancestor,
+  # exactly as a real harness runs its hooks, without a lock file. Setting
+  # harness-dead makes the same walk find no harness at all.
+  cat > "$1/fakebin/ps" <<SH
+#!/usr/bin/env bash
+case "\$1:\$2" in
+  -o:comm=|-o:args=|-o:ppid=) ;;
+  *) exec "$real_ps" "\$@" ;;
+esac
+pid=\${4:-}
+if [ -f "\$FM_HOME/harness-dead" ]; then
+  case "\$2" in
+    comm=|args=) printf 'bash\\n' ;;
+    ppid=) printf '1\\n' ;;
+  esac
+  exit 0
+fi
+case "\$2" in
+  comm=|args=)
+    if [ "\$pid" = "$QUIET_SESSION_PID" ]; then printf 'claude\\n'; else exec "$real_ps" "\$@"; fi ;;
+  ppid=)
+    if [ "\$pid" = "$QUIET_SESSION_PID" ]; then printf '1\\n'; else printf '%s\\n' "$QUIET_SESSION_PID"; fi ;;
+esac
+SH
+  chmod +x "$1/fakebin/ps"
 }
 # Judge the last quiet command's $rc and $out: <status> and a <fragment> of its output.
 quiet_expect() {  # <status> <fragment> <failure>
@@ -1171,7 +1199,8 @@ quiet_expect() {  # <status> <fragment> <failure>
 quiet_in() {  # <home> <command...>
   local home=$1
   shift
-  FM_SUPERVISION_ENGINE_CLAUDE_BIN="${QUIET_ENGINE-$home/claude-engine}" FM_HOME="$home" \
+  PATH="$home/fakebin:$PATH" FM_QUIET_SESSION_PID="$QUIET_SESSION_PID" \
+    FM_SUPERVISION_ENGINE_CLAUDE_BIN="${QUIET_ENGINE-$home/claude-engine}" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" "$@" 2>&1
 }
 
@@ -1282,9 +1311,9 @@ unit_supervision_host_quiet_fallback() {
   for bad in opencode omp grok codex; do
     unready "no verified dialog mirror for $bad" "$bad"
   done
-  printf '999999999\n' > "$st/state/.lock"
+  : > "$st/harness-dead"
   unready 'the main session could not be identified'
-  printf '%s\n' "$$" > "$st/state/.lock"
+  rm -f "$st/harness-dead"
   rm -f "$st/state/.host-mirror.jsonl"
   unready 'the dialog mirror is missing or could not be read'
   # A mirror the attended feed would refuse: a malformed entry, a sequence

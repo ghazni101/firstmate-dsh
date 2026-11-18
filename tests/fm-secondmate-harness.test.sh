@@ -356,13 +356,13 @@ SH
   [ "$got" = pi ] || fail "unrelated pi-signed-helper ancestry resolved '$got', expected pi"
 
   got=$(PATH="$fakebin:$BASE_PATH" bash -c \
-    '. "$0/bin/fm-session-lock-lib.sh"; fm_harness_ancestry_pid' "$ROOT")
+    '. "$0/bin/fm-proc-lib.sh"; fm_harness_ancestry_pid' "$ROOT")
   [ "$got" = 100 ] || fail "session-lock ancestry selected '$got', expected the inner Pi engine pid 100"
   PATH="$fakebin:$BASE_PATH" bash -c \
-    '. "$0/bin/fm-session-lock-lib.sh"; kill() { return 0; }; fm_harness_pid_alive 200' "$ROOT" \
+    '. "$0/bin/fm-proc-lib.sh"; kill() { return 0; }; fm_harness_pid_alive 200' "$ROOT" \
     || fail "session-lock liveness rejected exact pi-signed holder"
   if PATH="$fakebin:$BASE_PATH" FM_TEST_SIGNED_SHAPE=helper bash -c \
-    '. "$0/bin/fm-session-lock-lib.sh"; kill() { return 0; }; fm_harness_pid_alive 200' "$ROOT"; then
+    '. "$0/bin/fm-proc-lib.sh"; kill() { return 0; }; fm_harness_pid_alive 200' "$ROOT"; then
     fail "session-lock liveness accepted unrelated pi-signed-helper"
   fi
 
@@ -407,7 +407,7 @@ SH
 
   err="$dir/fm-session-lock-ancestry.err"
   got=$(PATH="$fakebin:$BASE_PATH" bash -c \
-    '. "$0/bin/fm-session-lock-lib.sh"; fm_harness_ancestry_pid' "$ROOT" 2>"$err")
+    '. "$0/bin/fm-proc-lib.sh"; fm_harness_ancestry_pid' "$ROOT" 2>"$err")
   [ "$got" = 4242 ] || fail "session-lock dash-leading ancestry selected '$got', expected pid 4242"
   [ ! -s "$err" ] || fail "session-lock ancestry wrote basename option noise for literal -zsh: $(cat "$err")"
 
@@ -417,7 +417,7 @@ SH
   err="$dir/fm-session-lock-ancestry-collision.err"
   collision_log="$dir/fm-session-lock-ancestry-collision.log"
   got=$(FM_TEST_PS_PARENT=5252 FM_TEST_PS_LOG="$collision_log" PATH="$fakebin:$BASE_PATH" bash -c \
-    '. "$0/bin/fm-session-lock-lib.sh"; fm_harness_ancestry_pid' "$ROOT" 2>"$err")
+    '. "$0/bin/fm-proc-lib.sh"; fm_harness_ancestry_pid' "$ROOT" 2>"$err")
   [ "$got" = 4242 ] || fail "session-lock ancestry with pid 5252 as a real ancestor selected '$got', expected pid 4242"
   assert_contains "$(cat "$collision_log")" "5252:" \
     "session-lock collision ancestry did not query pid 5252"
@@ -425,7 +425,7 @@ SH
 
   err="$dir/fm-session-lock-alive.err"
   FM_TEST_PS_LIVENESS_PROBE=1 PATH="$fakebin:$BASE_PATH" bash -c \
-    '. "$0/bin/fm-session-lock-lib.sh"; kill() { return 0; }; fm_harness_pid_alive 5252' \
+    '. "$0/bin/fm-proc-lib.sh"; kill() { return 0; }; fm_harness_pid_alive 5252' \
     "$ROOT" 2>"$err"; status=$?
   expect_code 0 "$status" "session-lock liveness should accept literal -codex as a harness process name"
   [ ! -s "$err" ] || fail "session-lock liveness wrote basename option noise for literal -codex: $(cat "$err")"

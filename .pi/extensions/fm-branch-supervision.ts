@@ -148,7 +148,6 @@ const mirrorCursorFile = join(state, ".branch-mirror-cursor");
 const promptScript = join(fmRoot, "bin", "fm-branch-prompt.sh");
 const afkContractScript = join(fmRoot, "bin", "fm-afk-contract.sh");
 const outcomeScript = join(fmRoot, "bin", "fm-branch-outcome.sh");
-const leaseScript = join(fmRoot, "bin", "fm-lease.sh");
 const wakeGrantScript = join(fmRoot, "bin", "fm-wake-grant.sh");
 const loadedMarker = join(state, ".pi-branch-extension-loaded");
 const modelPinFile = join(config, "supervision-branch-model");
@@ -202,7 +201,7 @@ const PROCESSING_INSTRUCTION =
 type MirrorItem = { tag: "captain" | "main"; text: string };
 type MirrorCursor = { file: string; index: number };
 type Verdict = "routine" | "captain";
-type LockOwnership = "owned" | "other" | "missing";
+type LockOwnership = "owned" | "other";
 type OutcomeRow = {
   seq: number;
   task: string;
@@ -385,7 +384,7 @@ let ownedLockPid = "";
 const LOCK_ANCESTRY_DEPTH = 8;
 
 // The session lock names a local pid or, on Windows, a tagged `win:<pid>`
-// (fm_session_pid_valid in bin/fm-session-lock-lib.sh owns that shape). Native
+// (fm_session_pid_valid in bin/fm-proc-lib.sh owns that shape). Native
 // Node on Windows sees Windows pids directly, so a tagged holder is compared
 // and probed by its digits. Any other value is no usable identity, "".
 function lockHolderPid(lockPid: string): string {
@@ -400,21 +399,28 @@ function readLockPid(): { lockPid: string; holderPid: string; verdict: LockOwner
   try {
     lockPid = readFileSync(`${state}/.lock`, "utf8").trim();
   } catch {
-    return { lockPid: "", holderPid: "", verdict: "missing" };
+    // No fleet session lock: a native home, where this extension runs inside
+    // the session's own process and there is no foreign owner to defer to.
+    return { lockPid: "", holderPid: "", verdict: "owned" };
   }
   const holderPid = lockHolderPid(lockPid);
-  if (!holderPid) return { lockPid, holderPid, verdict: "other" };
+  // A legacy record no longer confers ownership, so a malformed value names no
+  // holder and this session owns the home.
+  if (!holderPid) return { lockPid, holderPid, verdict: "owned" };
   return { lockPid, holderPid, verdict: null };
 }
 
 // ownedLockPid keeps the lock's own value, tag included, because the lease the
 // branch takes must name the holder exactly as line 1 of the lock records it.
+// A native home records no lock, so the lease names no holder.
 function ownershipVerdict(lockPid: string, holderPid: string, ancestryMatched: boolean): LockOwnership {
   if (ancestryMatched) {
     ownedLockPid = lockPid;
     return "owned";
   }
-  return pidAlive(holderPid) ? "other" : "missing";
+  // A live legacy holder still owns the home; a dead one does not, and the
+  // stale file must not wedge this session out of supervision.
+  return pidAlive(holderPid) ? "other" : "owned";
 }
 
 async function lockOwnership(): Promise<LockOwnership> {
@@ -941,26 +947,14 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  // A replaced branch conversation must not leave its per-task leases behind
-  // (the session-lock holder pid is still alive, so the sweep alone would
-  // keep them). One bulk release per generation, at activation.
-  async function releaseBranchLeases(expectedGeneration: number): Promise<boolean> {
-    if (!(await generationOwnsLock(expectedGeneration))) return false;
-    const result = await runCommandAsync("bash", [leaseScript, "release-actor", "--actor", "branch"], {
-      cwd: fmRoot,
-      env: { ...scriptEnv, FM_SUPERVISION_ACTOR: "branch" },
-    });
-    return result.status === 0;
-  }
-
   // Lazy, per-action ownership evaluation (see the header). Returns true only
-  // when this session owns the fleet lock right now; the first true evaluation
-  // of a generation also writes the diagnostic marker and clears stray branch
-  // leases from a prior generation.
+  // when this generation still owns supervision; the first true evaluation of a
+  // generation also writes the diagnostic marker. A branch generation holds no
+  // per-task lease since the two-actor lease was retired, so activation has
+  // nothing to release.
   async function actingAsOwner(expectedGeneration = generation): Promise<boolean> {
     if (!(await generationOwnsLock(expectedGeneration))) return false;
     if (activatedGeneration !== expectedGeneration) {
-      if (!(await releaseBranchLeases(expectedGeneration))) return false;
       if (!(await generationOwnsLock(expectedGeneration))) return false;
       if (!(await activateEligibleRowsOwner(state, wakeGrantScript, process.pid, String(expectedGeneration)))) {
         return false;

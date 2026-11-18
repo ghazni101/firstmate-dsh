@@ -53,16 +53,6 @@ run_guard_case() {
     "$ROOT/bin/fm-guard.sh" 2>&1
 }
 
-run_guard_case_read_only() {
-  local dir=$1
-  FM_ROOT_OVERRIDE="$(case_root "$dir")" \
-    FM_HOME="$(case_home "$dir")" \
-    FM_GUARD_GRACE=999 \
-    FM_SUPERVISION_MODEL=persistent \
-    FM_GUARD_READ_ONLY=1 \
-    "$ROOT/bin/fm-guard.sh" 2>&1
-}
-
 # The Claude Stop auto-arm model: the watcher runs only between turns, so a fresh
 # beacon with no live watcher process is the healthy mid-turn state.
 run_guard_case_autoarm() {
@@ -86,11 +76,6 @@ record_aged_rewake_epoch() {
   touch -t 202001010000 "$home/state/.claude-autoarm-epoch"
 }
 
-record_session_lock_pid() {
-  local home=$1 pid=$2
-  printf '%s\n' "$pid" > "$home/state/.lock"
-}
-
 # The Pi extension model: .pi/extensions/fm-primary-pi-watch.ts tears the watcher
 # down on every actionable wake and spawns the replacement itself, so the lock is
 # legitimately unheld during a hand-off.
@@ -101,6 +86,117 @@ run_guard_case_extension() {
     FM_GUARD_GRACE=999 \
     FM_SUPERVISION_MODEL=extension \
     "$ROOT/bin/fm-guard.sh" 2>&1
+}
+
+# A pi-shaped harness (a bash symlink named pi / pi-signed) owns the case home
+# for the extension-model call: extension ownership is bound to the live harness
+# process (bin/fm-proc-lib.sh fm_harness_ancestry_pid), not to a session lock.
+PI_HARNESS_BIN=$(fm_fakebin "$TMP_ROOT/pi-harness-bin")
+ln -s /bin/bash "$PI_HARNESS_BIN/pi"
+ln -s /bin/bash "$PI_HARNESS_BIN/pi-signed"
+
+EXT_SESSION_JOB=
+EXT_SESSION_PID=
+
+# Start a harness-shaped session that waits for the caller's fixture state, then
+# runs bin/fm-guard.sh as its child. The caller's exported FM_* environment is
+# what the guard sees. Sets EXT_SESSION_JOB and EXT_SESSION_PID.
+start_extension_session() {  # <dir> [pi|pi-signed]
+  local dir=$1 harness=${2:-pi} home i=0
+  home=$(case_home "$dir")
+  rm -f "$home/state/session-ready" "$home/state/session-release"
+  # shellcheck disable=SC2016 # positional params expand in the child shell.
+  "$PI_HARNESS_BIN/$harness" -c '
+      home=$1
+      printf "%s\n" "$$" > "$home/state/session-pid"
+      : > "$home/state/session-ready"
+      while [ ! -e "$home/state/session-release" ]; do sleep 0.02; done
+      "$2"; exit $?
+    ' _ "$home" "$ROOT/bin/fm-guard.sh" > "$dir/extension-out" 2>&1 &
+  EXT_SESSION_JOB=$!
+  while [ ! -s "$home/state/session-pid" ] && [ "$i" -lt 500 ]; do
+    sleep 0.01
+    i=$((i + 1))
+  done
+  [ -s "$home/state/session-pid" ] || fail "the harness session never recorded its pid"
+  EXT_SESSION_PID=$(cat "$home/state/session-pid")
+}
+
+release_extension_session() {  # <dir> <out-var>
+  local dir=$1 out_var=$2 body
+  : > "$(case_home "$dir")/state/session-release"
+  wait "$EXT_SESSION_JOB" 2>/dev/null || true
+  body=$(cat "$dir/extension-out")
+  rm -f "$dir/extension-out"
+  printf -v "$out_var" '%s' "$body"
+}
+
+# A claude-shaped harness (a bash symlink named claude) for the auto-arm model's
+# mid-turn check: fm_autoarm_midturn_healthy binds the rewake ledger to the live
+# harness process that runs the guard (bin/fm-proc-lib.sh
+# fm_harness_ancestry_pid), not to any session lock.
+CLAUDE_HARNESS_BIN=$(fm_fakebin "$TMP_ROOT/claude-harness-bin")
+ln -s /bin/bash "$CLAUDE_HARNESS_BIN/claude"
+AUTOARM_SESSION_JOB=
+AUTOARM_SESSION_PID=
+
+start_autoarm_session() {  # <dir>
+  local dir=$1 home i=0
+  home=$(case_home "$dir")
+  rm -f "$home/state/session-ready" "$home/state/session-release"
+  # shellcheck disable=SC2016 # positional params expand in the child shell.
+  FM_ROOT_OVERRIDE="$(case_root "$dir")" \
+    FM_HOME="$home" \
+    FM_GUARD_GRACE=999 \
+    FM_SUPERVISION_MODEL=autoarm \
+    "$CLAUDE_HARNESS_BIN/claude" -c '
+      home=$1
+      printf "%s\n" "$$" > "$home/state/session-pid"
+      : > "$home/state/session-ready"
+      while [ ! -e "$home/state/session-release" ]; do sleep 0.02; done
+      "$2"; exit $?
+    ' _ "$home" "$ROOT/bin/fm-guard.sh" > "$dir/guard-out" 2>&1 &
+  AUTOARM_SESSION_JOB=$!
+  while [ ! -s "$home/state/session-pid" ] && [ "$i" -lt 500 ]; do
+    sleep 0.01
+    i=$((i + 1))
+  done
+  [ -s "$home/state/session-pid" ] || fail "the auto-arm harness session never recorded its pid"
+  AUTOARM_SESSION_PID=$(cat "$home/state/session-pid")
+}
+
+release_autoarm_session() {  # <dir> <out-var>
+  local dir=$1 out_var=$2 body
+  : > "$(case_home "$dir")/state/session-release"
+  wait "$AUTOARM_SESSION_JOB" 2>/dev/null || true
+  body=$(cat "$dir/guard-out")
+  rm -f "$dir/guard-out"
+  printf -v "$out_var" '%s' "$body"
+}
+
+# Run bin/fm-guard.sh under a live harness-owned extension session whose markers
+# name that harness process as the loading session.
+run_guard_case_extension_owned() {  # <dir> [branch]
+  local dir=$1 actor=${2:-} ext_output=
+  if [ "$actor" = branch ]; then
+    FM_ROOT_OVERRIDE="$(case_root "$dir")" \
+      FM_HOME="$(case_home "$dir")" \
+      FM_GUARD_GRACE=999 \
+      FM_SUPERVISION_MODEL=extension \
+      FM_SUPERVISION_ACTOR=branch \
+      start_extension_session "$dir"
+  else
+    FM_ROOT_OVERRIDE="$(case_root "$dir")" \
+      FM_HOME="$(case_home "$dir")" \
+      FM_GUARD_GRACE=999 \
+      FM_SUPERVISION_MODEL=extension \
+      start_extension_session "$dir"
+  fi
+  record_pi_extension_session "$dir" "$EXT_SESSION_PID" \
+    || fail "could not record the Pi extension session"
+  touch "$(case_home "$dir")/state/.last-watcher-beat"
+  release_extension_session "$dir" ext_output
+  printf '%s' "$ext_output"
 }
 
 # The same extension-model call from the supervision branch actor
@@ -117,11 +213,13 @@ run_guard_case_extension_as_branch() {
 
 # Stand up the durable evidence a live Pi session leaves behind: both primary
 # extensions present under the case root, and a marker per extension recording
-# that extension's current build plus the session pid in state/.lock.
+# that extension's current build plus the live harness process that loaded it
+# (bin/fm-proc-lib.sh fm_harness_ancestry_pid). Native homes carry no session
+# lock, so none is written.
 # Each named part can be broken independently so a test can prove which one the
 # verdict actually depends on.
-#   session_pid  the pid state/.lock names (a live one unless the test wants a dead
-#                session); "" writes no session lock at all
+#   session_pid  the harness process pid the markers must name; a dead one
+#                reproduces a departed session
 #   omit         "" | watch | turnend - skip that extension's marker
 #   drift        "" | watch | turnend - write a marker whose version is not the
 #                current build, i.e. the session loaded an older extension
@@ -149,7 +247,6 @@ record_pi_extension_session() {
       printf '%s\n%s\n' "$version" "$session_pid" > "$home/state/$marker"
     fi
   done
-  [ -n "$session_pid" ] && printf '%s\n' "$session_pid" > "$home/state/.lock"
   return 0
 }
 
@@ -344,88 +441,6 @@ test_queued_wake_warning_stays_independent() {
   pass "fm-guard stale banner: queued-wake warning remains independent"
 }
 
-test_read_only_before_writable_does_not_consume_full_banner() {
-  local dir home marker lock out_ro out_rw
-  dir=$(make_guard_case read-only-before-writable)
-  home=$(case_home "$dir")
-  marker="$home/state/.guard-watcher-stale-banner"
-  lock="$home/state/.guard-watcher-stale-banner.lock"
-
-  out_ro=$(run_guard_case_read_only "$dir")
-  [ "$(count_text "$out_ro" "WATCHER DOWN - SUPERVISION IS OFF")" -eq 1 ] \
-    || fail "read-only stale call should print the advisory full banner: $out_ro"
-  assert_absent "$marker" "read-only stale call must not create the stale-banner marker"
-  assert_absent "$lock" "read-only stale call must not create the stale-banner lock"
-
-  out_rw=$(run_guard_case "$dir")
-  [ "$(count_text "$out_rw" "WATCHER DOWN - SUPERVISION IS OFF")" -eq 1 ] \
-    || fail "writable stale call should still receive the full banner after read-only: $out_rw"
-  assert_present "$marker" "writable stale call should claim the stale-banner marker"
-  pass "fm-guard stale banner: read-only before writable does not consume full banner"
-}
-
-test_read_only_during_episode_observes_without_mutating_marker() {
-  local dir home marker before after out_ro
-  dir=$(make_guard_case read-only-during-episode)
-  home=$(case_home "$dir")
-  marker="$home/state/.guard-watcher-stale-banner"
-
-  run_guard_case "$dir" >/dev/null
-  before=$(cat "$marker")
-  out_ro=$(run_guard_case_read_only "$dir")
-  after=$(cat "$marker")
-  assert_contains "$out_ro" "full banner already printed this episode" \
-    "read-only stale call during a claimed episode should print the concise reminder"
-  [ "$after" = "$before" ] || fail "read-only stale call must not update an existing marker"
-  pass "fm-guard stale banner: read-only during episode observes without mutating marker"
-}
-
-test_healthy_read_only_does_not_clear_marker() {
-  local dir home marker before after healthy pid
-  dir=$(make_guard_case healthy-read-only)
-  home=$(case_home "$dir")
-  marker="$home/state/.guard-watcher-stale-banner"
-
-  run_guard_case "$dir" >/dev/null
-  before=$(cat "$marker")
-  sleep 60 &
-  pid=$!
-  record_live_watcher "$dir" "$pid" || fail "could not record the live watcher for read-only recovery"
-  touch "$home/state/.last-watcher-beat"
-  healthy=$(run_guard_case_read_only "$dir")
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-  [ -z "$healthy" ] || fail "healthy read-only guard should stay silent, got: $healthy"
-  assert_present "$marker" "healthy read-only guard must not clear the stale-banner marker"
-  after=$(cat "$marker")
-  [ "$after" = "$before" ] || fail "healthy read-only guard must not update the marker"
-  pass "fm-guard stale banner: healthy read-only does not clear marker"
-}
-
-test_read_only_never_mutates_stale_banner_state_files() {
-  local dir home marker lock before after no_work
-  dir=$(make_guard_case read-only-state-nonmutation)
-  home=$(case_home "$dir")
-  marker="$home/state/.guard-watcher-stale-banner"
-  lock="$home/state/.guard-watcher-stale-banner.lock"
-  printf '%s\n' "sentinel-marker" > "$marker"
-
-  before=$(find "$home/state" -maxdepth 1 -mindepth 1 -name '.guard-watcher-stale-banner*' -print | sort)
-  run_guard_case_read_only "$dir" >/dev/null
-  after=$(find "$home/state" -maxdepth 1 -mindepth 1 -name '.guard-watcher-stale-banner*' -print | sort)
-  [ "$after" = "$before" ] || fail "stale read-only guard changed stale-banner state files"$'\n'"before: $before"$'\n'"after: $after"
-  [ "$(cat "$marker")" = "sentinel-marker" ] || fail "stale read-only guard updated the marker content"
-  assert_absent "$lock" "stale read-only guard must not create the stale-banner lock"
-
-  rm -f "$home/state/task.meta"
-  no_work=$(run_guard_case_read_only "$dir")
-  [ -z "$no_work" ] || fail "read-only guard with no in-flight work should stay silent, got: $no_work"
-  after=$(find "$home/state" -maxdepth 1 -mindepth 1 -name '.guard-watcher-stale-banner*' -print | sort)
-  [ "$after" = "$before" ] || fail "no-work read-only guard changed stale-banner state files"$'\n'"before: $before"$'\n'"after: $after"
-  [ "$(cat "$marker")" = "sentinel-marker" ] || fail "no-work read-only guard updated the marker content"
-  pass "fm-guard stale banner: read-only never mutates stale-banner state files"
-}
-
 test_autoarm_fresh_beacon_without_watcher_is_healthy() {
   local dir out
   dir=$(make_guard_case autoarm-fresh)
@@ -469,16 +484,12 @@ test_autoarm_stale_episode_is_stable() {
 # ledger still shows a healthy rewake with no failure markers while the session
 # lock names a live pid. Turn-end will re-arm, so the pull guard must stay silent.
 test_autoarm_long_handling_turn_stays_silent() {
-  local dir home out pid
+  local dir home out
   dir=$(make_guard_case autoarm-long-turn)
   home=$(case_home "$dir")
-  sleep 60 &
-  pid=$!
-  record_aged_rewake_epoch "$home" "$pid"
-  record_session_lock_pid "$home" "$pid"
-  out=$(run_guard_case_autoarm "$dir")
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
+  start_autoarm_session "$dir"
+  record_aged_rewake_epoch "$home" "$AUTOARM_SESSION_PID"
+  release_autoarm_session "$dir" out
   [ -z "$out" ] \
     || fail "a long auto-arm handling turn past grace must stay silent, got: $out"
   assert_absent "$home/state/.guard-watcher-stale-banner" \
@@ -490,14 +501,12 @@ test_autoarm_long_handling_turn_stays_silent() {
 # healthy-generation signal must restore the banner; the stale beacon alone
 # is not enough to stay quiet, and adding a failure marker is not either.
 test_autoarm_long_turn_requires_every_healthy_signal() {
-  local dir home out pid replacement_pid='' case_name
-  for case_name in no-epoch failed-outcome failure-notified failure-alarmed dead-lock missing-lock changed-lock moved-recovery later-beacon; do
+  local dir home out other='' case_name
+  for case_name in no-epoch failed-outcome failure-notified failure-alarmed changed-session moved-recovery later-beacon; do
     dir=$(make_guard_case "autoarm-long-turn-$case_name")
     home=$(case_home "$dir")
-    sleep 60 &
-    pid=$!
-    record_aged_rewake_epoch "$home" "$pid"
-    record_session_lock_pid "$home" "$pid"
+    start_autoarm_session "$dir"
+    record_aged_rewake_epoch "$home" "$AUTOARM_SESSION_PID"
     case "$case_name" in
       no-epoch)
         rm -f "$home/state/.claude-autoarm-epoch"
@@ -512,18 +521,12 @@ test_autoarm_long_turn_requires_every_healthy_signal() {
       failure-alarmed)
         : > "$home/state/.claude-autoarm-failure-alarmed"
         ;;
-      dead-lock)
-        kill "$pid" 2>/dev/null || true
-        wait "$pid" 2>/dev/null || true
-        pid=
-        ;;
-      missing-lock)
-        rm -f "$home/state/.lock"
-        ;;
-      changed-lock)
+      changed-session)
+        # The ledger names a different live session than the one running the
+        # guard, so turn-end will not re-arm this home.
         sleep 60 &
-        replacement_pid=$!
-        record_session_lock_pid "$home" "$replacement_pid"
+        other=$!
+        record_aged_rewake_epoch "$home" "$other"
         ;;
       moved-recovery)
         printf 'pending:handling:later-turn-generation\n' > "$home/state/.watcher-down"
@@ -532,12 +535,10 @@ test_autoarm_long_turn_requires_every_healthy_signal() {
         touch -t 202101010000 "$home/state/.last-watcher-beat"
         ;;
     esac
-    out=$(run_guard_case_autoarm "$dir")
-    [ -z "$pid" ] || kill "$pid" 2>/dev/null || true
-    [ -z "$pid" ] || wait "$pid" 2>/dev/null || true
-    [ -z "$replacement_pid" ] || kill "$replacement_pid" 2>/dev/null || true
-    [ -z "$replacement_pid" ] || wait "$replacement_pid" 2>/dev/null || true
-    replacement_pid=
+    release_autoarm_session "$dir" out
+    [ -z "$other" ] || kill "$other" 2>/dev/null || true
+    [ -z "$other" ] || wait "$other" 2>/dev/null || true
+    other=
     [ "$(count_text "$out" "WATCHER DOWN - SUPERVISION IS OFF")" -eq 1 ] \
       || fail "auto-arm long-turn health must not survive $case_name; guard output: $out"
     assert_contains "$out" "no watcher has a fresh beacon" \
@@ -577,7 +578,6 @@ test_autoarm_long_turn_does_not_silence_other_models() {
     sleep 60 &
     pid=$!
     record_aged_rewake_epoch "$home" "$pid"
-    record_session_lock_pid "$home" "$pid"
     if [ "$model" = extension ]; then
       out=$(run_guard_case_extension "$dir")
     else
@@ -632,16 +632,10 @@ test_persistent_no_watcher_episode_survives_beacon_touch() {
 # a guarded command that lands in a hand-off sees a fresh beacon and an unheld lock
 # - state the persistent model cannot tell apart from supervision being off.
 test_extension_handoff_with_live_session_is_healthy() {
-  local dir home out pid
+  local dir home out
   dir=$(make_guard_case extension-handoff)
   home=$(case_home "$dir")
-  sleep 60 &
-  pid=$!
-  record_pi_extension_session "$dir" "$pid" || fail "could not record the Pi extension session"
-  touch "$home/state/.last-watcher-beat"
-  out=$(run_guard_case_extension "$dir")
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
+  out=$(run_guard_case_extension_owned "$dir")
   [ -z "$out" ] \
     || fail "an extension-owned hand-off with a live Pi session must stay silent, got: $out"
   assert_absent "$home/state/.guard-watcher-stale-banner" \
@@ -650,23 +644,32 @@ test_extension_handoff_with_live_session_is_healthy() {
 }
 
 # A fakebin whose uname reports <uname> and whose `ps -W` lists one Pi-shaped
-# Windows process, WINPID 7204; every other ps question is the real one.
+# Windows process, WINPID 7204. The local parent-chain reads are blinded so the
+# Windows bridge is the only ancestry evidence left, exactly as on a Cygwin host
+# whose native harness is outside the local process table.
 windows_table_fakebin() {  # <dir> <uname>
   local fakebin
   fakebin=$(fm_fakebin "$1")
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" %s\n' "$2" > "$fakebin/uname"
   cat > "$fakebin/ps" <<'SH'
 #!/usr/bin/env bash
-[ "$*" = -W ] || exec /bin/ps "$@"
-printf '%s\n' '      PID    PPID    PGID     WINPID   TTY         UID    STIME COMMAND'
-printf '%s\n' '  4201508       0       0       7204  ?              0 22:24:48 C:\Users\u\AppData\Roaming\npm\pi.exe'
+case "$*" in
+  -W)
+    printf '%s\n' '      PID    PPID    PGID     WINPID   TTY         UID    STIME COMMAND'
+    printf '%s\n' '  4201508       0       0       7204  ?              0 22:24:48 C:\Users\u\AppData\Roaming\npm\pi.exe'
+    ;;
+  '-o comm= -p '*) printf '%s\n' bash ;;
+  '-o args= -p '*) printf '%s\n' bash ;;
+  '-o ppid= -p '*) printf '%s\n' 1 ;;
+  *) exec /bin/ps "$@" ;;
+esac
 SH
   chmod +x "$fakebin/uname" "$fakebin/ps"
   printf '%s\n' "$fakebin"
 }
 
 # A Windows/Git Bash home records its session as a tagged win:<pid>
-# (bin/fm-session-lock-lib.sh). That holder is outside the local process table,
+# (bin/fm-proc-lib.sh). That holder is outside the local process table,
 # so the hand-off tolerance answers its liveness from the Windows table instead
 # of reading a correctly locked home as supervision off. A dead or malformed
 # tagged holder, and the same tag on a non-Windows host, stay loud.
@@ -687,7 +690,12 @@ test_extension_handoff_with_tagged_windows_session() {
     record_pi_extension_session "$dir" "$session_pid" \
       || fail "could not record the tagged Pi extension session for $case_name"
     touch "$home/state/.last-watcher-beat"
-    out=$(PATH="$fakebin:$PATH" run_guard_case_extension "$dir")
+    # The tagged harness pid is published through CLAUDE_PID, the one Windows
+    # session-pid variable bin/fm-proc-lib.sh verifies against the table.
+    out=$(PATH="$fakebin:$PATH" \
+      CLAUDE_PID="$(printf '%s' "${session_pid#win:}" | grep -E '^[0-9]+$' || true)" \
+      CLAUDE_CODE_SESSION_ID=fixture \
+      run_guard_case_extension "$dir")
     case "$expect" in
       healthy)
         [ -z "$out" ] \
@@ -705,17 +713,11 @@ test_extension_handoff_with_tagged_windows_session() {
 # A released owner may leave the lock directory briefly before cleanup. It is
 # still genuinely unheld when it records no pid, so the hand-off stays benign.
 test_extension_handoff_with_empty_lock_is_healthy() {
-  local dir home out pid
+  local dir home out
   dir=$(make_guard_case extension-empty-lock)
   home=$(case_home "$dir")
-  sleep 60 &
-  pid=$!
-  record_pi_extension_session "$dir" "$pid" || fail "could not record the Pi extension session"
   mkdir -p "$home/state/.watch.lock"
-  touch "$home/state/.last-watcher-beat"
-  out=$(run_guard_case_extension "$dir")
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
+  out=$(run_guard_case_extension_owned "$dir")
   [ -z "$out" ] \
     || fail "an extension-owned hand-off with an empty lock must stay silent, got: $out"
   assert_absent "$home/state/.guard-watcher-stale-banner" \
@@ -869,17 +871,11 @@ test_extension_stale_beacon_alarms_despite_live_session() {
 # The queued-wake hazard is independent of the watcher verdict and must survive the
 # hand-off tolerance: a silenced banner must never take this warning down with it.
 test_extension_handoff_keeps_queued_wake_warning() {
-  local dir home out pid
+  local dir home out
   dir=$(make_guard_case extension-queued-wake)
   home=$(case_home "$dir")
-  sleep 60 &
-  pid=$!
-  record_pi_extension_session "$dir" "$pid" || fail "could not record the Pi extension session"
-  touch "$home/state/.last-watcher-beat"
-  printf '%s\n' "1700000000	1	signal	task	signal: crewmate needs a decision" > "$home/state/.wake-queue"
-  out=$(run_guard_case_extension "$dir")
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
+  printf '%s\n' "1700000000\t1\tsignal\ttask\tsignal: crewmate needs a decision" > "$home/state/.wake-queue"
+  out=$(run_guard_case_extension_owned "$dir")
   assert_contains "$out" "queued wakes pending" \
     "the queued-wake warning must still fire during an extension-owned hand-off"
   assert_not_contains "$out" "WATCHER DOWN - SUPERVISION IS OFF" \
@@ -898,26 +894,20 @@ test_branch_actor_is_not_told_to_drain_queued_wakes() {
   local dir home out pid
   dir=$(make_guard_case branch-actor-queued-wake)
   home=$(case_home "$dir")
-  sleep 60 &
-  pid=$!
-  record_pi_extension_session "$dir" "$pid" || fail "could not record the Pi extension session"
-  touch "$home/state/.last-watcher-beat"
   printf '%s\n' \
     "1700000000	7	stale	firstmate:fm-task	stale: firstmate:fm-task (idle 378s, possible wedge)" \
     "1700000001	8	check	merge-poll	check: merge-poll: merged" > "$home/state/.wake-queue"
   printf '7\n' > "$home/state/.branch-eligible-rows"
-  out=$(run_guard_case_extension_as_branch "$dir")
+  out=$(run_guard_case_extension_owned "$dir" branch)
   assert_not_contains "$out" "queued wakes pending" \
     "the branch actor must not be told to drain the rows it is already handling"
   assert_not_contains "$out" "wake row" \
     "the branch actor gets no replacement note about queued rows"
   rm -f "$home/state/.branch-eligible-rows"
-  out=$(run_guard_case_extension_as_branch "$dir")
+  out=$(run_guard_case_extension_owned "$dir" branch)
   assert_not_contains "$out" "queued wakes pending" \
     "a branch actor with no grant can drain nothing, so the warning must stay silent"
-  out=$(run_guard_case_extension "$dir")
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
+  out=$(run_guard_case_extension_owned "$dir")
   assert_contains "$out" "queued wakes pending" \
     "main must still be warned about the queued rows"
   pass "fm-guard: the branch actor is never told to drain queued wakes while main still is"
@@ -961,34 +951,21 @@ test_extension_live_watcher_is_healthy_without_ownership_evidence() {
 
 # The cases above pin the model. This one takes the end-user path instead: no
 # FM_SUPERVISION_MODEL at all, so bin/fm-harness.sh must route a Pi primary to the
-# extension model on its own. Without that routing the tolerance would never reach
-# a real Pi home. Pinning Pi takes both halves of the evidence: the foreign markers
-# are cleared because the host running this suite may carry one, and the ancestry
-# walk is blinded because a structural ancestor of a different harness outranks the
-# Pi marker, so the harness this suite was launched from would otherwise answer.
+# extension model on its own from the real harness process running the guard.
+# Without that routing the tolerance would never reach a real Pi home.
 test_pi_harness_routes_itself_to_the_extension_model() {
-  local dir home out pid harness blind
-  local -a pi_env
-  blind=$(fm_fakebin "$TMP_ROOT/pi-routing-blind")
-  fm_fake_blind_ancestry "$blind"
+  local dir home out harness
   for harness in pi pi-signed; do
-    pi_env=(PI_CODING_AGENT=true)
-    [ "$harness" = pi ] || pi_env+=(FM_PI_HARNESS=pi-signed)
     dir=$(make_guard_case "harness-routing-$harness")
     home=$(case_home "$dir")
-    sleep 60 &
-    pid=$!
-    record_pi_extension_session "$dir" "$pid" || fail "could not record the Pi extension session"
-    touch "$home/state/.last-watcher-beat"
-    out=$(env -u CLAUDECODE -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GROK_AGENT -u FM_SUPERVISION_MODEL \
-      "${pi_env[@]}" \
-      PATH="$blind:$PATH" \
-      FM_ROOT_OVERRIDE="$(case_root "$dir")" \
+    FM_ROOT_OVERRIDE="$(case_root "$dir")" \
       FM_HOME="$home" \
       FM_GUARD_GRACE=999 \
-      "$ROOT/bin/fm-guard.sh" 2>&1)
-    kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
+      start_extension_session "$dir" "$harness"
+    record_pi_extension_session "$dir" "$EXT_SESSION_PID" \
+      || fail "could not record the $harness extension session"
+    touch "$home/state/.last-watcher-beat"
+    release_extension_session "$dir" out
     [ -z "$out" ] \
       || fail "a $harness primary must route itself to the extension model, got: $out"
   done
@@ -1026,7 +1003,3 @@ test_healthy_recovery_rearms_next_stale_episode
 test_concurrent_same_episode_prints_one_full_banner
 test_home_isolation
 test_queued_wake_warning_stays_independent
-test_read_only_before_writable_does_not_consume_full_banner
-test_read_only_during_episode_observes_without_mutating_marker
-test_healthy_read_only_does_not_clear_marker
-test_read_only_never_mutates_stale_banner_state_files

@@ -46,7 +46,6 @@ export const DEFAULT_MAX_ACTIONS = 3
 /** Scripts the loop never runs: the plugin's own session lifecycle owns them. */
 const DENIED_SCRIPTS = new Set([
   'fm-session-start.sh',
-  'fm-lock.sh',
   'fm-watch.sh',
   'fm-watch-arm.sh',
   'fm-watch-checkpoint.sh',

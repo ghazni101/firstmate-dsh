@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Print the one-line session-start instruction only for a genuine firstmate
-# primary whose current harness session has not already acquired the home lock.
+# primary whose current harness session has not already run its startup.
 # Every silence and error path exits 0 because Claude SessionStart exit 2 blocks
 # session initialization.
 set -u
@@ -16,39 +16,25 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
 # shellcheck source=bin/fm-operational-input.sh
 . "$SCRIPT_DIR/fm-operational-input.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-proc-lib.sh
+. "$SCRIPT_DIR/fm-proc-lib.sh"
 
 fm_is_gate_agent "$FM_ROOT" && exit 0
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 
-lock_is_in_ancestry() {
-  local lock_pid pid=$$ _
-  [ -f "$STATE/.lock" ] || return 1
-  IFS= read -r lock_pid < "$STATE/.lock" 2>/dev/null || return 1
-  # A Windows-tagged holder is not in this process table at all, so a local
-  # ancestry comparison cannot answer for it. Defer to the owner of harness
-  # identity, which is the only thing that can read across that boundary.
-  if fm_win_untag_pid "$lock_pid" >/dev/null; then
-    fm_session_lock_owned_by_self "$STATE"
-    return
-  fi
-  case "$lock_pid" in
-    # PID 1 can own the session inside a PID namespace; compare it below.
-    ''|*[!0-9]*) return 1 ;;
-  esac
-  kill -0 "$lock_pid" 2>/dev/null || return 1
-  for _ in 1 2 3 4 5 6 7 8; do
-    [ "$pid" = "$lock_pid" ] && return 0
-    pid=$(fm_ps_ppid "$pid")
-    # Compare the top of the chain before stopping, as in the owning library.
-    case "$pid" in '' | *[!0-9]*) return 1 ;; esac
-    [ "$pid" -ge 1 ] || return 1
-  done
-  return 1
+# The startup already ran for this session when the completion record names this
+# session's harness process (bin/fm-session-start.sh writes it).
+COMPLETION_FILE="$STATE/.session-start-complete"
+startup_already_ran() {
+  local session_pid completion_pid
+  [ -f "$COMPLETION_FILE" ] && [ ! -L "$COMPLETION_FILE" ] || return 1
+  session_pid=$(fm_harness_ancestry_pid 2>/dev/null) || return 1
+  fm_session_pid_valid "$session_pid" || return 1
+  completion_pid=$(cat "$COMPLETION_FILE" 2>/dev/null) || return 1
+  [ "$completion_pid" = "$session_pid" ]
 }
 
-lock_is_in_ancestry && exit 0
+startup_already_ran && exit 0
 nudge=
 fm_operational_input_encode session-start \
   "Run \`bin/fm-session-start.sh\` now, exactly once, before executing any other instructions." \

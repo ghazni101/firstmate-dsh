@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Behavior tests for Grok-harness hook authentication, teardown cleanup, and session-lock holder detection.
+# Behavior tests for Grok-harness hook authentication, teardown cleanup, and harness identity detection.
 set -u
 
 # shellcheck source=tests/fixtures.sh
@@ -92,12 +92,9 @@ EOF
   pass "grok teardown removes pointer and token state"
 }
 
-test_fm_lock_recognizes_grok_holder() {
-  local home fakebin out
-  home="$TMP_ROOT/lock-home"
+test_harness_identity_recognizes_grok() {
+  local fakebin out
   fakebin=$(fm_fakebin "$TMP_ROOT/lock-fake")
-  mkdir -p "$home/state"
-  printf '%s\n' "$$" > "$home/state/.lock"
   cat > "$fakebin/ps" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
@@ -107,11 +104,18 @@ esac
 exit 1
 SH
   chmod +x "$fakebin/ps"
-  out=$(FM_HOME="$home" PATH="$fakebin:$PATH" "$ROOT/bin/fm-lock.sh" status)
-  assert_contains "$out" "lock: held by live harness pid" "fm-lock did not recognize grok as a live holder"
-  pass "fm-lock recognizes grok harness processes"
+  out=$(PATH="$fakebin:$PATH" bash -c '
+    . "$1/bin/fm-proc-lib.sh"
+    pid=$(fm_harness_ancestry_pid) || exit 11
+    fm_harness_pid_alive "$pid" || exit 12
+    printf "%s\n" "$pid"
+  ' _ "$ROOT")
+  case "$out" in
+    ''|*[!0-9]*) fail "fm-proc-lib did not resolve a live grok harness pid: '$out'" ;;
+  esac
+  pass "fm-proc-lib recognizes grok harness processes by ancestry"
 }
 
 test_grok_hook_requires_registered_token
 test_grok_teardown_removes_pointer_and_token
-test_fm_lock_recognizes_grok_holder
+test_harness_identity_recognizes_grok

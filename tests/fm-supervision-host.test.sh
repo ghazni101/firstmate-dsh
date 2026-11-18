@@ -3,9 +3,9 @@
 # (bin/fm-supervision-host.sh, docs/supervision-host.md). Shared fixtures live
 # in tests/supervision-host-helpers.sh.
 #
-# The loop cases run the real host, arm, watcher, wake grant, drain, outcome
-# store, and lease scripts in a fixture home. The host runs as a child of a fake
-# harness (a bash symlink named "claude") whose pid is the home's session lock,
+# The loop cases run the real host, arm, watcher, wake grant, drain, and outcome
+# store in a fixture home. The host runs as a child of a fake harness (a bash
+# symlink named "claude") whose pid is the home's session harness,
 # and its engine is a stub named by FM_SUPERVISION_ENGINE_CLAUDE_BIN that does
 # what a branch turn does through the same scripts, so the real argument
 # construction, bounding, and reaping are exercised without a model. A real
@@ -279,16 +279,15 @@ test_main_only_pass_through_leaves_the_successor_watcher_running() {
 }
 
 
-# The session-lock holder's process identity cannot be read (its proc entry
-# is truncated), so no main-session key exists: the close reaches main exactly
-# as the arm printed it, before any mirror feed or engine turn.
+# The session harness's process identity cannot be read (its proc entry is
+# truncated), so no main-session key exists: the close reaches main exactly as
+# the arm printed it, before any mirror feed or engine turn.
 
 test_attended_close_with_unidentified_main_session_passes_to_main() {
   local home
   home=$(make_home attended-unidentified attended)
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     "$FAKE_CLAUDE" -c '
-      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       mkdir -p "$FM_HOME/proc/$$"
       printf "%s (claude) S\n" "$$" > "$FM_HOME/proc/$$/stat"
@@ -626,20 +625,19 @@ test_attended_wake_with_an_unreadable_mirror_reaches_main() {
 }
 
 test_away_wake_is_handled_on_the_engine_and_never_reaches_main() {
-  local home lock_pid session first second pid watcher
+  local home session_pid session first second pid watcher
   home=$(make_home away-handled away)
-  echo hold-lease > "$home/stub-mode"
   # Dialog in the mirror that an away wake must neither carry nor mark read.
   printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p1","prompt":"keep the export worker on low effort"}' > "$home/mirror-seed.1"
   start_host "$home"
   wait_until 150 watcher_live "$home" || fail "away: the host never started a watcher cycle: $(cat "$home/host.out")"
   append_status "$home" 'step one'
   wait_until 250 handled_at_least "$home" 1 || fail "away: the wake was not handled: $(cat "$home/host.out"; cat "$home/state/.supervision-host.log")"
-  lock_pid=$(cat "$home/state/.lock")
+  session_pid=$(sed -n '1p' "$home/claude-pids")
 
   first="$home/engine-call.1"
   assert_re '^actor=branch$' "$first" "the engine must run as the branch actor"
-  assert_re "^holder=$lock_pid\$" "$first" "the engine's lease holder must be the session-lock holder"
+  assert_re "^holder=$session_pid\$" "$first" "the engine's holder must be the session's harness pid"
   assert_re '^primary=claude$' "$first" "the engine must carry the primary-harness pin"
   assert_re '^turn=host-' "$first" "the engine must carry its report turn"
   assert_re '^arg=--safe-mode$' "$first" "the engine must load none of the home's hooks"
@@ -653,9 +651,6 @@ test_away_wake_is_handled_on_the_engine_and_never_reaches_main() {
   assert_absent "$home/state/.host-mirror-cursor.next" "an away wake must stage no mirror cursor"
   assert_grep '"task":"demo"' "$home/state/branch-outcomes.jsonl" "the engine's report did not reach the outcome store"
   assert_no_grep 'demo.status' "$home/state/.wake-queue" "the engine's acknowledgement did not consume the wake"
-  if FM_HOME="$home" "$LEASE" check demo >/dev/null 2>&1; then
-    fail "the host did not release the lease the engine left held: $(FM_HOME="$home" "$LEASE" check demo)"
-  fi
   [ ! -s "$home/host.rc" ] || fail "a handled away wake reached main: $(cat "$home/host.out")"
   [ "$(grep -cv '^watcher: started pid=' "$home/host.out")" -eq 0 ] \
     || fail "a handled away wake printed more than the first cycle's status to main: $(cat "$home/host.out")"

@@ -14,7 +14,7 @@
 # through the transport the pane itself declares: TMUX_PANE for tmux, or
 # HERDR_ENV+HERDR_PANE_ID+HERDR_SESSION for herdr (a named session's pane,
 # including the fm-remote session remote homes run under). On tmux the pane's
-# pid must be an ancestor of the pinned session-lock pid and that session must
+# pid must be an ancestor of the pinned session pid and that session must
 # still be in the terminal's foreground group; on herdr the pane's own
 # process-info must show the same ancestor-or-self and foreground-group facts
 # for the pinned pid, and the pane's registered agent identity must be claude.
@@ -37,8 +37,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-operational-input.sh
 . "$SCRIPT_DIR/fm-operational-input.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-proc-lib.sh
+. "$SCRIPT_DIR/fm-proc-lib.sh"
 fm_backend_source tmux || exit 1
 # Delivery transport: only the pane identity the pane runtime injected is
 # trusted, mirroring bin/fm-supervisor-target-lib.sh's discovery order. An
@@ -64,9 +64,12 @@ LOG="$STATE/.supervision-handoff.log"
 GRACE=${FM_GUARD_GRACE:-$(fm_poll_derived_grace)}
 RETRY=${FM_SUPERVISION_HANDOFF_RETRY_SECONDS:-300}
 case "$RETRY" in ''|0*|*[!0-9]*) RETRY=300 ;; esac
-fm_session_lock_owned_by_self "$STATE" || exit 1
 [ "$(cat "$PENDING" 2>/dev/null)" = "$TOKEN" ] || exit 1
-SESSION=$(cat "$STATE/.lock" 2>/dev/null) || exit 1
+# The pinned session this hand-back delivers into: the harness process this
+# process descends from. A detached retry that cannot identify one exits
+# immediately, leaving the queued wake and the current arm for its next owner
+# rather than retrying against an unknown pane.
+SESSION=$(fm_harness_ancestry_pid 2>/dev/null) || exit 1
 SESSION_ID=$(fm_pid_identity "$SESSION") || exit 1
 [ -n "$SESSION_ID" ] || exit 1
 ARM=
@@ -94,8 +97,7 @@ trap cleanup EXIT
 trap 'exit 0' TERM INT
 
 session_owned() {
-  [ "$(cat "$STATE/.lock" 2>/dev/null)" = "$SESSION" ] \
-    && fm_pid_alive "$SESSION" \
+  fm_pid_alive "$SESSION" \
     && [ "$(fm_pid_identity "$SESSION" 2>/dev/null)" = "$SESSION_ID" ]
 }
 

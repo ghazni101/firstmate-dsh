@@ -779,18 +779,16 @@ if [ -n "$RESOLVE_KEYS" ]; then
   fi
   # The decision-answer partition (the header's "Answering a decision"
   # contract): a key that is an open needs-decision, or already a captain-held
-  # task, is a decision, and answering one is main-owned while attended. A
-  # blocked: key is ordinary steering and takes no partition guard. Under the
-  # away-posture record the guard passes the branch instead (relocation:
-  # bin/fm-lease-lib.sh); which findings firstmate may decide at all stays
-  # ask-user-authority's judgment, for either actor.
+  # task, is a decision, and answering one is main-owned. A
+  # blocked: key is ordinary steering and takes no partition guard. Which
+  # findings firstmate may decide at all stays ask-user-authority's judgment.
   RESOLVE_IS_DECISION=0
   [ -z "$RESOLVE_HOLD_KEYS" ] || RESOLVE_IS_DECISION=1
   for k in $RESOLVE_STATUS_KEYS; do
     [ "$(_fm_open_set_verb "$resolve_open_set" "$k")" = needs-decision ] && RESOLVE_IS_DECISION=1
   done
   if [ "$RESOLVE_IS_DECISION" -eq 1 ]; then
-    fm_lease_forbid_branch "decision answer (fm-send --resolve-key)" --away-relocated
+    fm_lease_forbid_branch "decision answer (fm-send --resolve-key)"
   fi
   # Refuse before send when a named status-log key cannot actually close: a
   # reserved key with an answered: note is a silent no-op in the fold.

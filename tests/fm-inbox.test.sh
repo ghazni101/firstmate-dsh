@@ -14,7 +14,6 @@ set -euo pipefail
 
 TMP_ROOT=$(fm_test_tmproot fm-inbox)
 INBOX_BIN="$ROOT/bin/fm-inbox.sh"
-LOCK_BIN="$ROOT/bin/fm-lock.sh"
 
 make_home() {
   local home="$TMP_ROOT/$1"
@@ -27,12 +26,6 @@ run_inbox() {
   shift
   FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_CONFIG_OVERRIDE="$home/config" "$INBOX_BIN" "$@"
-}
-
-run_lock() {
-  local home=$1
-  shift
-  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$LOCK_BIN" "$@"
 }
 
 json_get() {
@@ -388,51 +381,49 @@ assert_equals "2" "$(printf '%s' "$binary" | json_len pending)" \
   "the undecodable note and the readable note are both listed"
 pass "a non-UTF-8 note does not break the receipts view"
 
-# --- readiness projection, including unknown -------------------------------
+# --- readiness projection ---------------------------------------------------
+#
+# The projection reports the CALLING session's own identity: the native design
+# records no fleet-wide owner, so there is no lock to inspect and no other
+# session to classify.
 
-home=$(make_home ready-free)
-ready=$(run_inbox "$home" ready) || fail "ready should succeed with no lock"
-assert_equals "fm-primary-ready.v1" "$(printf '%s' "$ready" | json_get schema)" \
+home=$(make_home ready-plain)
+ready=$(run_inbox "$home" ready) || fail "ready should succeed in a plain home"
+assert_equals "fm-primary-ready.v2" "$(printf '%s' "$ready" | json_get schema)" \
   "ready uses the readiness schema"
-assert_equals "free" "$(printf '%s' "$ready" | python3 -c 'import json,sys; print(json.load(sys.stdin)["lock"]["state"])')" \
-  "no lock file is free, not live"
-assert_equals "False" "$(printf '%s' "$ready" | python3 -c 'import json,sys; print(json.load(sys.stdin)["can_receive"])')" \
-  "a free lock cannot receive work"
-assert_equals "present" "$(printf '%s' "$ready" | python3 -c 'import json,sys; print(json.load(sys.stdin)["posture"]["state"])')" \
-  "no away flag is present posture"
+assert_equals "present" "$(printf '%s' "$ready" | json_get posture state)" \
+  "no away record is present posture"
+# The projection reports the calling session or nothing at all: a pid without
+# a liveness verdict, or a liveness verdict without a pid, is a broken answer.
+plain_pid=$(printf '%s' "$ready" | json_get session pid)
+plain_live=$(printf '%s' "$ready" | json_get session harness_alive)
+if [ "$plain_pid" = None ]; then
+  assert_equals "None" "$plain_live" \
+    "a caller with no harness ancestry claims no liveness"
+  assert_equals "supervision-model-unknown-for-home" "$(printf '%s' "$ready" | json_get wake_consumer reason)" \
+    "with no identified session the home's supervision model is unknown"
+  assert_equals "unknown" "$(printf '%s' "$ready" | json_get can_receive)" \
+    "an unknown wake consumer never claims can_receive"
+else
+  [ "$plain_live" != None ] || fail "a session pid must carry a liveness verdict"
+fi
 
-# A live non-harness pid in the lock file must not be treated as a live primary.
-home=$(make_home ready-unknown)
-printf '%s\n' "$$" > "$home/state/.lock"
-ready=$(run_inbox "$home" ready) || fail "ready should succeed for an unclassified pid"
-lock_state=$(printf '%s' "$ready" | python3 -c 'import json,sys; print(json.load(sys.stdin)["lock"]["state"])')
-assert_equals "unknown" "$lock_state" \
-  "a live process that is not a verified harness is unknown, not held"
-live=$(printf '%s' "$ready" | python3 -c 'import json,sys; print(json.load(sys.stdin)["lock"]["live_harness"])')
-assert_equals "False" "$live" "a bash test pid is not a live harness"
-can=$(printf '%s' "$ready" | python3 -c 'import json,sys; print(json.load(sys.stdin)["can_receive"])')
-[ "$can" = "False" ] || [ "$can" = "unknown" ] \
-  || fail "unknown lock must not claim can_receive true (got $can)"
+# A caller with a harness ancestor is reported as itself, alive.
+home=$(make_home ready-session)
+touch "$home/state/.last-watcher-beat"
+held=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+  FM_CONFIG_OVERRIDE="$home/config" FM_SUPERVISION_MODEL=autoarm \
+  perl -e '$0 = "claude"; exec @ARGV' -- "$INBOX_BIN" ready) \
+  || fail "ready should succeed under a harness ancestor"
+assert_equals "True" "$(printf '%s' "$held" | json_get session harness_alive)" \
+  "a live harness ancestor is reported alive"
+[ "$(printf '%s' "$held" | json_get session pid)" != None ] \
+  || fail "a harness ancestor should be reported as a session pid"
+assert_equals "healthy" "$(printf '%s' "$held" | json_get wake_consumer state)" \
+  "an identified session plus a fresh beacon is a healthy wake consumer"
+assert_equals "True" "$(printf '%s' "$held" | json_get can_receive)" \
+  "a healthy wake consumer with no away record can receive work"
 
-human_lock=$(run_lock "$home" status) || fail "lock status should succeed"
-assert_contains "$human_lock" "stale (pid $$ dead or not a harness)" \
-  "human lock status keeps its historical stale wording"
-
-# Dead pid is stale, not held.
-home=$(make_home ready-stale)
-printf '%s\n' "999999" > "$home/state/.lock"
-ready=$(run_inbox "$home" ready) || fail "ready should succeed for a dead pid"
-assert_equals "stale" "$(printf '%s' "$ready" | python3 -c 'import json,sys; print(json.load(sys.stdin)["lock"]["state"])')" \
-  "a dead recorded pid is stale"
-assert_equals "False" "$(printf '%s' "$ready" | python3 -c 'import json,sys; print(json.load(sys.stdin)["can_receive"])')" \
-  "a stale lock cannot receive work"
-
-# Existence of a pane-like leftover must not become liveness: unreadable lock.
-home=$(make_home ready-unreadable)
-mkdir -p "$home/state/.lock"
-ready=$(run_inbox "$home" ready) || fail "ready should succeed for a directory lock"
-assert_equals "unreadable" "$(printf '%s' "$ready" | python3 -c 'import json,sys; print(json.load(sys.stdin)["lock"]["state"])')" \
-  "a non-file lock is unreadable rather than held"
 # A Claude primary mid-turn runs no watcher process - its watcher is armed at
 # turn end - so the model-aware supervision verdict, not the pid-strict watcher
 # check, owns whether the wake will be drained.
@@ -444,57 +435,19 @@ assert_equals "healthy" "$(printf '%s' "$midturn" | json_get wake_consumer state
   "a mid-turn autoarm primary with a fresh beacon has a healthy wake consumer"
 
 # A home that never ran a watcher has no observation, so it reports no age
-# rather than the missing-path sentinel. With no lock holder the model is
-# unknown for this home, which is the honest caller path.
+# rather than the missing-path sentinel.
 home=$(make_home ready-no-beacon)
-nobeat=$(run_inbox "$home" ready) || fail "ready should succeed with no beacon"
-assert_equals "supervision-model-unknown-for-home" \
-  "$(printf '%s' "$nobeat" | json_get wake_consumer reason)" \
-  "no lock holder means the home's supervision model is unknown"
+nobeat=$(FM_SUPERVISION_MODEL=autoarm run_inbox "$home" ready) || fail "ready should succeed with no beacon"
 assert_equals "None" "$(printf '%s' "$nobeat" | json_get wake_consumer beacon_age_seconds)" \
   "a beacon that does not exist has no age"
 
-# The intended caller (HTTP backend, ssh host fm-inbox.sh ready) does not set
-# FM_SUPERVISION_MODEL. A live non-harness lock pid must not invent a model
-# from the caller's own process tree.
-home=$(make_home ready-no-override)
-printf '%s\n' "$$" > "$home/state/.lock"
-touch "$home/state/.last-watcher-beat"
-no_override=$(run_inbox "$home" ready) || fail "ready should succeed with no model override"
-assert_equals "unknown" "$(printf '%s' "$no_override" | json_get wake_consumer state)" \
-  "without a lock-holder harness, wake-consumer is unknown"
-assert_equals "supervision-model-unknown-for-home" \
-  "$(printf '%s' "$no_override" | json_get wake_consumer reason)" \
-  "the unknown reason names that the model could not be determined for this home"
-can=$(printf '%s' "$no_override" | json_get can_receive)
-assert_equals "unknown" "$can" "unknown lock plus unknown consumer is not can_receive true"
-
-# A live lock holder whose ancestry names a known harness, plus a fresh
-# beacon, is the yes path: the inspected home can receive work.
-home=$(make_home ready-holder)
-# A process whose ps comm is the harness name, so lock inspect and
-# fm-harness.sh ancestry both classify it without PATH tricks.
-perl -e '$0="claude"; sleep 60' &
-holder_pid=$!
-# Give ps a moment to report the renamed comm.
-sleep 0.2
-kill_holder() {
-  kill "$holder_pid" 2>/dev/null || true
-  wait "$holder_pid" 2>/dev/null || true
-}
-trap 'kill_holder; fm_test_cleanup' EXIT
-printf '%s\n' "$holder_pid" > "$home/state/.lock"
-touch "$home/state/.last-watcher-beat"
-held=$(run_inbox "$home" ready) || fail "ready should succeed for a lock-holder harness"
-assert_equals "held" "$(printf '%s' "$held" | python3 -c 'import json,sys; print(json.load(sys.stdin)["lock"]["state"])')" \
-  "a live claude-named holder is a held lock"
-assert_equals "healthy" "$(printf '%s' "$held" | json_get wake_consumer state)" \
-  "lock-holder ancestry plus a fresh beacon is a healthy wake consumer"
-assert_equals "True" "$(printf '%s' "$held" | json_get can_receive)" \
-  "a held lock with a healthy wake consumer can receive work"
-kill_holder
-trap fm_test_cleanup EXIT
-pass "readiness says unknown (or not-receivable) instead of inferring liveness from a lock"
+# An away record is reported as such and still lets a healthy consumer receive.
+home=$(make_home ready-away)
+touch "$home/state/.last-watcher-beat" "$home/state/.afk-contract"
+away=$(FM_SUPERVISION_MODEL=autoarm run_inbox "$home" ready) || fail "ready should succeed under an away record"
+assert_equals "away" "$(printf '%s' "$away" | json_get posture state)" \
+  "an away record is away posture"
+pass "readiness reports the calling session and never infers liveness from a lock file"
 
 # --- invalid input ----------------------------------------------------------
 

@@ -103,38 +103,36 @@ pass "enablement is default-off; FM_TRACE_CONTEXT overrides with truthy/other pr
 SESSION_DIR="$WORK/session-state"
 SESSION_STATE="$SESSION_DIR/.trace-context-effective"
 mkdir -p "$SESSION_DIR"
-printf '101\n' > "$SESSION_DIR/.lock"
-FM_TRACE_CONTEXT=off fm_trace_context_session_start "$CFG_ON" "$SESSION_STATE"
-[ "$(fm_trace_context_session_effective "$SESSION_STATE")" = off ] \
+FM_TRACE_CONTEXT=off fm_trace_context_session_start "$CFG_ON" "$SESSION_STATE" 101
+[ "$(fm_trace_context_session_effective "$SESSION_STATE" 101)" = off ] \
   || fail "session state must freeze an env-off override over a present config file"
-FM_TRACE_CONTEXT=on fm_trace_context_session_start "$CFG_OFF" "$SESSION_STATE"
-[ "$(fm_trace_context_session_effective "$SESSION_STATE")" = on ] \
+FM_TRACE_CONTEXT=on fm_trace_context_session_start "$CFG_OFF" "$SESSION_STATE" 101
+[ "$(fm_trace_context_session_effective "$SESSION_STATE" 101)" = on ] \
   || fail "a new session state must freeze an env-on override over an absent config file"
 pass "session start normalizes config and environment precedence into frozen on/off state"
 
 printf '100 on\n' > "$SESSION_STATE"
 chmod 0400 "$SESSION_STATE"
-FM_TRACE_CONTEXT=off fm_trace_context_session_start "$CFG_ON" "$SESSION_STATE"
-[ "$(fm_trace_context_session_effective "$SESSION_STATE")" = off ] \
+FM_TRACE_CONTEXT=off fm_trace_context_session_start "$CFG_ON" "$SESSION_STATE" 101
+[ "$(fm_trace_context_session_effective "$SESSION_STATE" 101)" = off ] \
   || fail "atomic publication must replace a read-only stale on record with the current off decision"
 [ "$(cat "$SESSION_STATE")" = "101 off" ] \
-  || fail "session publication must bind the normalized decision to the current lock (got '$(cat "$SESSION_STATE")')"
+  || fail "session publication must bind the normalized decision to the current session (got '$(cat "$SESSION_STATE")')"
 pass "session state is atomically published through a same-directory replacement"
 
-FM_TRACE_CONTEXT=on fm_trace_context_session_start "$CFG_OFF" "$SESSION_STATE"
-printf '202\n' > "$SESSION_DIR/.lock"
+FM_TRACE_CONTEXT=on fm_trace_context_session_start "$CFG_OFF" "$SESSION_STATE" 101
 chmod 0500 "$SESSION_DIR"
-FM_TRACE_CONTEXT=off fm_trace_context_session_start "$CFG_ON" "$SESSION_STATE"
+FM_TRACE_CONTEXT=off fm_trace_context_session_start "$CFG_ON" "$SESSION_STATE" 202
 chmod 0700 "$SESSION_DIR"
-[ "$(fm_trace_context_session_effective "$SESSION_STATE")" = off ] \
+[ "$(fm_trace_context_session_effective "$SESSION_STATE" 202)" = off ] \
   || fail "a failed publication must not reactivate the prior session's on decision"
-pass "a stale on record is inactive when publication fails in a new locked session"
+pass "a stale on record is inactive when publication fails in a new session"
 
 printf '202 invalid\n' > "$SESSION_STATE"
-[ "$(fm_trace_context_session_effective "$SESSION_STATE")" = off ] \
+[ "$(fm_trace_context_session_effective "$SESSION_STATE" 202)" = off ] \
   || fail "invalid session state must fail independent and default off"
 rm "$SESSION_STATE"
-[ "$(fm_trace_context_session_effective "$SESSION_STATE")" = off ] \
+[ "$(fm_trace_context_session_effective "$SESSION_STATE" 202)" = off ] \
   || fail "missing session state must fail independent and default off"
 pass "missing or invalid frozen session state defaults off"
 

@@ -370,7 +370,6 @@ test_watcher_poll_tags_tasks() {
   local out
   new_home watcher
   printf 'on\n' > "$HOME_DIR/config/herdr-project-groups"
-  printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
   touch "$HOME_DIR/state/.last-watcher-beat"
   add_task web-run ship /p/storefront w2 'working: go'
   write_live_lists 0

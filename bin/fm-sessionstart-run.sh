@@ -25,12 +25,12 @@
 #
 # Source routing (see docs/sessionstart-nudge.md for the per-harness names):
 #   startup, new            full digest - this process has not taken the helm
-#   clear, compact          `--reemit` digest only when this lock owner recorded
+#   clear, compact          `--reemit` digest only when this session recorded
 #                           a completed full startup; otherwise a full digest,
 #                           so a startup killed mid-sweep is finished first
 #   resume, reload, fork    delegate to the nudge wrapper. Prior context is
 #                           restored on these, so re-running is redundant when
-#                           this process still holds the lock (the nudge stays
+#                           this process is still the recorded session (the nudge stays
 #                           silent) and a plain instruction is enough when a new
 #                           process resumed an old session (the nudge fires).
 #
@@ -39,7 +39,7 @@
 # start must reach the agent as digest text it can act on, never as a refusal to
 # open the session. The internal Pi prerequisite's silent exit 3 never reaches a
 # harness hook; it only distinguishes intentional ineligibility before provider
-# preflight. A lock another live session holds and a truncated digest are
+# preflight. A truncated digest is
 # reported inside the digest, while broken GitHub auth arrives through the
 # deferred network result inline or as a wake, for exactly that reason.
 # A fresh clone has no gitignored state dir yet; a root that otherwise
@@ -57,8 +57,8 @@ COMPLETION_FILE="$STATE/.session-start-complete"
 . "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-proc-lib.sh
+. "$SCRIPT_DIR/fm-proc-lib.sh"
 # shellcheck source=bin/fm-hook-host-lib.sh
 . "$SCRIPT_DIR/fm-hook-host-lib.sh"
 
@@ -100,14 +100,12 @@ fi
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || stand_down
 
 session_start_completed() {
-  local lock_pid completion_pid
-  [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ] || return 1
+  local session_pid completion_pid
   [ -f "$COMPLETION_FILE" ] && [ ! -L "$COMPLETION_FILE" ] || return 1
-  fm_session_lock_owned_by_self "$STATE" || return 1
-  lock_pid=$(cat "$STATE/.lock" 2>/dev/null) || return 1
+  session_pid=$(fm_harness_ancestry_pid 2>/dev/null) || return 1
+  fm_session_pid_valid "$session_pid" || return 1
   completion_pid=$(cat "$COMPLETION_FILE" 2>/dev/null) || return 1
-  fm_session_pid_valid "$lock_pid" || return 1
-  [ "$completion_pid" = "$lock_pid" ]
+  [ "$completion_pid" = "$session_pid" ]
 }
 
 if [ -z "$SOURCE" ] && [ ! -t 0 ]; then

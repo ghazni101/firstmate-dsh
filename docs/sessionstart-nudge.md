@@ -69,8 +69,8 @@ A re-emit (`--reemit`) reprints the digest for a process that already has the he
 | Source | Action | Why |
 | --- | --- | --- |
 | `startup`, `new` | Full digest | This is a true session start that has not taken the helm; Pi CLI continuations are refined to `resume` by the adapter before reaching this boundary. |
-| `clear`, `compact` | `--reemit` after a proven complete startup, otherwise full digest | This process normally has the helm and lost only its context, but an earlier hook may have been truncated after acquiring the lock. |
-| `resume`, `reload`, `fork` | Delegate to the nudge wrapper | Prior context is restored, so re-running is redundant when the lock is still ours and an instruction is enough when a new process resumed an old session. |
+| `clear`, `compact` | `--reemit` after a proven complete startup, otherwise full digest | This process normally has the helm and lost only its context, but an earlier hook may have been truncated after its sweeps started. |
+| `resume`, `reload`, `fork` | Delegate to the nudge wrapper | Prior context is restored, so re-running is redundant when this session already ran the digest and an instruction is enough when a new process resumed an old session. |
 | unreadable or unrecognized | Full digest | Taking the helm redundantly is cheap and idempotent; not taking it is the bug this tier exists to fix. |
 
 ### Change from the previous nudge matcher
@@ -80,38 +80,23 @@ This routing deliberately inverts the previous nudge matcher, which fired on `st
 - Compaction is covered where a tracked adapter delivers that source, because a compacted session has lost exactly the digest it needs.
 - Resume is excluded from the run because it restores that digest instead of losing it.
 
-### Lock and completion interlock
+### Completion interlock
 
-Two records together are the idempotency interlock for the whole scheme:
+One record is the idempotency interlock for the whole scheme: `state/.session-start-complete`, written by the session that ran the full digest.
 
-- Current harness ownership of the lock.
-- Its matching `state/.session-start-complete` record.
+The full digest updates it in this order:
 
-The full digest updates the completion record in this order:
-
-1. It acquires the lock.
-2. It clears the completion record.
-3. It republishes the lock owner's pid only after every stage completes.
+1. It clears the completion record.
+2. It rewrites the record naming this session's harness process only after every stage completes.
 
 So `clear` or `compact` cannot skip startup sweeps after a truncated run.
-
-`bin/fm-lock.sh` treats a lock as this session's own when it is owned through either of these:
-
-- The shared ancestry verdict.
-- A trusted same-session Claude id.
-
-So a proven `clear` or `compact` re-emit re-verifies ownership and proceeds.
-A lock another live session took meanwhile still produces the ordinary read-only digest.
-
-The [`bin/fm-lock.sh` header](../bin/fm-lock.sh) owns claim-lock recovery and refusal behavior.
-If startup names an unreclaimable lock directory, inspect the reported path's contents and permissions before retrying.
+There is no fleet session lock to acquire or refuse: the session that runs a startup owns it, and a concurrent session in the same home is separated by task ownership rather than by a home-wide lock.
 
 ### Nudge wrapper on a run-tier harness
 
 On a run-tier harness, only `resume`, `reload`, and `fork` are routed to the nudge wrapper.
-The nudge wrapper has its own separate ancestry-only check, which normally stays silent when this process already holds the lock.
-A background Claude helper-chain recycle can break that ancestry.
-The wrapper may then emit a redundant nudge even though the shared same-session verdict still owns the lock.
+The nudge wrapper has its own separate ancestry-only check, which normally stays silent when this process already ran the full digest.
+A background Claude helper-chain recycle can break that ancestry, so the wrapper may emit a redundant nudge.
 The requested session start remains idempotent.
 
 ### Re-emit mechanics
@@ -205,17 +190,11 @@ The nudge payload has three parts:
 The Ahoy skill owns the rule that this marked operational input is never a captain-authored session boundary, including its narrow legacy compatibility cases.
 The Ahoy skill's own step 0 helm check is the fallback that protects a nudge-tier harness whose first command is a skill.
 
-### Nudge wrapper lock check
+### Nudge wrapper startup check
 
-Before printing, the nudge wrapper reads `state/.lock` and walks at most eight parents from its own pid.
-It does this in its own separate, hard-coded loop, independent of two other ownership checks:
-
-- The shared sixteen-hop ancestry walk in `bin/fm-session-lock-lib.sh` that `bin/fm-lock.sh` uses for anchor selection and ownership.
-- Pi's `lockOwnership()`.
-
-If the lock names a live pid in that ancestry, session start already ran in this harness session and the wrapper stays silent.
-That loop reads each parent link through the `ps` binary, so a host that refuses `ps` cannot confirm a numeric lock's ancestry and the wrapper prints the nudge even for a session that already holds the lock.
-On Windows/Git Bash, a lock holding a tagged `win:<pid>` identity is outside this process table, so the wrapper instead asks the library's `fm_session_lock_owned_by_self`, whose Windows process-boundary bridge owns that identity.
+Before printing, the nudge wrapper asks whether this harness session already ran its startup, by comparing its own harness process against the pid recorded in `state/.session-start-complete` (`bin/fm-session-start.sh` writes that record).
+When they match, session start already ran in this harness session and the wrapper stays silent.
+The harness process comes from `bin/fm-proc-lib.sh`, whose ancestry walk and Windows process-boundary bridge own that identity on every platform.
 
 ### Exit codes
 
@@ -228,7 +207,7 @@ It does not change any harness hook's exit contract.
 
 These conditions therefore surface as follows:
 
-- A lock another session holds surfaces as digest text.
+- Unfinished or actionable startup diagnostics surface as digest text.
 - A truncated digest surfaces as digest text.
 - Broken GitHub auth surfaces through the deferred network result, inline or as a wake.
 
@@ -301,7 +280,7 @@ An eligible native failure or empty result settles before the extension returns 
 So native and manual startup never run concurrently.
 
 An intentional gate or non-primary stand-down returns no message.
-Context-preserving sources retain their existing silent result when the current process already holds the lock.
+Context-preserving sources retain their existing silent result when this session already ran the digest.
 
 Manual and automatic compaction retain the existing persistent delivery path, because an automatic retry may have no new `before_agent_start`.
 That path still shares the same generation cancellation and exactly-once claim.
@@ -371,7 +350,7 @@ So the source is derived following the Cursor precedent:
 | The first start of the process, when the launch line carried `--continue`/`-c` or `--resume`/`-r` | `resume` |
 | A later in-process start (`/new`, `/resume`, `/fork`) | `clear` |
 
-A later in-process `clear` re-emits only when this lock owner completed a full startup.
+A later in-process `clear` re-emits only when this session completed a full startup.
 `before_agent_start` message delivery was verified to reach model context on 18.1.11.
 
 ### Antigravity (agy)
@@ -405,7 +384,7 @@ It proves the nudge wrapper's silence for these cases:
 - Both gate signals.
 - An unmarked linked worktree.
 - A missing state directory.
-- An already-owned lock.
+- A completed startup recorded for this session.
 
 It also proves the nudge wrapper's exact U+2063 `FIRSTMATE_OP:`-prefixed, `session-start`-typed one-line output.
 

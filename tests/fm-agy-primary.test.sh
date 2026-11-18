@@ -2,7 +2,7 @@
 # Behavior tests for Antigravity CLI (agy) as a firstmate PRIMARY and SECONDMATE
 # harness (.agents/hooks.json, bin/fm-sessionstart-agy.sh,
 # bin/fm-turnend-guard-agy.sh, bin/fm-turnend-guard.sh --agy,
-# PreToolUse --agy seatbelts, session-lock agy ancestry, and supervision model).
+# PreToolUse --agy seatbelts, agy harness identity, and supervision model).
 # shellcheck disable=SC2016 # single quotes are deliberate: $FM_HOME expands inside the fake harness child
 set -u
 
@@ -59,8 +59,8 @@ install_scripts() {
            fm-arm-pretool-check.sh fm-cd-pretool-check.sh fm-subagent-pretool-check.sh \
            fm-claude-stop-autoarm.sh fm-hook-host-lib.sh \
            fm-primary-scope-lib.sh fm-supervision-lib.sh fm-wake-lib.sh fm-path-lib.sh \
-           fm-session-lock-lib.sh fm-omp-process-lib.sh fm-cursor-lib.sh fm-gemini-lib.sh fm-hermes-process-lib.sh fm-operational-input.sh \
-           fm-supervision-instructions.sh fm-harness.sh fm-lock.sh \
+           fm-proc-lib.sh fm-omp-process-lib.sh fm-cursor-lib.sh fm-gemini-lib.sh fm-hermes-process-lib.sh fm-operational-input.sh \
+           fm-supervision-instructions.sh fm-harness.sh \
            fm-gate-refuse-lib.sh fm-afk-contract.sh fm-classify-lib.sh fm-timeout-lib.sh \
            fm-supervision-engine-lib.sh fm-lease-lib.sh; do
     if [ -f "$ROOT/bin/$f" ]; then
@@ -94,7 +94,10 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_HOME="${FM_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 printf '%s\n' "$*" >> "$FM_HOME/state/digest-args"
-"$SCRIPT_DIR/fm-lock.sh" || true
+. "$SCRIPT_DIR/fm-proc-lib.sh"
+pid=$(fm_harness_ancestry_pid) || exit 5
+fm_harness_pid_alive "$pid" || exit 6
+printf '%s\n' "$pid" > "$FM_HOME/state/.session-start-complete"
 "$SCRIPT_DIR/fm-supervision-instructions.sh"
 SH
   chmod +x "$dir/bin/fm-session-start.sh"
@@ -229,7 +232,6 @@ test_agents_hooks_json_registration_and_cwd_contract() {
   printf '%s' "$out" | jq -e '.injectSteps[0].systemMessage.systemMessage | length > 0' >/dev/null 2>&1 \
     || fail "SessionStart hook command from .agents/ CWD did not emit injectSteps JSON: $out"
 
-  rm -f "$dir/state/.lock"
   AGY_CHILD_CMD='cd "$FM_HOME" && eval "$HOOK_CMD"'
   out=$(printf '{"sessionId":"s-1","conversationId":"c-1","workspacePaths":["%s"],"source":"new"}' "$dir" \
     | run_under_agy FM_HOME="$dir" HOOK_CMD="$cmd" 2>/dev/null)
@@ -244,7 +246,7 @@ test_agents_hooks_json_registration_and_cwd_contract() {
 # --- 2. bin/fm-sessionstart-agy.sh -------------------------------------------
 
 test_sessionstart_agy_primary_secondmate_and_worktree_scope() {
-  local dir out msg base sm wt
+  local dir out msg base sm wt completion
   dir=$(make_primary_dir "$TMP_ROOT/session-primary")
   install_digest_fixture "$dir"
   [ -x "$dir/bin/fm-sessionstart-agy.sh" ] || fail "bin/fm-sessionstart-agy.sh is missing or not executable"
@@ -252,7 +254,10 @@ test_sessionstart_agy_primary_secondmate_and_worktree_scope() {
   AGY_CHILD_CMD='"$FM_HOME/bin/fm-sessionstart-agy.sh"'
   out=$(printf '{"sessionId":"s-1","conversationId":"c-1","workspacePaths":["%s"],"source":"new"}' "$dir" \
     | run_under_agy FM_HOME="$dir" 2>/dev/null)
-  [ -f "$dir/state/.lock" ] || fail "fm-sessionstart-agy.sh must acquire state/.lock in primary checkout"
+  completion=$(cat "$dir/state/.session-start-complete" 2>/dev/null || true)
+  case "$completion" in
+    ''|*[!0-9]*) fail "fm-sessionstart-agy.sh must record the live agy harness pid in state/.session-start-complete, got '$completion'" ;;
+  esac
   msg=$(printf '%s' "$out" | jq -r '.injectSteps[0].systemMessage.systemMessage // empty' 2>/dev/null)
   assert_contains "$msg" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: agy" \
     "primary SessionStart must inject agy supervision instructions"
@@ -269,7 +274,10 @@ test_sessionstart_agy_primary_secondmate_and_worktree_scope() {
   AGY_CHILD_CMD='"$FM_HOME/bin/fm-sessionstart-agy.sh"'
   out=$(printf '{"sessionId":"s-2","conversationId":"c-2","workspacePaths":["%s"],"source":"new"}' "$sm" \
     | run_under_agy FM_HOME="$sm" FM_ROOT_OVERRIDE="$sm" 2>/dev/null)
-  [ -f "$sm/state/.lock" ] || fail "fm-sessionstart-agy.sh must acquire state/.lock in seeded secondmate worktree"
+  completion=$(cat "$sm/state/.session-start-complete" 2>/dev/null || true)
+  case "$completion" in
+    ''|*[!0-9]*) fail "fm-sessionstart-agy.sh must record the live agy harness pid in a seeded secondmate worktree, got '$completion'" ;;
+  esac
   msg=$(printf '%s' "$out" | jq -r '.injectSteps[0].systemMessage.systemMessage // empty' 2>/dev/null)
   assert_contains "$msg" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: agy" \
     "secondmate SessionStart must inject agy supervision instructions"
@@ -285,7 +293,7 @@ test_sessionstart_agy_primary_secondmate_and_worktree_scope() {
   out=$(printf '{"sessionId":"s-3","conversationId":"c-3","workspacePaths":["%s"],"source":"new"}' "$wt" \
     | run_under_agy FM_HOME="$wt" FM_ROOT_OVERRIDE="$wt" 2>/dev/null)
   assert_equals "{}" "$out" "crewmate worktree without .fm-secondmate-home must emit {}"
-  [ ! -e "$wt/state/.lock" ] || fail "crewmate worktree must not create state/.lock"
+  [ ! -e "$wt/state/.session-start-complete" ] || fail "crewmate worktree must not record a session start"
 
   pass "fm-sessionstart-agy: runs in primary and seeded secondmate homes, stands down with {} in crewmate worktree"
 }
@@ -295,7 +303,6 @@ test_sessionstart_agy_primary_secondmate_and_worktree_scope() {
 run_agy_stop() {
   local dir=$1 payload=$2
   AGY_CHILD_CMD='
-    printf "%s\n" "$$" > "$FM_HOME/state/.lock"
     "$FM_HOME/bin/fm-turnend-guard-agy.sh"
   '
   printf '%s' "$payload" | run_under_agy FM_HOME="$dir" FM_AGY_PARK_POLL=1 2>/dev/null
@@ -574,23 +581,22 @@ test_subagent_pretool_check_agy() {
   pass "fm-subagent-pretool-check --agy: denies invoke_subagent, allows observe-only tools, inert in worktree"
 }
 
-# --- 5. Session lock agy ancestry & Supervision model ------------------------
+# --- 5. agy harness identity & Supervision model ------------------------------
 
-test_session_lock_agy_ancestry_and_supervision_model() {
+test_session_identity_agy_ancestry_and_supervision_model() {
   local dir out model block repair
-  dir=$(make_primary_dir "$TMP_ROOT/lock-ancestry")
+  dir=$(make_primary_dir "$TMP_ROOT/identity-ancestry")
 
   AGY_CHILD_CMD='
-    . "$FM_HOME/bin/fm-session-lock-lib.sh"
+    . "$FM_HOME/bin/fm-proc-lib.sh"
     anc=$(fm_harness_ancestry_pid) || exit 11
     [ "$anc" = "$PPID" ] || exit 12
-    fm_harness_pid_alive "$anc" || exit 13
-    printf "%s\n" "$anc" > "$FM_HOME/state/.lock"
-    fm_session_lock_owned_by_self "$FM_HOME/state" || exit 14
-    printf "owned:%s\n" "$anc"
+    fm_session_pid_valid "$anc" || exit 13
+    fm_harness_pid_alive "$anc" || exit 14
+    printf "identity:%s\n" "$anc"
   '
   out=$(run_under_agy FM_HOME="$dir" 2>/dev/null)
-  assert_contains "$out" "owned:" "session-lock-lib must resolve agy ancestry, liveness, and ownership"
+  assert_contains "$out" "identity:" "fm-proc-lib must resolve the agy harness ancestry and prove it alive"
 
   AGY_CHILD_CMD='
     . "$FM_HOME/bin/fm-wake-lib.sh"
@@ -611,7 +617,7 @@ test_session_lock_agy_ancestry_and_supervision_model() {
   assert_contains "$repair" "Stop-hook park" \
     "fm-supervision-instructions.sh --harness agy --repair-line must mention Stop-hook park"
 
-  pass "session-lock & supervision model: agy ancestry, autoarm model, and supervision instructions verified"
+  pass "session identity & supervision model: agy ancestry, autoarm model, and supervision instructions verified"
 }
 
 fm_test_run \
@@ -628,4 +634,4 @@ fm_test_run \
   test_arm_pretool_check_agy \
   test_cd_pretool_check_agy \
   test_subagent_pretool_check_agy \
-  test_session_lock_agy_ancestry_and_supervision_model
+  test_session_identity_agy_ancestry_and_supervision_model

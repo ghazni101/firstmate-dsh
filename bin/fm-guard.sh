@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Watcher liveness and worktree-tangle guard, called by supervision scripts, by
-# fm-wake-drain.sh after it empties queued wakes, and by fm-session-start.sh in
-# read-only advisory mode whenever session-lock ownership was not verified.
+# Watcher liveness and worktree-tangle guard, called by supervision scripts and
+# by fm-wake-drain.sh after it empties queued wakes.
 # First, always warn if the firstmate primary checkout (FM_ROOT) is on a named
 # non-default branch, because that means firstmate-on-itself work landed in the
 # primary instead of an isolated worktree.
@@ -56,8 +55,6 @@ WATCH="$SCRIPT_DIR/fm-watch.sh"
 GRACE=${FM_GUARD_GRACE:-300}
 queue_pending=false
 queue_branch_held=false
-READ_ONLY=${FM_GUARD_READ_ONLY:-0}
-case "$READ_ONLY" in 1|true|TRUE|yes|YES) READ_ONLY=1 ;; *) READ_ONLY=0 ;; esac
 CONTINUE_LINE=${FM_GUARD_CONTINUE_LINE:-This is a supervision warning only; the guarded operation WILL still run.}
 
 # Volatile, home-scoped episode marker: one line = the current stale-episode key.
@@ -70,12 +67,17 @@ STALE_BANNER_MARKER="$STATE/.guard-watcher-stale-banner"
 . "$SCRIPT_DIR/fm-tangle-lib.sh"
 # shellcheck source=bin/fm-supervision-lib.sh
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
-# shellcheck source=bin/fm-lease-lib.sh
-. "$SCRIPT_DIR/fm-lease-lib.sh"
 
-# The current actor (fm_lease_actor is the one owner of that identity); a
-# malformed value is a wiring bug elsewhere, so the guard just warns as main.
-GUARD_ACTOR=$(fm_lease_actor 2>/dev/null) || GUARD_ACTOR=main
+# The actor identity: the supervision branch's own guarded shell marks itself
+# (FM_SUPERVISION_ACTOR=branch, injected by the extension's bash tool), and
+# every other caller is main. The two-actor lease that used to own this
+# identity is retired; the environment variable and the branch's queue
+# partition are the wake queue's, not the lease's.
+case "${FM_SUPERVISION_ACTOR:-main}" in
+  '' | main) GUARD_ACTOR=main ;;
+  branch) GUARD_ACTOR=branch ;;
+  *) printf 'fm-guard: unrecognized actor %s\n' "$FM_SUPERVISION_ACTOR" >&2; exit 2 ;;
+esac
 
 # Deterministic episode key from the qualitative down-state (the failing
 # condition), NOT the beacon mtime: under the auto-arm model a healthy
@@ -161,13 +163,9 @@ if [ -n "$tangle_branch" ]; then
     printf "●  %s is on '%s', not its default branch '%s'.\n" "$FM_ROOT" "$tangle_branch" "$tangle_default"
     printf '●  A crewmate likely branched/committed in the primary instead of its own worktree.\n'
     printf "●  The work is SAFE on the '%s' ref.\n" "$tangle_branch"
-    if [ "$READ_ONLY" -eq 1 ]; then
-      printf '●  This read-only session must leave restore work to a session with verified fleet-lock ownership.\n'
-    else
-      printf "●  Restore the primary to '%s':\n" "$tangle_default"
-      printf '●      git -C %s checkout %s\n' "$FM_ROOT" "$tangle_default"
-      printf "●  then re-validate '%s' in a proper isolated worktree.\n" "$tangle_branch"
-    fi
+    printf "●  Restore the primary to '%s':\n" "$tangle_default"
+    printf '●      git -C %s checkout %s\n' "$FM_ROOT" "$tangle_default"
+    printf "●  then re-validate '%s' in a proper isolated worktree.\n" "$tangle_branch"
     printf '●%s\n' "$trule"
   } >&2
 fi
@@ -188,7 +186,7 @@ if [ "$needed" = false ]; then
   # Leave the unhealthy state (nothing riding on the watcher): clear so a later
   # work or X-mode need + stale combination is a fresh episode even if the
   # beacon is still absent with the same key string.
-  [ "$READ_ONLY" -eq 1 ] || fm_guard_clear_stale_banner
+  fm_guard_clear_stale_banner
   exit 0
 fi
 
@@ -215,9 +213,7 @@ elif [ "$watcher_healthy" = false ]; then
   episode_key=$(fm_guard_stale_episode_key "$watcher_down_reason")
   episode_key=${episode_key%$'\n'}
   print_full_banner=0
-  if [ "$READ_ONLY" -eq 1 ]; then
-    fm_guard_stale_banner_seen "$STATE" "$episode_key" || print_full_banner=1
-  elif fm_guard_claim_stale_banner "$STATE" "$episode_key"; then
+  if fm_guard_claim_stale_banner "$STATE" "$episode_key"; then
     print_full_banner=1
   fi
   if [ "$print_full_banner" -eq 1 ]; then
@@ -228,7 +224,6 @@ elif [ "$watcher_healthy" = false ]; then
     x_mode=0
     [ -f "$CONFIG/x-mode.env" ] && x_mode=1
     fix=$("$SCRIPT_DIR/fm-supervision-instructions.sh" \
-      --read-only "$READ_ONLY" \
       --afk "$afk" \
       --afk-mode "$(fm_afk_mode "$STATE")" \
       --x-mode "$x_mode" \
@@ -252,11 +247,7 @@ elif [ "$watcher_healthy" = false ]; then
       else
         printf '●  X-mode relay polling needs supervision, but %s.\n' "$watcher_cause"
       fi
-      if [ "$READ_ONLY" -eq 1 ]; then
-        printf '●  This read-only session should report the lapse, not repair it.\n'
-      else
-        printf '●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n'
-      fi
+      printf '●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n'
       printf '●  %s\n' "$CONTINUE_LINE"
       printf '●  %s\n' "$fix"
       printf '●%s\n' "$rule"
@@ -268,7 +259,7 @@ elif [ "$watcher_healthy" = false ]; then
 else
   # Healthy again while work is still in flight: end the episode so a later
   # restale re-prints the full banner.
-  [ "$READ_ONLY" -eq 1 ] || fm_guard_clear_stale_banner
+  fm_guard_clear_stale_banner
 fi
 
 # Queued wakes are an independent hazard; warn whenever they are pending, even if
@@ -281,9 +272,7 @@ fi
 # loop. The branch can act on nothing outside its grant anyway, so for that
 # actor the guard stays silent about queued rows.
 if "$queue_pending"; then
-  if [ "$READ_ONLY" -eq 1 ]; then
-    echo "WARNING: queued wakes pending - left untouched because this session lacks verified fleet-lock ownership." >&2
-  elif [ "$GUARD_ACTOR" != branch ]; then
+  if [ "$GUARD_ACTOR" != branch ]; then
     echo "WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else." >&2
   fi
 elif "$queue_branch_held"; then

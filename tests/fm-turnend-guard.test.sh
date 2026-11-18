@@ -195,7 +195,7 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
   cp "$ROOT/bin/fm-path-lib.sh" "$dir/bin/fm-path-lib.sh"
   cp "$ROOT/bin/fm-hook-host-lib.sh" "$dir/bin/fm-hook-host-lib.sh"
-  cp "$ROOT/bin/fm-session-lock-lib.sh" "$dir/bin/fm-session-lock-lib.sh"
+  cp "$ROOT/bin/fm-proc-lib.sh" "$dir/bin/fm-proc-lib.sh"
   cp "$ROOT/bin/fm-omp-process-lib.sh" "$dir/bin/fm-omp-process-lib.sh"
   cp "$ROOT/bin/fm-cursor-lib.sh" "$dir/bin/fm-cursor-lib.sh"
   # Launch probe sibling of fm-cursor-lib.sh; keep it next to the copy so a
@@ -1306,9 +1306,7 @@ import { pathToFileURL } from "node:url";
 
 const marker = `${process.env.FM_HOME}/state/.pi-turnend-extension-loaded`;
 const version = `sha256:${createHash("sha256").update(readFileSync(process.env.PLUGIN)).digest("hex")}`;
-// The lock names the parent of this process: a live strict ancestor, exactly where
-// the real session sits above a nested `pi --help`.
-writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.ppid}\n`);
+// The home is native (no legacy fleet lock): this process's session owns it.
 
 const handlers = new Map();
 const pi = {
@@ -1384,11 +1382,14 @@ EOF
   pass ".pi primary extension: a nested load keeps the live session's turn-end marker"
 }
 
-# On Windows the session lock may hold a tagged win:<pid> (bin/fm-session-lock-lib.sh),
-# and native Node sees that Windows pid directly. The extension records its marker
-# for an owned or dead tagged holder and never for a live other one, while a
-# malformed tag, and any tag off Windows, stays no identity at all. The platform is
-# set per case so every host exercises both sides.
+# A legacy state/.lock is the extension's only remaining ownership record, and a
+# native home carries none. On Windows it may hold a tagged win:<pid>
+# (bin/fm-proc-lib.sh), and native Node sees that Windows pid directly: the
+# extension records its marker for an owned or dead tagged holder and never for a
+# live other one. An absent, malformed, or unusable record is the native-owned
+# state, so the marker is still recorded; a tag off Windows names no local pid,
+# which is the same native-owned state. The platform is set per case so every
+# host exercises both sides.
 test_pi_extension_reads_a_windows_tagged_session_lock() {
   local repo home ext out status
   repo="$TMP_ROOT/pi-tagged-lock-root"
@@ -1428,11 +1429,11 @@ try {
     ["win32", `win:${dead}`, true, "a dead tagged holder"],
     ["win32", `win:${other.pid}`, false, "a live other tagged holder"],
     ["win32", `${process.pid}`, true, "an owned local lock"],
-    ["win32", "win:", false, "a bare tag"],
-    ["win32", `win:${process.pid}x`, false, "a tag with trailing junk"],
-    ["win32", `WIN:${process.pid}`, false, "a differently cased tag"],
-    ["win32", "win:1", false, "a tagged pid 1"],
-    ["linux", `win:${process.pid}`, false, "a tagged lock off Windows"],
+    ["win32", "win:", true, "a bare tag (no usable identity)"],
+    ["win32", `win:${process.pid}x`, true, "a tag with trailing junk (no usable identity)"],
+    ["win32", `WIN:${process.pid}`, true, "a differently cased tag (no usable identity)"],
+    ["win32", "win:1", true, "a tagged pid 1 (rejected as identity)"],
+    ["linux", `win:${process.pid}`, true, "a tagged lock off Windows (no local identity)"],
     ["linux", `${process.pid}`, true, "an owned local lock off Windows"],
   ];
   for (const [name, value, expectMarker, label] of cases) {
@@ -1455,7 +1456,7 @@ EOF
   status=$?
   [ "$status" = 0 ] || fail "Pi turn-end guard misread a Windows-tagged session lock (exit $status): $out"
   [ -z "$out" ] || fail "Pi turn-end tagged-lock case printed output: $out"
-  pass ".pi primary extension: the turn-end guard reads a Windows-tagged session lock only on Windows"
+  pass ".pi primary extension: a live foreign tagged holder is the only legacy lock that blocks the marker"
 }
 
 # --- --claude cooperative mode -----------------------------------------------
@@ -1468,6 +1469,37 @@ run_hook_claude() {
   local dir=$1 stop_active=$2 home
   home=$(cd "$dir" && pwd)
   printf '{"stop_hook_active":%s,"session_id":"sess-claude-mode"}' "$stop_active" | CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" --claude 2>&1
+}
+
+# Run the guard as a child of a live fake-Claude session whose sibling sleeper
+# owns an open arming claim. Session identity is the harness process ancestry
+# (bin/fm-proc-lib.sh), so neither a state/.lock nor a sidecar is involved.
+# <dir> <stuck 0|1> <stop_hook_active>
+run_guard_in_claim_session() {
+  local dir=$1 stuck=$2 stop_active=$3 home
+  home=$(cd "$dir" && pwd)
+  ln -sf /bin/bash "$dir/fake-claude"
+  cat > "$dir/claim-session.sh" <<'SH'
+sleep 60 &
+owner=$!
+. "$FM_HOME/bin/fm-wake-lib.sh"
+identity=$(fm_pid_identity "$owner") || exit 97
+printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n' "$owner" "$identity" \
+  > "$FM_HOME/state/.claude-autoarm-epoch"
+touch -t 202001010000 "$FM_HOME/state/.claude-autoarm-epoch"
+if [ "$1" = 1 ]; then
+  touch -t 202001010000 "$FM_HOME/state/.last-watcher-beat"
+else
+  : > "$FM_HOME/state/.last-watcher-beat"
+fi
+printf '{"stop_hook_active":%s,"session_id":"sess-claude-mode"}' "$2" \
+  | CLAUDECODE=1 "$FM_HOME/bin/fm-turnend-guard.sh" --claude
+rc=$?
+kill "$owner" 2>/dev/null || true
+exit "$rc"
+SH
+  chmod +x "$dir/claim-session.sh"
+  FM_HOME="$home" FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 "$dir/fake-claude" "$dir/claim-session.sh" "$stuck" "$stop_active" 2>&1
 }
 
 seed_claude_failure() {
@@ -1497,15 +1529,14 @@ install_integrated_autoarm() {
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
   cp "$ROOT/bin/fm-path-lib.sh" "$dir/bin/fm-path-lib.sh"
   cp "$ROOT/bin/fm-hook-host-lib.sh" "$dir/bin/fm-hook-host-lib.sh"
-  cp "$ROOT/bin/fm-session-lock-lib.sh" "$dir/bin/fm-session-lock-lib.sh"
+  cp "$ROOT/bin/fm-proc-lib.sh" "$dir/bin/fm-proc-lib.sh"
   cp "$ROOT/bin/fm-omp-process-lib.sh" "$dir/bin/fm-omp-process-lib.sh"
   cp "$ROOT/bin/fm-cursor-lib.sh" "$dir/bin/fm-cursor-lib.sh"
   # Launch probe sibling of fm-cursor-lib.sh; keep it next to the copy so a
   # fixture that ever verifies an executable does not source a missing file.
   cp "$ROOT/bin/fm-timeout-lib.sh" "$dir/bin/fm-timeout-lib.sh"
-  cp "$ROOT/bin/fm-lock.sh" "$dir/bin/fm-lock.sh"
   cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$dir/bin/fm-supervision-engine-lib.sh"
-  chmod +x "$dir/bin/fm-claude-stop-autoarm.sh" "$dir/bin/fm-lock.sh"
+  chmod +x "$dir/bin/fm-claude-stop-autoarm.sh"
   ln -s /bin/bash "$dir/fake-claude"
   # These cases drive the watcher arm, so the home opts out of the supervision
   # host a Claude home otherwise runs by default.
@@ -1514,20 +1545,6 @@ install_integrated_autoarm() {
 }
 
 run_integrated_autoarm() {
-  local dir=$1 home
-  home=$(cd "$dir" && pwd)
-  # shellcheck disable=SC2016 # the fake harness expands FM_HOME inside its child shell.
-  printf '{"session_id":"sess-claude-mode","stop_hook_active":false}\n' \
-    | FM_HOME="$home" "$dir/fake-claude" -c '
-        printf "%s\n" "$$" > "$FM_HOME/state/.lock"
-        "$FM_HOME/bin/fm-claude-stop-autoarm.sh"
-      ' 2>&1
-}
-
-# The same real hook, fired from a harness-named process that does NOT write
-# state/.lock: whoever already holds that lock decides whether this firing is
-# the owning session's or a competing one.
-run_integrated_autoarm_unowned() {
   local dir=$1 home
   home=$(cd "$dir" && pwd)
   # shellcheck disable=SC2016 # the fake harness expands FM_HOME inside its child shell.
@@ -1776,21 +1793,11 @@ test_hook_claude_mode_blocks_on_stuck_arming_claim() {
 # entry, identity-matched owner descending from the session-lock pid, watcher
 # still beating) owns recovery with no owner lock held at all.
 test_hook_claude_mode_allows_on_open_generation_claim() {
-  local dir out status pid identity
+  local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-open-generation")
   : > "$dir/state/task1.meta"
-  printf '%s\n' "$$" > "$dir/state/.lock"
-  sleep 60 &
-  pid=$!
-  identity=$(fm_test_pid_identity "$pid") || fail "could not compute a claim pid-identity"
-  printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n' "$pid" "$identity" \
-    > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
-  : > "$dir/state/.last-watcher-beat"
   [ ! -e "$dir/state/.claude-autoarm.lock" ] || fail "this case must start with no owner lock at all"
-  out=$(run_hook_claude "$dir" false); status=$?
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
+  out=$(run_guard_in_claim_session "$dir" 0 false); status=$?
   expect_code 0 "$status" "--claude mode must allow when a live open generation claim owns recovery"
   [ -z "$out" ] || fail "open-generation-claim allow produced output: $out"
   pass "fm-turnend-guard --claude: a live open generation claim owns recovery with no lock held"
@@ -1799,20 +1806,11 @@ test_hook_claude_mode_allows_on_open_generation_claim() {
 # The same claim gone stuck (entry and beacon both past grace) stops counting
 # as recovery even though its owner is alive and identity-matched.
 test_hook_claude_mode_blocks_on_stuck_generation_claim() {
-  local dir out status pid identity
+  local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-stuck-generation")
   : > "$dir/state/task1.meta"
   : > "$dir/state/task2.meta"
-  sleep 60 &
-  pid=$!
-  identity=$(fm_test_pid_identity "$pid") || fail "could not compute a claim pid-identity"
-  printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n' "$pid" "$identity" \
-    > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.last-watcher-beat"
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
+  out=$(run_guard_in_claim_session "$dir" 1 true); status=$?
   expect_code 2 "$status" "a stuck generation claim must not pass for recovery under way"
   assert_contains "$out" "TURN WOULD END BLIND" "stuck-generation-claim block must carry the blind-turn banner"
   assert_contains "$out" "2 task(s) in flight" "stuck-generation-claim block must name the unsupervised work"
@@ -1951,15 +1949,11 @@ test_hook_claude_mode_frozen_epoch_reaches_bounded_fail_open() {
   expect_code 0 "$guard_status" "the first failed epoch must own its Stop handoff"
   epoch_line=$(sed -n '1p' "$dir/state/.claude-autoarm-epoch")
 
-  # Remove the dead lock left by the fixture arm so this case isolates the
-  # frozen-ledger accounting path rather than the live foreign-owner escape.
-  rm -f "$dir/state/.lock"
+  # No auto-arm firing intervenes: the ledger stays at the exhausted-failure
+  # epoch, so this isolates the guard's frozen-epoch re-block accounting.
   for i in 1 2 3 4; do
-    out=$(run_integrated_autoarm_unowned "$dir"); status=$?
-    expect_code 0 "$status" "an auto-arm outside the lock owner's ancestry must stay inert at stop $i"
-    [ -z "$out" ] || fail "inert auto-arm produced output at stop $i: $out"
     [ "$(sed -n '1p' "$dir/state/.claude-autoarm-epoch")" = "$epoch_line" ] \
-      || fail "the ledger epoch advanced at stop $i, so this case no longer drives a frozen epoch"
+      || fail "the ledger epoch changed at stop $i, so this case no longer drives a frozen epoch"
     guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); guard_status=$?
     if [ "$i" -lt 4 ]; then
       expect_code 2 "$guard_status" "frozen-epoch stop $i must still re-block within the budget"
@@ -2158,17 +2152,14 @@ fm_lock_release() {
 SH
   fi
   chmod +x "$dir/bin/fm-watch-arm.sh" 2>/dev/null || true
-  # Each Stop fires both hooks as children of one fake Claude session process
-  # that holds state/.lock, as the harness does: the guard then recognizes the
-  # lock as its own session's however the test itself is launched.
+  # Each Stop fires both hooks as children of one fake-Claude session process,
+  # exactly as the harness launches them: the guard's ancestry then identifies
+  # the same session that owns the auto-arm's generation claim.
   cat > "$dir/stop-driver.sh" <<'SH'
 i=$1 variant=$2
-# Each Stop is a new fake-claude pid, as a real Stop is a new hook process.
-# The session lock sidecar is what makes those Stops the same session, so an
-# interrupted episode can still exhaust its budget instead of resetting.
+# Each Stop is a new hook process under the same live session, as a real Stop
+# is, so an interrupted episode still exhausts its budget instead of resetting.
 export CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=sess-claude-mode CLAUDE_PID=$$
-printf '%s\n' "$$" > "$FM_HOME/state/.lock"
-printf '%s\n' "$CLAUDE_CODE_SESSION_ID" > "$FM_HOME/state/.lock-session"
 printf '{"session_id":"sess-claude-mode","stop_hook_active":false}\n' \
   | FM_CLAUDE_AUTOARM_ATTEMPTS=1 "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/auto-$i.out" 2>&1 &
 auto_pid=$!

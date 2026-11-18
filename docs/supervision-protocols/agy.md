@@ -22,7 +22,7 @@ When this session owns supervision and away mode is not active:
 7. Treat `watcher: started ...` and `watcher: attached ...` inside park output as proof that one live cycle exists.
    On attach, the arm follows verified identity-matched successors instead of exiting when the first cycle ends.
 8. The durable wake queue preserves actionable events between a follow-up and the next park.
-   [`watcher-continuity.md`](../watcher-continuity.md) owns the exact session-lock recovery boundary.
+   [`watcher-continuity.md`](../watcher-continuity.md) owns the exact watcher recovery boundary.
 9. Waiting on the hook-owned park is silent: do not send idle progress while the watcher is parked.
 
 The watcher itself remains `bin/fm-watch.sh`, and `bin/fm-watch-arm.sh` remains the verified arm wrapper that the Stop hook runs as its own tracked child; a home that runs the supervision host parks on `bin/fm-supervision-host.sh park` in the arm's place.

@@ -64,7 +64,7 @@ type ArmResult = {
   message: string;
 };
 
-type LockOwnership = "owned" | "missing" | "other";
+type LockOwnership = "owned" | "other";
 
 type CloseClassification = {
   kind: "actionable" | "failure";
@@ -278,7 +278,7 @@ function liveArmChild(owner: SessionGeneration): ChildProcess | null {
 }
 
 // The session lock names a local pid or, on Windows, a tagged `win:<pid>`
-// (fm_session_pid_valid in bin/fm-session-lock-lib.sh owns that shape). Native
+// (fm_session_pid_valid in bin/fm-proc-lib.sh owns that shape). Native
 // Node on Windows sees Windows pids directly, so a tagged holder is compared
 // and probed by its digits. Any other value is no usable identity, "".
 function lockHolderPid(lockPid: string): string {
@@ -287,22 +287,28 @@ function lockHolderPid(lockPid: string): string {
   return /^[0-9]+$/.test(pid) && pid !== "1" ? pid : "";
 }
 
+// A home that records no fleet session lock is a native home: the session owns
+// it by identity, these extensions load inside that session's own process, and
+// there is no foreign owner to defer to. The lock read stays so a home that
+// still carries a legacy record keeps its previous verdict; a malformed or
+// provably dead record grants that same native ownership rather than wedging
+// the session out of supervision.
 function lockOwnership(): LockOwnership {
   let lockPid = "";
   try {
     lockPid = readFileSync(`${state}/.lock`, "utf8").trim();
   } catch {
-    return "missing";
+    return "owned";
   }
   const holderPid = lockHolderPid(lockPid);
-  if (!holderPid) return "other";
+  if (!holderPid) return "owned";
   let pid = String(process.pid);
   for (let i = 0; i < 8; i += 1) {
     if (pid === holderPid) return "owned";
     pid = parentPid(pid);
     if (!pid || pid === "1") break;
   }
-  return pidAlive(holderPid) ? "other" : "missing";
+  return pidAlive(holderPid) ? "other" : "owned";
 }
 
 // A Pi command started from inside the live session, such as the `pi --help`
@@ -1167,13 +1173,7 @@ export default function (pi: ExtensionAPI) {
   function startArm(owner: SessionGeneration, predecessorArmPid = ""): ArmResult {
     if (!generationIsLive(owner)) return { ok: false, message: shuttingDownMessage };
     const ownership = lockOwnership();
-    if (ownership === "other") return { ok: false, message: "watcher: read-only - session lock is held by another firstmate session" };
-    if (ownership === "missing") {
-      return {
-        ok: false,
-        message: "watcher: not armed - no live session holds the lock; run bin/fm-session-start.sh to reclaim it, then call fm_watch_arm_pi to re-arm",
-      };
-    }
+    if (ownership === "other") return { ok: false, message: "watcher: read-only - a legacy session lock is held by another live firstmate session" };
     publishGenerationOwner(owner, "active");
     if (liveArmChild(owner)) {
       return {

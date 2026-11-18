@@ -79,7 +79,7 @@
 #          quota-axi is required for the agent-owned dispatch-profile array
 #          procedure in AGENTS.md section 4 and
 #          .agents/skills/quota-array-dispatch/SKILL.md.
-#          On a primary home, the locked mutable path materializes the visible
+#          On a primary home, the mutating path materializes the visible
 #          default config/startup-memory-budget=7500 when absent. It never
 #          guesses at malformed or unsafe existing files, and secondmate homes
 #          await the primary-authoritative inherited value instead of creating
@@ -109,19 +109,22 @@
 #          bin/fm-secondmate-reconcile.sh's nudge stay as backstops. Replayed
 #          transitions and restored In-flight rows print BOOTSTRAP_INFO facts.
 #          The `code-root <file>` variant is a detect-only local check that runs
-#          even in a read-only session; detect_code_root_backlog_fork owns what
+#          even under detect-only; detect_code_root_backlog_fork owns what
 #          it reports.
 #          Set FM_BOOTSTRAP_DETECT_ONLY=1 to skip the six MUTATING sweeps
 #          (backlog_record_reconcile, secondmate_sync,
 #          secondmate_liveness_sweep, secondmate_handoff_resume, x_mode_setup,
 #          fleet_sync) while still
 #          printing every read-only detect line
-#          above; the TANGLE line switches to advisory-only wording with no
-#          checkout command. Used by
-#          fm-session-start.sh's read-only path when another live session holds
-#          the fleet lock, so a second concurrent session never race-mutates
-#          secondmate homes, pending handoff outboxes and receiver wakes,
-#          X-mode artifacts, project clones, or repair instructions.
+#          above; the TANGLE line then switches to advisory-only wording with no
+#          checkout command, because a probe reports and does not repair.
+#          Used by
+#          fm-session-start.sh on a context re-emit, so the second pass never
+#          re-runs sweeps the session already ran at its own start.
+#          Set FM_BOOTSTRAP_TANGLE_REPAIR=1 beside it when the detect-only
+#          caller is a session that already owns its home and is entitled to
+#          repair: a context re-emit passes it, so the TANGLE line keeps the
+#          restore command there.
 #          Unset/0 (the default) runs all six sweeps - this flag is purely
 #          additive.
 #          Set FM_BOOTSTRAP_NETWORK to split this run by whether a step talks to
@@ -154,13 +157,6 @@
 #          A relaunch that the liveness sweep performs during an `only` run is
 #          always reported, because a digest composed before that run already
 #          printed the superseded endpoint record.
-#          Set FM_BOOTSTRAP_LOCKED=1 alongside it when the sweeps are skipped
-#          because THIS session already ran them while holding the fleet lock,
-#          rather than because it has no lock at all. The two cases differ in
-#          exactly one place: repair ownership. A locked session is told to
-#          restore a tangled primary checkout itself, while an unlocked one is
-#          told to leave that work to the lock holder. Unset/0 (the default)
-#          keeps detect-only meaning unlocked, exactly as before.
 #        fm-bootstrap.sh install <tool>...
 #          Install the named tools (only ones the captain approved).
 #        fm-bootstrap.sh lavish-compatible
@@ -228,10 +224,6 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 # deferred network stage sets, so an ordinary bootstrap run records nothing.
 # shellcheck source=bin/fm-timing-lib.sh disable=SC1091
 . "$SCRIPT_DIR/fm-timing-lib.sh"
-# Sourced only for fm_session_pid_valid: the lock identity this script compares
-# is not always a local pid.
-# shellcheck source=bin/fm-session-lock-lib.sh disable=SC1091
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
 # Network-phase selection (see the header). An unrecognized value resolves to
 # `all` so a malformed override runs every step rather than silently dropping a
@@ -242,24 +234,6 @@ case "${FM_BOOTSTRAP_NETWORK:-all}" in
 esac
 local_phase() { [ "$FM_BOOTSTRAP_NETWORK_PHASE" != only ]; }
 network_phase() { [ "$FM_BOOTSTRAP_NETWORK_PHASE" != skip ]; }
-
-network_mutation_authorized() {
-  local expected=${FM_BOOTSTRAP_NETWORK_LOCK_PID:-} current
-  [ -n "$expected" ] || return 0
-  fm_session_pid_valid "$expected" || return 1
-  [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ] || return 1
-  current=$(cat "$STATE/.lock" 2>/dev/null) || return 1
-  [ "$current" = "$expected" ]
-}
-
-network_sweep_authorized() {
-  local label=$1
-  if network_mutation_authorized; then
-    return 0
-  fi
-  echo "NETWORK_CHECKS: the recorded fleet lock holder changed before $label, so this stale worker skipped that sweep"
-  return 1
-}
 
 # Concurrent per-item runner for the deferred network sweeps. Each worker's
 # stdout and stderr are captured to private files and replayed in original
@@ -407,7 +381,7 @@ secondmate_sync() {
   # surface (AGENTS.md, bin/, or .agents/skills/) actually changed, so a secondmate already on the primary's
   # version is never disturbed (AGENTS.md bootstrap + supervision). Unlike
   # /updatefirstmate, startup owns the live-convergence send itself because it is
-  # a deterministic locked sweep and can report success as BOOTSTRAP_INFO while
+  # a deterministic sweep and can report success as BOOTSTRAP_INFO while
   # preserving failed sends as NUDGE_SECONDMATES retry markers.
   [ -d "$STATE" ] || return 0
   local primary_head
@@ -1331,7 +1305,7 @@ backlog_record_reconcile() {
     fi
     return 0
   fi
-  # Keep the wake/lock library's source-time state-directory creation inside
+  # Keep the wake library's source-time state-directory creation inside
   # this mutating sweep, so FM_BOOTSTRAP_DETECT_ONLY remains read-only.
   # shellcheck source=bin/fm-wake-lib.sh disable=SC1091
   . "$SCRIPT_DIR/fm-wake-lib.sh"
@@ -1470,7 +1444,7 @@ if [ "${1:-}" = "install" ]; then
   exit 0
 fi
 
-# This is the first mutating sweep at a locked session boundary. Detect-only
+# This is the first mutating sweep at a session boundary. Detect-only
 # sessions never touch state, and the deferred network pass never repeats it:
 # the local pass that ran first already closed that window.
 if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ] && local_phase; then
@@ -1659,8 +1633,8 @@ detect_local_config() {
   tangle_branch=$(fm_primary_tangle_branch "$FM_ROOT" 2>/dev/null || true)
   if [ -n "$tangle_branch" ]; then
     tangle_default=$(fm_default_branch "$FM_ROOT" 2>/dev/null || echo main)
-    if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" = 1 ] && [ "${FM_BOOTSTRAP_LOCKED:-0}" != 1 ]; then
-      echo "TANGLE: primary checkout on feature branch '$tangle_branch' (expected '$tangle_default'); the work is safe on that ref - read-only session must leave restore work to the session holding the fleet lock"
+    if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" = 1 ] && [ "${FM_BOOTSTRAP_TANGLE_REPAIR:-0}" != 1 ]; then
+      echo "TANGLE: primary checkout on feature branch '$tangle_branch' (expected '$tangle_default'); the work is safe on that ref - restore the primary once the branch is validated in a proper worktree"
     else
       echo "TANGLE: primary checkout on feature branch '$tangle_branch' (expected '$tangle_default'); the work is safe on that ref - restore the primary with: git -C $FM_ROOT checkout $tangle_default, then re-validate the branch in a proper worktree"
     fi
@@ -1782,7 +1756,7 @@ if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
   # depend on them, so it starts in the background and overlaps their wall clock.
   fleet_sync_pid=
   fleet_sync_out=
-  if network_phase && network_sweep_authorized 'project clone refresh'; then
+  if network_phase; then
     fleet_sync_out=$(mktemp "${TMPDIR:-/tmp}/fm-bootstrap-fleet.XXXXXX") || fleet_sync_out=
     if [ -n "$fleet_sync_out" ]; then
       (
@@ -1796,23 +1770,15 @@ if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
       fleet_sync
       fm_timing_record phase fleet-sync "$__fm_timing_stamp"
     fi
-  fi
-  if network_phase; then
-    if network_sweep_authorized 'dead-secondmate relaunch'; then
-      __fm_timing_stamp=$(fm_timing_now_ms)
-      secondmate_liveness_sweep
-      fm_timing_record phase secondmate-liveness "$__fm_timing_stamp"
-    fi
-    if network_sweep_authorized 'secondmate convergence'; then
-      __fm_timing_stamp=$(fm_timing_now_ms)
-      secondmate_sync
-      fm_timing_record phase secondmate-sync "$__fm_timing_stamp"
-    fi
-    if network_sweep_authorized 'pending handoff delivery'; then
-      __fm_timing_stamp=$(fm_timing_now_ms)
-      secondmate_handoff_resume
-      fm_timing_record phase handoff-delivery "$__fm_timing_stamp"
-    fi
+    __fm_timing_stamp=$(fm_timing_now_ms)
+    secondmate_liveness_sweep
+    fm_timing_record phase secondmate-liveness "$__fm_timing_stamp"
+    __fm_timing_stamp=$(fm_timing_now_ms)
+    secondmate_sync
+    fm_timing_record phase secondmate-sync "$__fm_timing_stamp"
+    __fm_timing_stamp=$(fm_timing_now_ms)
+    secondmate_handoff_resume
+    fm_timing_record phase handoff-delivery "$__fm_timing_stamp"
   fi
   # x_mode_setup writes local Relay artifacts only and never leaves the machine.
   local_phase && x_mode_setup
