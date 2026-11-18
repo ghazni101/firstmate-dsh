@@ -3,8 +3,8 @@
 #
 # The protocol (revision 0.4, https://control-codes.page/proposals/osc-7501/)
 # lets a program tell its terminal what it is doing: idle, working, blocked,
-# done, or error, with a one-line reason. 7501-aware terminals - herdr-core
-# (`hc`), the Herdr app, Ghostty, Rex - then show working/blocked/done with no
+# done, or error, with a one-line reason. 7501-aware terminals - the Herdr
+# app, Ghostty - then show working/blocked/done with no
 # screen inference; every other terminal ignores the unknown OSC unharmed.
 #
 # `arm` runs inside a task pane at launch (fm-spawn stages it into the launch
@@ -12,10 +12,9 @@
 #
 #   1. the pane must have a writable controlling terminal
 #   2. the terminal must be KNOWN 7501-aware by its environment
-#      (HC_TERMINAL_ID = herdr-core, REX_BLOCK/REX_SESSION = Rex,
+#      (HC_TERMINAL_ID = herdr-core,
 #      TERM_PROGRAM=ghostty); unknown terminals silently do nothing.
-#      backend=herdr (old herdr has no protocol support) and backend=t3code
-#      (no task tty) never report
+#      backend=herdr (old herdr has no protocol support) never reports
 #   3. config/osc7501-status must not say off (default on; an unrecognized
 #      word warns once per value and reads as off). This gate is read only
 #      after the writable-tty and known-aware-terminal checks pass
@@ -23,11 +22,8 @@
 #      that names none - a raw launch command whose agent fm-spawn cannot
 #      establish - never reports
 #   5. the harness must not already report natively: Claude Code >= 2.1.295
-#      and Pi >= 1.1.0 (herdr discussions #5073/#5106, verified 2026-10-30),
-#      codex-cli >= 0.163.0 (openai/codex#52725, first released in
-#      rust-v0.163.0, verified 2026-11-01), and Grok >= 1.0.67 and Muse Code
-#      >= 1.4.11 (the lowest versions verified reporting on Rex,
-#      docs/verification/runtime-backends.md) send their own root records;
+#      and Pi >= 1.1.0 (herdr discussions #5073/#5106, verified 2026-10-30)
+#      send their own root records;
 #      a terminal keeps one root record per pane, so a firstmate record would
 #      only replace theirs. The probe runs --agent-bin; one of these
 #      harnesses whose version cannot be read counts as native, so no
@@ -67,16 +63,12 @@
 #   arm's idle clear is the bridge's own first write, so the watcher it
 #   starts owns the root record from launch;
 #   a watcher with no write of its own stays silent instead: the root record
-#   may belong to a native writer. Harnesses whose activity only resolves
-#   busy or unknown (Rovo, Antigravity) thereby still reach idle, blocked,
+#   busy or unknown thereby still reach idle, blocked,
 #   done, and error through the signals.
 #
 # Records go to the ROOT record (no id) with app=firstmate-<harness> and
-# title=fm-<task> so `hc get .status` and the app sidebar classify the worker;
-# firstmate's own id=fm attention marks on Rex are a separate supervisor-side
-# feature (bin/fm-rex-marks.sh) and compose unchanged. Rex's activity readers
-# skip every app=firstmate-* record (bin/backends/rex.sh), so a record this
-# bridge wrote never comes back as the activity it reads. The watcher re-emits
+# title=fm-<task> so the app sidebar classifies the worker.
+# The watcher re-emits
 # only on change plus a heartbeat (records outlive resends, but a terminal
 # that dropped one is repaired). Its lifetime is the agent incarnation: the
 # launch runs `disarm` right after the agent command returns, and the watcher
@@ -101,8 +93,7 @@
 #
 # Safety: the reporter never reads terminal input or changes terminal modes.
 # Eligibility uses passive environment markers only. Every record write is
-# one small write() to the
-# pane's tty in the output direction - the same channel fm-rex-marks.sh uses -
+# pane's tty in the output direction,
 # so it can never be read as typed input.
 #
 # Subcommands:
@@ -258,10 +249,7 @@ osc_native() {
   local floor ver
   case "$1" in
     claude) floor=2.1.295 ;;
-    pi | pi-signed) floor=1.1.0 ;;
-    codex) floor=0.163.0 ;;
-    grok) floor=1.0.67 ;;
-    muse) floor=1.4.11 ;;
+    pi) floor=1.1.0 ;;
     *) return 1 ;;
   esac
   ver=$(osc_probe_version "$2") || return 0
@@ -594,7 +582,7 @@ osc_arm() { # --task --harness --backend --kind --state --config [--target] [--a
   # a pane without a writable tty can never report
   local dev=${FM_OSC7501_TTY:-/dev/tty}
   [ -w "$dev" ] || exit 0
-  case "$backend" in herdr | t3code) exit 0 ;; esac
+  case "$backend" in herdr) exit 0 ;; esac
   osc_env_aware || exit 0
   FM_OSC_APP="firstmate-$harness"
   FM_OSC_APP="${FM_OSC_APP:0:$FM_OSC7501_APP_MAX}"

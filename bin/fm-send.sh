@@ -5,16 +5,14 @@
 #   <target> may be an exact task id, a legacy fm-<id> task label resolved
 #   through this home's state/<id>.meta, or an explicit well-formed backend
 #   target. fm-send refuses unresolved guesses rather than falling back to a
-#   tmux window search, because a "successful" send to the wrong endpoint is
+#   window search, because a "successful" send to the wrong endpoint is
 #   worse than a loud failure.
 # The text must be nonempty: an empty or whitespace-only message is refused
 # before anything is marked, recorded, or submitted, because an empty marked
 # secondmate request delivers only marker and correlation bytes and leaves the
 # parent waiting on a reply to nothing.
 # Special keys instead of text: fm-send.sh <target> --key Enter
-# Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
-# Orca supports Enter and C-c only; T3 Code maps Escape and C-c to a native
-# turn interrupt and treats Enter as a no-op.
+# Key support is backend-specific: herdr supports Escape, Enter, and C-c.
 #
 # Two data planes:
 #
@@ -58,26 +56,24 @@
 # delivery proof on this plane, and a failed ring never fails the send.
 #
 # TYPED - the LOCAL text submitted directly instead of through the inbox. On a
-# pane backend, a harness-native invocation (a leading "/", or a leading "$" to
-# a codex target) must reach the harness's own parser. An explicit backend
+# pane backend, a harness-native invocation (a leading "/") must reach the
+# harness's own parser. An explicit backend
 # target names an endpoint, not a task, so it stays on this plane even when
 # local metadata happens to match it (the same boundary that keeps it unmarked
 # and outside --resolve-key). Pane backends type the literal text ONCE, then
-# retry Enter without retyping; T3 Code starts one native turn. Typed-plane exit
+# retry Enter without retyping. Typed-plane exit
 # contract: 0 = submit confirmed; 3 = the text reached the live endpoint and
 # submission was attempted, but the read-back stayed unconfirmed, or an API
 # backend's outcome is unproven: a lost reply or an error that can follow a
 # commit (verify the endpoint
-# before any resend, and never submit blindly; docs/t3code-backend.md owns
-# T3 Code's request-id retention and retry policy; a marked request's
+# before any resend, and never submit blindly; a marked request's
 # pending-reply expectation stays armed because this outcome is not a proven
 # failure); any other nonzero = the send failed and nothing may be assumed
 # delivered. Submission dispatches through the target's recorded backend; the
-# tmux adapter shares its composer/submit core with the away-mode daemon via
-# bin/fm-tmux-lib.sh. Tune with FM_SEND_RETRIES (default 3; agy typed targets
-# default to 20 for agy's late busy render) / FM_SEND_SLEEP (0.4). Slash
-# commands, and codex `$...` skill invocations resolved through harness meta,
-# get a longer pre-Enter settle so completion popups do not swallow Enter.
+# herdr adapter shares its composer/submit core with the away-mode daemon via
+# bin/fm-tmux-lib.sh. Tune with FM_SEND_RETRIES (default 3) /
+# FM_SEND_SLEEP (0.4). Slash
+# commands get a longer pre-Enter settle so completion popups do not swallow Enter.
 # A remote secondmate target has no typed text plane at all:
 # every remote text steer rides the inbox (a marked secondmate request already
 # reaches the harness as marker-prefixed chat rather than a parser command, so
@@ -288,15 +284,8 @@ fm_send_id_from_meta() { # <meta-file>
   printf '%s' "${base%.meta}"
 }
 
-# fm_send_clear_after_interrupt: muse RESTORES the interrupted prompt back into
-# the composer when Escape cancels a turn, as real bright text (verified: fg
-# 38;2;204;211;219, luminance ~210, muse 0.1.0-R708.1), not de-emphasised ghost
-# text. Classifying that as pending input is correct - the text really is
-# unsubmitted - but leaving it there means the NEXT steer types onto the end of
-# it and submits both as one garbled message. Ctrl-U clears the composer
-# (verified), so the interrupt is not complete until it has been sent. A failed
-# clear is loud rather than silent, because the alternative is a corrupted steer.
-# WHICH adapters need that clear, and which key clears them, comes from the one
+# fm_send_clear_after_interrupt: WHICH adapters need a composer clear after
+# an interrupt, and which key clears them, comes from the one
 # control-plane capability table (bin/fm-control-lib.sh) rather than a second
 # copy here - the same table bin/fm-control.sh's interrupt verb reads.
 fm_send_clear_after_interrupt() { # <key>
@@ -357,34 +346,8 @@ fm_send_count_colons() { # <string>
   printf '%s' $((${#s} - ${#no_colons}))
 }
 
-# When an explicit outside-home target has no recorded harness, detect kiro
-# from the live pane's foreground process group so the kiro-only composer
-# rules apply (fm_composer_kiro_scope). The live e2e guard owns why this
-# reads the foreground group through fm-harness.sh ancestry rather than
-# #{pane_current_command}: a toolbox wrapper can rename the tmux field
-# while comm still reads kiro-cli. Any other (or unreadable) process leaves
-# TARGET_HARNESS empty, which is the pre-kiro default and keeps the
-# non-kiro typed path - including the unknown-harness `$` settle - unchanged.
-fm_send_detect_kiro_from_live_target() {
-  local pid verdict
-  [ -n "$TARGET_HARNESS" ] && return 0
-  [ "$TARGET_BACKEND" = tmux ] || return 0
-  [ -n "$RESOLVED_TARGET" ] || return 0
-  fm_backend_source tmux || return 0
-  while IFS= read -r pid; do
-    [ -n "$pid" ] || continue
-    case "$pid" in *[!0-9]*) continue ;; esac
-    verdict=$("$SCRIPT_DIR/fm-harness.sh" ancestry "$pid" 2>/dev/null || true)
-    [ "$verdict" = "comm kiro" ] || continue
-    TARGET_HARNESS=kiro
-    return 0
-  done <<EOF
-$(fm_backend_tmux_foreground_pids "$RESOLVED_TARGET" 2>/dev/null || true)
-EOF
-}
-
 fm_send_resolve_target() { # <raw-target>
-  local raw=$1 meta pane_meta target backend assumed colons id session hint
+  local raw=$1 meta pane_meta target backend assumed id session hint
 
   RESOLVED_TARGET=""
   TARGET_BACKEND=""
@@ -466,12 +429,7 @@ fm_send_resolve_target() { # <raw-target>
 
   case "$raw" in
   *:*)
-    colons=$(fm_send_count_colons "$raw")
-    if [ "$colons" -ge 2 ]; then
-      assumed=herdr
-    else
-      assumed=tmux
-    fi
+    assumed=herdr
     if ! fm_backend_target_exists "$assumed" "$raw"; then
       echo "error: explicit target '$raw' is not a live $assumed endpoint (tried meta=$STATE/$raw.meta; metadata window/terminal lookup; backend=$assumed). Use fm-<id> for a recorded task/lane, or pass a target whose backend endpoint can be verified." >&2
       return 1
@@ -490,10 +448,8 @@ fm_send_resolve_target() { # <raw-target>
 RAW_TARGET=$1
 fm_send_resolve_target "$RAW_TARGET" || exit 1
 T=$RESOLVED_TARGET
-fm_send_detect_kiro_from_live_target
-# The recorded harness, or kiro detected from a meta-less explicit target's
-# live pane, scopes the kiro-only composer rules for every composer read this
-# send makes (fm_composer_kiro_scope in bin/fm-composer-lib.sh).
+# The recorded harness scopes harness-specific composer rules for every
+# composer read this send makes (bin/fm-composer-lib.sh).
 # shellcheck disable=SC2034
 FM_COMPOSER_HARNESS=$TARGET_HARNESS
 shift
@@ -876,17 +832,14 @@ fm_send_feed_resolved_holds() { # <answer-text>
 }
 
 # Resolve the target's harness from its meta (recorded by fm-spawn), used to
-# scope the codex `$<skill>` popup-settle below and the kiro composer rules
-# above. A task selector carries meta. An explicit backend-target escape hatch
-# has none, so its harness stays unknown and is treated as non-codex (the safe
-# default that keeps the `$` fast path) unless the live pane's foreground
-# process group is kiro (fm_send_detect_kiro_from_live_target).
+# scope harness-specific composer rules. A task selector carries meta. An
+# explicit backend-target escape hatch has none, so its harness stays unknown
+# (the safe default).
 # The target's BACKEND comes from selector meta, from matching an explicit target
 # back to recorded meta, or from strict explicit-target shape validation.
 # Do not add a separate passive liveness preflight here. Active send paths own
 # backend readiness: herdr, for example, must route through its session-aware
-# target_ready path before sending, while zellij verifies pane labels in its
-# send implementation. A failed backend send is still surfaced below as a hard
+# target_ready path before sending. A failed backend send is still surfaced below as a hard
 # error with the attempted resolution attached.
 
 if [ "${1:-}" = "--key" ]; then
@@ -997,8 +950,7 @@ else
   # Data-plane selection (see the header): text addressed to a task selector
   # resolved through this home's metadata rides the inbox plane, unless it is
   # a LOCAL harness-native invocation that must reach the harness's own parser
-  # - a leading "/" (slash command), or a leading "$" to a codex target (skill
-  # invocation). A remote secondmate selector always rides the inbox: its
+  # - a leading "/" (slash command). A remote secondmate selector always rides the inbox: its
   # requests are marked, and a marked request reaches the harness as
   # marker-prefixed chat rather than a parser command anyway, so no remote
   # text has a typed plane to lose. An explicit backend target stays typed
@@ -1015,7 +967,7 @@ else
     else
       case "$RESOLVE_ANSWER_TEXT" in
       /*) ;;
-      \$*) [ "$TARGET_HARNESS" = codex ] || INBOX_PLANE=1 ;;
+      \$*) INBOX_PLANE=1 ;;
       *) INBOX_PLANE=1 ;;
       esac
     fi
@@ -1247,36 +1199,15 @@ else
     esac
     exit 0
   fi
-  # Slash commands open a completion popup in some TUIs (verified on codex);
-  # submitting too fast selects nothing, so give the popup time to settle before
-  # the (retried) Enter. Codex opens the same kind of popup for a `$<skill>`
-  # invocation, so a `$...` message to a codex target gets the same settle. That
-  # `$` case is scoped to codex on purpose: unlike `/`, a leading `$` commonly
-  # starts ordinary text ("$5/month", "$HOME"), so a universal `$` rule would
-  # needlessly slow plain text to claude/opencode/pi. The target backend's
-  # verified submit retry still backs the settle up either way.
+  # Slash commands open a completion popup in some TUIs; submitting too fast
+  # selects nothing, so give the popup time to settle before the (retried)
+  # Enter. The target backend's verified submit retry still backs the settle
+  # up either way.
   case "$*" in
   /*) settle=1.2 ;;
-  \$*)
-    if [ "$TARGET_HARNESS" = codex ]; then settle=1.2; else settle=0.3; fi
-    ;;
   *) settle=0.3 ;;
   esac
-  # Per-harness submit-confirm budget. agy's bare `>` composer verdict is
-  # `unknown`, so a landed submit is acknowledged only by the idle-to-busy
-  # transition poll, and agy renders its verified busy footer well after the
-  # shared budget expires: ~1.5s after Enter for a short steer, ~4-5s for a
-  # realistic longer brief (live-measured, agy 1.2.1), against the shared
-  # default's 3 x 0.4s. With the shared default a typed steer to an agy
-  # endpoint was reported exit-1 non-delivery for a message that landed and
-  # ran, inviting a duplicate resend. agy typed targets get a longer default
-  # budget (~8s at the default cadence, twice the worst measured render); an
-  # explicit FM_SEND_RETRIES still wins, and every other harness keeps the
-  # shared 3-retry default untouched.
-  case "$TARGET_HARNESS" in
-    agy) retries=${FM_SEND_RETRIES:-20} ;;
-    *) retries=${FM_SEND_RETRIES:-3} ;;
-  esac
+  retries=${FM_SEND_RETRIES:-3}
   sleep_s=${FM_SEND_SLEEP:-0.4}
   # Type once, submit, verify. Only exact empty confirms delivery; every other
   # verdict preserves the loud refusal boundary. Only LOCAL targets reach this
@@ -1320,11 +1251,10 @@ else
     ;;
   unconfirmed)
     # An API backend's outcome is unproven: a lost reply or an error that can
-    # follow a commit (T3 Code commits a send before it answers). Like
+    # follow a commit. Like
     # pending, delivery is unproven
-    # rather than refused, so the pending-reply expectation stays armed; the
-    # adapter retains the logical delivery's request id under the retry policy
-    # in docs/t3code-backend.md. A marked secondmate request is the exception:
+    # rather than refused, so the pending-reply expectation stays armed. A marked
+    # secondmate request is the exception:
     # a plain rerun mints a new
     # correlation, so its text and request id differ, and the armed attempt
     # refuses a resend of this one.

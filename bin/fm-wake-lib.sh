@@ -267,19 +267,18 @@ fm_watcher_healthy() {
 
 # fm_supervision_model
 # Print the supervision model of this home's PRIMARY harness:
-#   autoarm     Claude, Cursor, and opted-in native Codex Stop-hook parks: the
+#   autoarm     Claude and Cursor Stop-hook parks: the
 #               watcher is armed at each turn end and exits on its wake, so it
 #               runs only BETWEEN turns. Mid-turn a fresh beacon with no live
 #               watcher process is healthy, and a stale beacon is still healthy
 #               while a Claude auto-arm generation explains the gap
 #               (fm_autoarm_midturn_healthy).
-#   extension   Pi (and pi-signed): .pi/extensions/fm-primary-pi-watch.ts owns
+#   extension   Pi: .pi/extensions/fm-primary-pi-watch.ts owns
 #               continuity. It tears the watcher down on every actionable wake and
 #               spawns the replacement itself, so a genuinely unheld singleton lock
 #               is healthy during that hand-off only with extension ownership and a
 #               fresh beacon. Any held but unhealthy lock remains down.
-#   persistent  every other harness (codex foreground checkpoint, opencode/grok
-#               background arm, tmux, unknown): the watcher runs as a tracked live
+#   persistent  every other harness (unknown): the watcher runs as a tracked live
 #               process, so a live identity-matched pid is the real liveness signal.
 # FM_SUPERVISION_MODEL overrides detection (tests, and callers that already know
 # the harness). Otherwise bin/fm-harness.sh is the single detection owner, so this
@@ -291,15 +290,8 @@ fm_supervision_model() {
   esac
   harness=$("$FM_WAKE_LIB_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
   case "$harness" in
-    claude|cursor|agy) printf 'autoarm\n' ;;
-    codex)
-      if [ -x "$FM_WAKE_LIB_DIR/fm-codex-stop-park.sh" ] && "$FM_WAKE_LIB_DIR/fm-codex-stop-park.sh" --capable; then
-        printf 'autoarm\n'
-      else
-        printf 'persistent\n'
-      fi
-      ;;
-    pi|pi-signed|omp) printf 'extension\n' ;;
+    claude|cursor) printf 'autoarm\n' ;;
+    pi|omp) printf 'extension\n' ;;
     *) printf 'persistent\n' ;;
   esac
 }

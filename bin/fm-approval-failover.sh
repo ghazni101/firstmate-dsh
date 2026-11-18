@@ -60,14 +60,9 @@ fi
   exit 1
 }
 case "$HARNESS" in
-  codex) SETTING=codex-approval-mode; FALLBACK=approve-for-me ;;
   claude) SETTING=claude-permission-mode; FALLBACK=auto ;;
-  *) echo 'error: managed approval failover supports only Codex and Claude' >&2; exit 1 ;;
+  *) echo 'error: managed approval failover supports only Claude' >&2; exit 1 ;;
 esac
-[ "$(fm_backend_of_meta "$META")" != t3code ] || {
-  echo "error: backend=t3code already runs $HARNESS at T3's full-access runtime mode and cannot honor config/$SETTING=$FALLBACK; approve the pending request in T3 Code itself or choose another backend; nothing changed" >&2
-  exit 1
-}
 [ ! -e "$CONFIG/$SETTING" ] && [ ! -L "$CONFIG/$SETTING" ] || {
   echo "error: config/$SETTING already exists; nothing overwritten" >&2
   exit 1

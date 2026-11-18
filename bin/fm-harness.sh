@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Detect the agent harness this process tree runs on.
-# Usage: fm-harness.sh                  print own harness: claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy|devin|commandcode|polytoken|cortex|kiro|hermes|unknown
+# Usage: fm-harness.sh                  print own harness: claude|pi|cursor|omp|dsh|unknown
 #        fm-harness.sh crew             print the effective CREWMATE harness
 #                                        (config/crew-harness; "default" resolves to own)
 #        fm-harness.sh secondmate [id]  print the harness the PRIMARY uses to launch
@@ -75,22 +75,15 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
-# shellcheck source=/dev/null
+# shellcheck source=bin/fm-cursor-lib.sh
 . "$SCRIPT_DIR/fm-cursor-lib.sh"
-# shellcheck source=/dev/null
-. "$SCRIPT_DIR/fm-gemini-lib.sh"
-# shellcheck source=/dev/null
-. "${SCRIPT_DIR:-/}/fm-hermes-process-lib.sh"
-# shellcheck source=/dev/null
+# shellcheck source=bin/fm-omp-process-lib.sh
 . "${SCRIPT_DIR:-/}/fm-omp-process-lib.sh"
 
 # Print the harness named by a verified environment marker, or nothing when no
 # marker is present. Markers only report what the environment CLAIMS; detect_own
 # decides whether that claim survives contradicting ancestry.
 harness_marker() {
-  if [ "${FM_HERMES_HARNESS:-}" = hermes ] && [ "$(harness_ancestry | awk '{print $2}')" = hermes ]; then
-    echo hermes; return
-  fi
   # Cursor is tested BEFORE claude, deliberately. cursor-agent does NOT clear an
   # inherited CLAUDECODE, so a cursor session started by hand from a claude
   # primary carries BOTH markers and whichever is tested first wins. This
@@ -101,27 +94,6 @@ harness_marker() {
   # child/tool processes this script runs as.
   [ "${CURSOR_AGENT:-}" = "1" ] && { echo cursor; return; }
   [ "${CURSOR_INVOKED_AS:-}" = "cursor-agent" ] && { echo cursor; return; }
-  # Gemini is checked BEFORE claude for exactly cursor's reason above: the
-  # Gemini CLI does NOT clear an inherited CLAUDECODE, so a gemini worker
-  # launched from a claude primary carries BOTH markers and whichever is
-  # tested first wins. Verified live on gemini-cli 0.58.0: a tool process
-  # spawned by a gemini worker under a claude primary reported GEMINI_CLI=1
-  # AND CLAUDECODE=1 together. GEMINI_CLI is gemini's own and is unset in the
-  # launching environment, so ordering it first is what makes the verdict
-  # correct; bin/fm-spawn.sh additionally clears the foreign markers at the
-  # launch boundary. Both are kept for the same reason cursor keeps both.
-  # AI_AGENT is deliberately NOT used: it was present in that same process
-  # carrying the claude primary's value (claude-code_2-1-260_agent), so it is
-  # an inherited launcher marker, not a Gemini identity.
-  [ "${GEMINI_CLI:-}" = "1" ] && { echo gemini; return; }
-  # rovo (Atlassian Rovo CLI) sets ATLASSIAN_AGENT_TYPE=rovo, ROVODEV_CLI=1, and
-  # AGENT=rovodev_cli on its tool subprocesses (verified, rovo 202609.1.2). It does
-  # NOT scrub an inherited CLAUDECODE, so a rovo worker launched from a claude
-  # session carries both markers - this must be tested BEFORE the CLAUDECODE line,
-  # the same ordering hazard cursor documents above (see issue #3517). bin/fm-spawn.sh
-  # additionally clears foreign markers at rovo's launch boundary as defense in depth.
-  [ "${ATLASSIAN_AGENT_TYPE:-}" = "rovo" ] && { echo rovo; return; }
-  [ "${ROVODEV_CLI:-}" = "1" ] && { echo rovo; return; }
   # omp (Oh My Pi) publishes NO harness-identity marker of its own: verified on
   # omp 18.1.11 that PI_CODING_AGENT is absent from the binary and that the
   # default profile sets neither PI_CODING_AGENT_DIR nor OMP_PROFILE in the
@@ -140,27 +112,11 @@ harness_marker() {
   fi
   [ "${CLAUDECODE:-}" = "1" ] && { echo claude; return; }
   if [ "${PI_CODING_AGENT:-}" = "true" ]; then
-    if [ "${FM_PI_HARNESS:-}" = pi-signed ]; then echo pi-signed; else echo pi; fi
+    echo pi
     return
   fi
-  # grok set GROK_AGENT=1 for its child/tool processes (verified, grok 0.2.73).
-  # It does NOT set CLAUDECODE despite being Claude-Code-compatible, so the marker
-  # is unambiguous WHEN PRESENT - but it is not guaranteed present. A grok 1.0.0
-  # hook process carries GROK_HOOK_EVENT, GROK_HOOK_NAME, GROK_SESSION_ID, and
-  # GROK_WORKSPACE_ROOT with no GROK_AGENT at all (verified from the live process
-  # environment of a wedged grok 1.0.0 Stop hook, 2026-08-07). Treat this marker as
-  # a fast path only; the ancestry walk below is what actually guarantees grok is
-  # identified, and any rule that must be RELIABLE under grok has to test the hook
-  # markers too (see .claude/settings.json Stop entries, docs/turnend-guard.md).
-  [ "${GROK_AGENT:-}" = "1" ] && { echo grok; return; }
-  # codex, opencode, kimi, muse, agy, devin, commandcode, polytoken, cortex, and kiro publish no harness-identity marker at all, so
-  # they are never named here and are identified by ancestry alone. That is the
-  # whole reason a foreign marker must not outrank ancestry: with markers winning
-  # unconditionally, any retained CLAUDECODE would silently rename one of them.
-  # muse's only documented child variable is MUSE_CURRENT_SESSION_LOG, a
-  # per-session log PATH rather than an identity, and its export to tool
-  # subprocesses is unverified (verified: muse 0.1.0-R708.1). Do NOT promote it
-  # to a marker without verifying it reaches children AND that it cannot survive
+  # Every kept harness is covered above; a process none of these markers or
+  # the ancestry arms below can name reads unknown.
   # in a multiplexer's stored environment.
   return 0
 }
@@ -197,15 +153,7 @@ harness_process_verdict() {  # <pid>
     echo "comm cursor"
     return
   fi
-  if fm_gemini_path_is_gemini "$comm"; then
-    echo "comm gemini"
-    return
-  fi
   args=$(ps -o args= -p "$pid" 2>/dev/null) || args=
-  if fm_hermes_process_matches "$args" "$pid"; then
-    echo "comm hermes"
-    return
-  fi
   # omp, compiled binary or bun package (bin/fm-omp-process-lib.sh owns both
   # shapes). It sits above the node*|python* interpreter fallback deliberately:
   # the optional claude-bridge extension runs a nested executable literally
@@ -216,99 +164,13 @@ harness_process_verdict() {  # <pid>
     return
   fi
   case "$(basename -- "$comm")" in
-    # gemini precedes claude here for the same precedence reason as the
-    # marker layer above, so a gemini worker under a claude primary is never
-    # read as claude. This arm covers a natively-named gemini binary only.
-    # It does NOT reach the currently installed CLI, which is a node bundle
-    # (~/.local/bin/gemini -> @google/gemini-cli/bundle/gemini.js): modern
-    # Node on Linux reports `comm` as MainThread rather than node (measured
-    # on Node v24.20.0), so neither this arm nor the node interpreter arm
-    # below matches a live gemini process. GEMINI_CLI above is therefore
-    # load-bearing for gemini rather than a fast path, which is why gemini
-    # is not offered as a primary or secondmate harness. Do NOT add
-    # MainThread to the interpreter arm to close this: that would make the
-    # args of EVERY node process searchable and let an unrelated node
-    # command carrying a harness name in its arguments claim an identity.
     *claude*) echo "comm claude"; return ;;
-    *codex*) echo "comm codex"; return ;;
-    *opencode*) echo "comm opencode"; return ;;
-    *grok*) echo "comm grok"; return ;;
-    kimi) echo "comm kimi"; return ;;
-    rovo) echo "comm rovo"; return ;;
-      # muse's installed launcher ~/.local/bin/muse execs ~/.local/bin/muse-bin-<version>
-      # (verified in the published launcher, muse 0.1.0-R708.1), so the live process
-      # name carries the version and CHANGES on every auto-update. Match the stable
-      # prefix rather than any exact name. Deliberately anchored, never *muse*, so
-      # unrelated commands (musescore, amuse) cannot be misread as this harness.
-    muse|muse-bin-*) echo "comm muse"; return ;;
-    # Both Pi identities share this launcher name. Ancestry can only prove the
-    # FAMILY; only the launch-boundary marker selects the signed identity, which
-    # is why detect_own keeps a marker that agrees on the family.
-    pi-signed) echo "comm pi"; return ;;
+    # Both a plain pi and any pi-named variant resolve through the family
+    # arm below; pi is the only Pi identity this stack launches.
     pi) echo "comm pi"; return ;;
-    # agy (Antigravity CLI) is a Go-compiled single binary whose process name
-    # is exactly `agy` (verified, agy 1.2.0: `ps -o comm=` reports agy and
-    # Herdr's process-info reports name agy with argv[0] agy). Anchored, never
-    # *agy*, so unrelated commands cannot be misread as this harness. agy
-    # publishes no harness-identity marker of its own (a live 1.2.0 TUI
-    # carries no AGY_* or ANTIGRAVITY_* variable; AGENT=1 seen there is an
-    # inherited launcher value, not an agy identity), so like muse it is
-    # detected by ancestry alone.
-    agy) echo "comm agy"; return ;;
-    # polytoken (Polytoken CLI) is a daemon-plus-TUI whose per-session daemon
-    # process name is exactly `polytoken` (verified live on 0.8.19: a TUI
-    # session's daemon runs as comm `polytoken` at ppid 1, and a shell tool
-    # subprocess's parent IS the daemon, so the walk from any real tool
-    # subprocess reaches it at hop one). Anchored, never *polytoken*, so
-    # unrelated commands containing that fragment cannot be misread as this
-    # harness. polytoken publishes no harness-identity marker of its own and
-    # does not clear inherited foreign markers (verified: AGENT=1,
-    # ORCA_AGENT_HOOK_ENV, and ORCA_OPENCODE_AGENT from the launching session
-    # reached a worker tool subprocess), so like kimi, muse, agy, and devin it
-    # is detected by ancestry alone, and bin/fm-spawn.sh clears the foreign
-    # markers at its launch boundary as defense in depth.
-    polytoken) echo "comm polytoken"; return ;;
-    devin) echo "comm devin"; return ;;
-    # Cortex Code is a Bun-compiled single binary whose process name is exactly
-    # `cortex` (verified, cortex 1.1.104: /proc comm=cortex, exe=cortex). It
-    # publishes only CORTEX_* variables to its own hooks, never an identity
-    # marker a parent harness could not also carry, so like devin it is
-    # detected by anchored ancestry alone.
-    cortex) echo "comm cortex"; return ;;
-    hermes) echo "comm hermes"; return ;;
-    # Command Code runs as a node bundle that sets its own process title, so
-    # the kernel process name is exactly `command-code` (verified, Command Code
-    # 1.74.1: comm=command-code and the rewritten argv is the same word).
-    # Anchored, so an unrelated command containing that fragment never matches.
-    command-code) echo "comm commandcode"; return ;;
-    # kiro (Kiro CLI) publishes no harness-identity marker of its own (a live
-    # 2.21.4 tool subprocess carries no KIRO_* identity variable; KIRO_HOME is
-    # a firstmate-set config-relocation path, not an identity), so like muse
-    # and agy it is detected by ancestry alone. The installed command is a
-    # toolbox/aim-sandbox wrapper whose foreground process name is exactly
-    # `kiro-cli` (verified, kiro-cli 2.21.4: `ps -o comm=` and tmux
-    # #{pane_current_command} both report kiro-cli; the aim-sandbox and the
-    # compiled bun/node binary run as descendants). Anchored, never *kiro*, so
-    # unrelated commands cannot be misread as this harness. kiro is a
-    # crewmate/scout adapter only and is never a primary or secondmate, so
-    # this arm only lets a kiro crewmate identify its own harness.
-    kiro-cli) echo "comm kiro"; return ;;
-    node*|python*)
-      # Bare interpreter: match the harness name in its script path.
-      args=$(ps -o args= -p "$pid" 2>/dev/null)
-      if fm_gemini_args_are_gemini "$args"; then
-        echo "args gemini"
-        return
-      fi
-      case "$args" in
-        *claude*) echo "args claude"; return ;;
-        *codex*) echo "args codex"; return ;;
-        *opencode*) echo "args opencode"; return ;;
-        *grok*) echo "args grok"; return ;;
-        *" pi "*|*/pi) echo "args pi"; return ;;
-      esac ;;
   esac
 }
+
 
 # Print the verdict for the NEAREST harness process in the parent chain, or
 # nothing when the walk finds none. The nearest match wins, so a worker nested
@@ -435,14 +297,10 @@ harness_ancestry_descent() {  # <root> [<eligible-leaf-pid>...]
   done
 }
 
-# Collapse a verdict to the harness FAMILY its evidence can actually prove, so a
-# marker's more specific verdict and ancestry's coarser one are not read as a
-# disagreement. Only Pi has two identities behind one launcher name.
+# Collapse a verdict to the harness FAMILY its evidence can actually prove.
+# Each kept launcher has exactly one identity, so the family is the verdict.
 harness_family() {
-  case "$1" in
-    pi-signed) printf 'pi\n' ;;
-    *) printf '%s\n' "$1" ;;
-  esac
+  printf '%s\n' "$1"
 }
 
 # Print the supervision-branch primary pin when it applies (header), or
@@ -451,7 +309,7 @@ supervision_primary_pin() {
   local pin=${FM_SUPERVISION_PRIMARY_HARNESS:-}
   [ "${FM_SUPERVISION_ACTOR:-}" = branch ] && [ -n "$pin" ] || return 0
   case "$pin" in
-    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy|devin|commandcode|polytoken|cortex|hermes)
+    claude|pi|cursor|omp)
       printf '%s\n' "$pin"
       ;;
     *)
@@ -466,12 +324,11 @@ supervision_primary_pin() {
 # process tree, so a structural (comm) ancestor of a DIFFERENT harness wins.
 #   - No ancestry match: the marker is the only evidence there is.
 #   - No marker: ancestry is the only evidence there is.
-#   - Same family: keep the marker's verdict, which is the more specific one
-#     (pi-signed, which ancestry can only see as pi).
+#   - Same harness: the marker and ancestry agree.
 #   - Different harness, structural ancestor: ancestry wins. This is what stops
 #     an inherited or multiplexer-retained CLAUDECODE from renaming a markerless
-#     codex, opencode, kimi, or muse session, and symmetrically stops a retained
-#     CURSOR_AGENT from renaming a claude worker nested under cursor.
+#     session, and symmetrically stops a retained CURSOR_AGENT from renaming a
+#     claude worker nested under cursor.
 #   - Different harness, interpreter-args ancestor only: the marker wins, because
 #     a harness-shaped path in some node process's arguments is weaker evidence
 #     than a harness publishing its own identity.
@@ -495,6 +352,25 @@ detect_own() {
     return
   fi
   if [ "$strength" = comm ]; then echo "$harness"; else echo "$marker"; fi
+}
+
+# Harnesses removed from the opinionated stack, and the kept worker set.
+# Every selection boundary refuses a removed name loudly, naming the removed
+# option, never silently defaulting or reinterpreting it onto a kept adapter.
+FM_HARNESS_REMOVED="codex opencode pi-signed grok kimi gemini muse rovo agy devin commandcode polytoken cortex kiro hermes"
+FM_HARNESS_KNOWN="claude pi cursor omp"
+
+fm_harness_removed() {  # <name>
+  case " $FM_HARNESS_REMOVED " in *" $1 "*) return 0 ;; esac
+  return 1
+}
+
+fm_harness_refuse_removed() {  # <name> <source>
+  if fm_harness_removed "$1"; then
+    echo "error: harness '$1' ($2) was removed from the opinionated stack; the supported worker harnesses are: $FM_HARNESS_KNOWN" >&2
+    return 0
+  fi
+  return 1
 }
 
 # Resolve the effective crewmate harness: config/crew-harness (a bare adapter
@@ -676,11 +552,11 @@ validate_native_effort() {
   local harness=${1:-} model=${2:-} effort=${3:-}
   [ "$effort" = ultra ] || return 0
   case "$harness" in
-    pi|pi-signed)
+    pi)
       case "$model" in codex-native/?*) return 0 ;; esac
       ;;
   esac
-  echo "error: ultra effort requires pi or pi-signed with an explicit codex-native/<model> model" >&2
+  echo "error: ultra effort requires pi with an explicit codex-native/<model> model" >&2
   return 1
 }
 
@@ -703,8 +579,16 @@ case "${1:-}" in
     [ "$#" -eq 0 ] || shift
     harness_ancestry_descent "$descent_pid" ${1+"$@"}
     ;;
-  crew) resolve_crew ;;
-  secondmate) resolve_secondmate "${2:-}" ;;
+  crew)
+    resolved=$(resolve_crew) || exit
+    fm_harness_refuse_removed "$resolved" "config/crew-harness" && exit 1
+    printf '%s\n' "$resolved"
+    ;;
+  secondmate)
+    resolved=$(resolve_secondmate "${2:-}") || exit
+    fm_harness_refuse_removed "$resolved" "config/secondmate-harness" && exit 1
+    printf '%s\n' "$resolved"
+    ;;
   secondmate-model) resolve_secondmate_model "${2:-}" ;;
   secondmate-effort) resolve_secondmate_effort "${2:-}" ;;
   *) detect_own ;;

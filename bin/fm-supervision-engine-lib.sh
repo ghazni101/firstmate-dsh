@@ -55,7 +55,7 @@ FM_SUPERVISION_ENGINES_VERIFIED='claude'
 fm_supervision_host_primary() {
   if [ "${FM_TEST_SEAM:-}" = 1 ]; then
     case "${FM_TEST_HARNESS:-}" in
-      claude | codex | opencode | pi | pi-signed | grok | kimi | cursor | gemini | muse | rovo | omp | agy | devin | commandcode | polytoken | cortex | hermes | unknown)
+      claude | pi | cursor | omp | unknown)
         printf '%s\n' "$FM_TEST_HARNESS"
         return
         ;;
@@ -176,7 +176,7 @@ fm_supervision_host_attended_ready() {
 fm_supervision_host_outcomes_drained() {
   local primary
   primary=$(fm_supervision_host_primary)
-  case "$primary" in pi|pi-signed) return 1 ;; esac
+  case "$primary" in pi) return 1 ;; esac
   fm_supervision_host_enabled "$1" "$primary"
 }
 

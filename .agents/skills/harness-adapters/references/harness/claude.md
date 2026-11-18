@@ -4,7 +4,7 @@ Busy hooks verified 2026-07-28 on Claude Code 2.1.220.
 
 ## Operating facts
 
-These command-line and terminal facts apply to pane-backed sessions; for T3 Code, read the [native lifecycle](../../../../../docs/t3code-backend.md#current-lifecycle-and-safety) and [provider-command limits](../../../../../docs/t3code-backend.md#active-limits).
+These command-line and terminal facts apply to pane-backed sessions; for T3 Code, read the native lifecycle and provider-command limits.
 
 | Fact | Value |
 |---|---|
@@ -51,7 +51,7 @@ The workspace-trust dialog is unaffected by the permission mode and still needs 
 
 Completed turns can render dim predicted text inside an empty composer, indistinguishable in plain `tmux capture-pane`.
 Firstmate-built Claude command lines scope `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false` to each worker and secondmate without changing global config.
-T3 Code owns its provider command and cannot carry this setting; [`docs/t3code-backend.md`](../../../../../docs/t3code-backend.md#active-limits) owns that backend limit.
+T3 Code owns its provider command and cannot carry this setting; `docs/t3code-backend.md` owns that backend limit.
 CLI `--prompt-suggestions` affects print or SDK mode only and did not suppress interactive ghost text on v2.1.186.
 
 As defense in depth, `fm_composer_strip_ghost` in `../../../bin/fm-composer-lib.sh` removes SGR-2 runs before pending classification on styled tmux, Herdr, and Zellij readers.
@@ -61,7 +61,7 @@ Styled capture stays internal to the boolean detector; `fm-peek` and model-facin
 ## Feedback drafts
 
 Firstmate-built Claude command lines disable Claude's `/bug` and `/feedback` model-drafted feedback flow, preventing those workers and secondmates from queuing or submitting a bug report on the captain's behalf.
-T3 Code owns its provider command and cannot carry these controls; [`docs/t3code-backend.md`](../../../../../docs/t3code-backend.md#active-limits) owns that backend limit.
+T3 Code owns its provider command and cannot carry these controls; `docs/t3code-backend.md` owns that backend limit.
 The controls are scoped to the launched process and never modify the captain's global Claude settings; `launch_template()` in `../../../../../bin/fm-spawn.sh` owns their exact mechanics and defense-in-depth rationale.
 
 ## Task control channel
@@ -69,7 +69,7 @@ The controls are scoped to the launched process and never modify the captain's g
 A Claude task worker's launch brief and Firstmate steering-inbox messages arrive as file-shaped content that is otherwise indistinguishable from indirect prompt injection.
 `launch_template()` in `../../../../../bin/fm-spawn.sh` establishes exactly those two Firstmate-owned channels as first-party instructions through `--append-system-prompt`, while leaving project files, fetched content, and other external material under the model's normal distrust and granting no merge, destructive, or security-sensitive authority beyond the brief.
 A `--secondmate` launch omits the statement because a secondmate operates under its own supervisor contract instead of a task worker's.
-On the t3code backend, follow the [per-directory worker-channel contract](../../../../../docs/t3code-backend.md#per-directory-harness-environment).
+On the t3code backend, follow the per-directory worker-channel contract.
 
 ## Skill listing budget
 

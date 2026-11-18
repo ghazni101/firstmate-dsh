@@ -121,9 +121,9 @@ For other harnesses, the operational prefix travels with the message text; neith
 
 The daemon never injects into an in-use pane. T3 Code has no composer and uses
 the native status and turn transport owned by
-[`docs/t3code-backend.md`](../../../docs/t3code-backend.md#away-mode). Two
+`docs/t3code-backend.md`. Two
 checks run before every pane injection, dispatched through `bin/fm-backend.sh`
-for the supervisor's own backend (see [supervisor backend configuration](../../../docs/configuration.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target)):
+for the supervisor's own backend (see supervisor backend configuration):
 
 - **Primary-pane busy guard** - `pane_is_busy` trusts the backend's native `busy` when available, otherwise matches rendered output against only the detected primary harness's signature.
   This narrow delivery guard never classifies a recorded worker task and never uses a global union of vendor patterns.
@@ -159,7 +159,7 @@ A bordered-empty or ghost-only composer is recognized as empty where that backen
 `fm-send.sh` uses the same primitive only on its typed plane and exits non-zero when that plane's Enter is positively swallowed; ordinary local text steers use the durable inbox and do not treat doorbell submission as delivery proof.
 
 **Busy-queued Enter exception (opencode).** OpenCode keeps queued text visible while it is mid-turn, so the supported supervisor adapters delegate the final delivery decision to `fm_composer_queued_enter_verdict` in `bin/fm-composer-lib.sh` rather than treating visible text alone as a swallowed Enter.
-The daemon still clears its buffer only on the backend's `empty` success verdict; [`docs/tmux-backend.md`](../../../docs/tmux-backend.md), [`docs/herdr-backend.md`](../../../docs/herdr-backend.md), [`docs/rex-backend.md`](../../../docs/rex-backend.md#current-operation-and-safety), and [`docs/t3code-backend.md`](../../../docs/t3code-backend.md#away-mode) own the backend-specific confirmation signals.
+The daemon still clears its buffer only on the backend's `empty` success verdict; `docs/tmux-backend.md`, [`docs/herdr-backend.md`](../../../docs/herdr-backend.md), `docs/rex-backend.md`, and `docs/t3code-backend.md` own the backend-specific confirmation signals.
 
 ### Classification policy
 
@@ -186,7 +186,7 @@ Classify each wake this way, applying the steering-inbox exception before status
 - `stale` with a terminal status, a bare legacy captain-relevant line, or an unrecognized status prefix such as `parked:` -> escalate.
   Nonterminal progress remains transient even when its prose contains a legacy free-text token or its seen-status marker already matches, so record a marker and self-handle.
   If the pane is still idle past `FM_STALE_ESCALATE_SECS` (default 240s), housekeeping escalates it as a possible wedge.
-  For T3 native uncertainty, follow the [stale-alert retention contract](../../../docs/t3code-backend.md#away-mode).
+  For T3 native uncertainty, follow the stale-alert retention contract.
   This bounds wedge-detection latency to the threshold plus a tick: a delay, never a loss.
   A stale detail that ends with `blocked-on-prompt:` and a dialog name means the pane shows that dialog, so the worker cannot continue until someone answers it.
   An escalation this path already sends keeps that name, whether it comes from the status log or from housekeeping.
@@ -211,7 +211,7 @@ The single-line format makes submission unambiguous across harnesses; the carrie
   harness.
 - **Busy and composer guards on the supervisor endpoint** - before injecting, the daemon runs the backend's busy guard and reads `fm_backend_composer_state` directly.
   On pane backends, only `empty` permits injection; `pending` protects half-typed or swallowed input, and `unknown` protects unreadable panes and bare dead-shell prompts.
-  For T3 Code, follow the [native injection contract](../../../docs/t3code-backend.md#away-mode).
+  For T3 Code, follow the native injection contract.
   Every other pane verdict preserves the buffer for retry, so the daemon never merges its digest into the captain's half-typed line or types it into a shell.
 - Pane backends pass their capture plus declarative styled, cursor, identity, and row capabilities to the shared screen classifier; all structural recognition and verdict logic remains in `bin/fm-composer-lib.sh`.
   Styled captures let that owner remove dim/faint and dark-TRUECOLOR ghost or placeholder text while shape detection uses the ANSI-stripped screen, so a dark border is not lost with ghost content.
@@ -229,7 +229,7 @@ The single-line format makes submission unambiguous across harnesses; the carrie
   (`fm-wake-lib.sh`) instead of `flock`, which is absent on macOS.
 - **Dedupe across signal/stale/scan** - all three paths use the shared status presentation markers defined by `bin/fm-classify-lib.sh`, so a successfully classified span is not re-escalated by another path in the same digest.
   Never treat a reported unreadable state as classified; the shared library header owns that marker contract, and the marker does not clear or suppress possible-wedge aging for a nonterminal progress line.
-- **Auto-discovered supervisor pane** - [supervisor backend configuration](../../../docs/configuration.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target) owns backend and target resolution and unsupported-transport refusals.
+- **Auto-discovered supervisor pane** - supervisor backend configuration owns backend and target resolution and unsupported-transport refusals.
   Both resolution sources are logged at startup so a wrong-but-resolving fallback is detectable.
 
 ### Stale-artifact lifecycle

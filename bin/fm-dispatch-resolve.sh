@@ -378,13 +378,10 @@ rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provi
   def effort_ok($h; $m; $e):
     if $e == null then true
     elif ($e | type) != "string" then false
-    elif $e == "ultra" then (($h == "pi" or $h == "pi-signed") and (($m | type) == "string") and ($m | startswith("codex-native/")) and ($m | length) > 13)
+    elif $e == "ultra" then ($h == "pi" and (($m | type) == "string") and ($m | startswith("codex-native/")) and ($m | length) > 13)
     elif $h == "claude" then (["low","medium","high","xhigh","max"] | index($e)) != null
-    elif $h == "codex" then ((["low","medium","high","xhigh"] | index($e)) != null or ($e == "max" and $m == "gpt-5.6-luna"))
-    elif $h == "grok" or $h == "agy" then (["low","medium","high"] | index($e)) != null
-    elif $h == "pi" or $h == "pi-signed" or $h == "omp" or $h == "muse" then (["low","medium","high","xhigh","max"] | index($e)) != null
-    elif $h == "rovo" then (["low","medium","high","max"] | index($e)) != null
-    elif $h == "opencode" or $h == "kimi" or $h == "cursor" then false
+    elif $h == "pi" or $h == "omp" then (["low","medium","high","xhigh","max"] | index($e)) != null
+    elif $h == "cursor" then false
     else true end;
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
   def floor_bad($f; $need_provider):

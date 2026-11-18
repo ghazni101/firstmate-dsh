@@ -33,13 +33,12 @@ For recovery and control, use the exact `harness=` in `state/<id>.meta`; never i
 Deliver lifecycle actions only through `../../../bin/fm-control.sh <task-id> interrupt|exit|relaunch`.
 Never type an interrupt key or exit command through `fm-send`, where routing-marked lifecycle text becomes chat.
 Trust handling is complete only when inspection proves the target started processing its instructions; delivery success alone is not proof.
-Muse, Gemini, Devin, Command Code, Polytoken, Cortex, Kiro, and Hermes are verified only for crewmate and scout work, never a secondmate or primary.
+A removed harness is refused at every config and flag boundary by `bin/fm-harness.sh`; never dispatch on an unverified adapter.
 
 ## Detection
 
 `../../../bin/fm-harness.sh` prints firstmate's own harness from verified environment markers and process ancestry, and owns how they combine.
 A marker names its harness, but a structural ancestor of a different harness outranks it, because a marker is ordinary environment state a child or a multiplexer can retain while ancestry is what proves who owns the process tree.
-Only `FM_PI_HARNESS=pi-signed` at the launch boundary together with `PI_CODING_AGENT=true` selects Pi-signed; shared unmarked launcher ancestry remains Pi.
 omp publishes no marker of its own; `FM_OMP_HARNESS=omp` is Firstmate's launch marker and the anchored identity in `bin/fm-omp-process-lib.sh` (process name `omp`, or `bun` running the omp launcher) is its ancestry evidence, as `references/harness/omp.md` records.
 `../../../bin/fm-spawn.sh` owns worker marker establishment, while the README launch command owns the signed-primary boundary.
 `../../../bin/fm-harness.sh crew` resolves `config/crew-harness`, where absent or `default` means firstmate's own harness.
@@ -52,7 +51,6 @@ A new adapter's verified marker and command name must land in `../../../bin/fm-h
 Every emitted plan appends the selected or recorded harness reference after the named common references.
 The `harness-adapter-routing-v1` object is the machine-readable and human-visible selection contract: choose the operation, choose the scenario within it, then append the selected harness reference.
 `default` is the normal scenario when no narrower scenario applies.
-Kimi establishes its unsupported primary boundary in its selected harness reference; Muse and Gemini follow Non-negotiable safety above.
 A new tool remains undispatchable until the `verify` plan, its harness entry, every named owner, and the live checks land.
 
 ```json harness-adapter-routing-v1
@@ -82,24 +80,9 @@ A new tool remains undispatchable until the `verify` plan, its harness entry, ev
   },
   "harnesses": {
     "claude": "references/harness/claude.md",
-    "codex": "references/harness/codex.md",
-    "opencode": "references/harness/opencode.md",
-    "pi": "references/harness/pi.md",
-    "pi-signed": "references/harness/pi.md",
-    "grok": "references/harness/grok.md",
-    "kimi": "references/harness/kimi.md",
     "cursor": "references/harness/cursor.md",
-    "gemini": "references/harness/gemini.md",
-    "muse": "references/harness/muse.md",
-    "rovo": "references/harness/rovo.md",
     "omp": "references/harness/omp.md",
-    "agy": "references/harness/agy.md",
-    "devin": "references/harness/devin.md",
-    "commandcode": "references/harness/commandcode.md",
-    "polytoken": "references/harness/polytoken.md",
-    "cortex": "references/harness/cortex.md",
-    "kiro": "references/harness/kiro.md",
-    "hermes": "references/harness/hermes.md"
+    "pi": "references/harness/pi.md"
   }
 }
 ```

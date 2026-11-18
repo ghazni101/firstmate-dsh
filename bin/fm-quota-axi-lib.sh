@@ -32,8 +32,7 @@ FM_QUOTA_PROVIDER_ID_RE='^[a-z0-9]+(-[a-z0-9]+)*\z'
 # shellcheck disable=SC2016,SC2034  # jq program text, not shell expansion; read by the sourcing consumers
 FM_QUOTA_ROW_JQ='
   def quota_lane($harness; $model):
-    if $harness == "codex" then "codex-home"
-    elif ($harness == "pi" or $harness == "pi-signed") and (($model // "") | contains("/"))
+    if $harness == "pi" and (($model // "") | contains("/"))
     then ($model | split("/") | first | if . == "codex-native" then "codex-home" else . end)
     else "" end;
   def quota_row($snapshot; $provider; $lane):
@@ -147,12 +146,7 @@ fm_quota_json_valid() {
 fm_quota_single_provider_table() {
   printf '%s\n' \
     'claude claude' \
-    'codex codex' \
-    'grok grok' \
-    'kimi kimi' \
-    'cursor cursor' \
-    'agy agy' \
-    'muse meta'
+    'cursor cursor'
 }
 
 # Reads the whole table before answering: leaving the loop early closes the
@@ -177,13 +171,8 @@ fm_quota_provider_for_harness() {
       esac
       ;;
     claude)       printf 'claude\n' ;;
-    codex)        printf 'codex\n' ;;
-    opencode)     printf 'codex\n' ;;
-    pi|pi-signed) printf 'pi\n' ;;
-    grok)         printf 'grok\n' ;;
-    kimi)         printf 'kimi\n' ;;
+    pi)           printf 'pi\n' ;;
     cursor)       printf 'cursor\n' ;;
-    muse)         printf 'meta\n' ;;
     *)            return 1 ;;
   esac
 }
