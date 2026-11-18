@@ -389,6 +389,9 @@ dsh-plugin/
   src/scripts.js        bound script runner (FM_HOME pinned, marker set, timeouts)
   src/transport.js      follow-up delivery helper
   src/reconcile.js      one reconciliation tick (observe, select, lease-then-act)
+  src/delivery.js       typed per-PR/per-task delivery decision caller
+  src/engine-records.js durable engine records, routing batches, escalation store
+  src/engine.js         per-session engine host (fork, ticks, wake, close)
   src/errors.js         one refusal/exit-code space for the lease and the CLI
   bin/fm-lease.mjs      the lease CLI
   bin/fm-reconcile.mjs  the per-home loop CLI (--once / --loop)
@@ -403,6 +406,7 @@ Feature flags:
 | plugin row `config.enabled` | `false` | Registers nothing; the plugin is inert. |
 | `<home>/config/dsh-native` | absent | Enables tools and native lease use for that home. |
 | `<home>/config/dsh-native-lease` | absent | Phase 2: enforces lease guards inside `bin` scripts. |
+| `<home>/config/dsh-engine` | absent | Enables the per-interactive-session supervision engine (section 6.8). |
 
 The prior bundle `@local/dsh-plugin-firstmate` v0.3.0 stays installed and linked until phase 3
 replaces its transport. Both bundles are installed in the `web` profile. The native surface
@@ -453,6 +457,13 @@ when the call names a home other than the session's. None takes a lease, because
 | `firstmate_native_reconcile` | (in-process loop tick) | One reconciliation tick; dry-run by default, `apply` executes authored rules under leases, `hint` delivers a follow-up when captain attention is needed. |
 | `firstmate_native_start` | `fm-fleet-snapshot.sh`, `fm-inbox.sh`, lease directory | Read-only native startup input: identity, readiness, backlog/task summary, held leases, and queued durable wakes. Never runs session-start and never mutates anything. |
 | `firstmate_native_delivery` | `fm-delivery.sh` | Resolve, read, write, clear, or list a per-PR/per-task delivery decision (no-mistakes vs direct delivery). Task-scoped writes hold the task lease. Owned by [`delivery-decisions.md`](delivery-decisions.md). |
+| `firstmate_native_engine_inbox` | (engine records) | **Engine only.** Read and acknowledge this engine's durable traffic batches. |
+| `firstmate_native_escalate` | (engine record + `ctx.subagents.sendMessage`) | **Engine only.** Record and deliver one captain-relevant outcome into its own parent session (section 6.11). |
+
+A supervision engine child (section 6.8) resolves the read-only fleet tools, the lease, the
+guarded command channel, the reconciliation tick, its inbox, and escalation. Ordinary subagents,
+deeper subagent forks, and unmatched children are refused. `firstmate_native_start` and
+`firstmate_native_delivery` remain interactive-session-only.
 
 Shape of every result:
 
@@ -617,6 +628,154 @@ Event hints are latency only:
 8. Expired, fenced, or unreadable lease state fails toward "do not write", not toward
    "assume it is mine".
 
+### 6.8 Engine session per interactive session
+
+An interactive root session can carry one headless **engine**: a durable DSH child session whose
+only job is to absorb routine supervision traffic so the interactive conversation only receives
+captain-relevant outcomes. It is the native equivalent of the Claude Code home's separate
+supervision host.
+
+- **One engine per root session, at most.** The plugin writes one durable engine record per
+  parent session. A second host for the same session adopts or replaces that record; it never
+  runs two live engines for one parent.
+- **Exact lineage.** The engine is created through `ctx.subagents.startActivation` with the
+  in-process `fork` provider, `delivery: 'caller'`, and the interactive agent as `parent`. The
+  child's header therefore carries `origin: 'subagent'`, `delegationDepth: 1`, and
+  `parentSession` equal to that interactive session. The composition must register the
+  in-process fork backend under the provider name `fork`; if it is missing, creation records
+  an actionable failure and never touches the parent.
+- **Seeded once.** The `fork` provider seeds the child with the parent's completed-turn prefix
+  through the last `turn/end`; the in-flight turn is never seeded. The prefix is captured at
+  creation and becomes part of the child's own durable transcript, so a later cold resume
+  replays that prefix instead of re-forking newer parent history. A resumed interactive
+  session (`resume`/`clear`/`compact`) marks its old engine superseded and gets a fresh engine
+  forked from its then-completed turns on the next tick.
+- **Lazy.** Creation waits for the session's first supervision need: a task it claims through
+  the lease tool or dispatches through the guarded run channel. The first tick after that need
+  creates the fork, so the dispatch turn is already completed and available to the seed. A
+  quiet session with no engine creates none and costs nothing.
+- **Marker.** DSH exposes no plugin-writable custom session metadata. The explicit marker is
+  the plugin's durable record, written with status `creating` immediately before the child is
+  started and matched against the child's own lineage. Ordinary subagents, deeper
+  subagent-forked sessions, and children whose id does not match a live record stay refused.
+- **Gating and route.** `<home>/config/dsh-engine` opts the home in; absent means off. The
+  engine's model and effort come from the home's own `config/crew-dispatch.json` `default`
+  profile, translated to DSH `agentOptions` (`provider`, `model`, `reasoningEffort`); with no
+  default profile declared, the fork inherits the interactive session's route. A malformed
+  dispatch default is an actionable tick error, never a silent parent-route fallback.
+
+Records live under the home's state:
+
+```text
+$FM_HOME/state/engines/<parent>.json               engine identity, status, model, last seen map
+$FM_HOME/state/engines/<parent>.inbox.json         routine traffic batches routed to the engine
+$FM_HOME/state/engines/<parent>.escalations.json   engine-to-parent escalations and delivery state
+```
+
+### 6.9 Engine tool surface
+
+The engine sees only the engine surface:
+
+| Tool | Engine use |
+| --- | --- |
+| `firstmate_native_status`, `firstmate_native_tasks`, `firstmate_native_inbox` | Read durable fleet state. |
+| `firstmate_native_lease` | Acquire, renew, release, inspect, or reap task leases under the engine's own owner label. |
+| `firstmate_native_run` | The guarded command channel; a mutating run holds that task's lease. |
+| `firstmate_native_reconcile` | One authored reconciliation tick under task leases. |
+| `firstmate_native_engine_inbox` | Read and acknowledge this engine's durable traffic batches. |
+| `firstmate_native_escalate` | Record and deliver one captain-relevant outcome into its own parent session. |
+
+`firstmate_native_start` and `firstmate_native_delivery` stay interactive-session-only. Engine
+tools never address the captain: an escalation is the only channel into the interactive
+session, and it is wrapped by the plugin rather than authored as captain chat. An engine may
+mutate a task only while holding that task's lease; contention with its own parent session or
+another session's engine is a normal refusal, not an error.
+
+### 6.10 Notification routing and cost
+
+The plugin runs one deterministic loop per engine host:
+
+1. **Tick inputs.** An interval tick plus a debounced `fs.watch` signal on the home's
+   `state/` directory for `.status` and `.meta` appends. Signal delivery is latency only.
+2. **Observe.** `fm-fleet-snapshot.sh --json` through the existing reader. Its task rows already
+   carry the classification output of `bin/fm-classify-lib.sh`: `pending_decision`,
+   `blocked_event`, `open_decisions`, the classified last verb, and the captain-hold projection.
+3. **Classify coarsely.** Only those existing fields are read; the plugin never re-implements
+   status verbs or hold policy. An event is tagged `captain` when a reader already marked it
+   pending, blocked, open, captain-actionable, or a terminal outcome; otherwise `routine`.
+4. **Diff.** The engine record stores the last task-signature map. Only added or changed tasks
+   become a batch; an unchanged fleet produces no message.
+5. **Route.** One batch per tick is appended to the engine inbox, then delivered with
+   `ctx.subagents.sendMessage(parentAgent, engineSession, …)`, which wakes a live engine or
+   cold-resumes a dormant one. When the engine is being created, the batch is written before
+   the fork starts and the creation prompt points at it, so the bootstrap turn can never race
+   an empty inbox.
+
+A tick consumes **no model turn**. The engine wakes only for an actual batch or a due
+escalation retry, so a quiet fleet costs nothing. The engine's own turn is where judgment
+happens; it re-derives every decision from durable records rather than trusting the batch text.
+
+### 6.11 Escalation record and delivery
+
+`firstmate_native_escalate` is the engine's only path into captain-facing conversation:
+
+1. The plugin writes a durable escalation record under
+   `state/engines/<parent>.escalations.json` **before** attempting delivery.
+2. It delivers with `ctx.subagents.sendMessage(engineAgent, parentSessionId, …)`, the same-tree
+   cross-session steer an engine is allowed to use toward its own parent. The message is
+   wrapped in a stable engine-escalation tag; the engine's outcome is the body.
+3. Identical outcomes deduplicate: the id is derived from the parent session and an explicit
+   `key`, or from the task and outcome text. A duplicate that is still undelivered retries
+   delivery instead of appending a second record.
+4. Delivery failure is recorded with a bounded exponential backoff. The next deterministic
+   tick includes due, un-nudged escalations in the next batch and instructs the engine to
+   retry them by `retry_id`. A nudge throttle (one window per escalation) prevents a wake loop
+   when an engine repeatedly fails to deliver. A lost wake therefore recovers from durable
+   state, and a flapping engine does not wake itself forever.
+5. An engine can only target its own `parent_session`; the tool takes no target argument.
+
+### 6.12 Engine lifecycle and failure
+
+- **Creation failure** writes a `crashed` record with the error and never touches the parent;
+  the next tick retries.
+- **Crash detection.** The host follows its activation's result. A settled turn is normal
+  (the manager releases the activation and a later `sendMessage` cold-resumes it). A failed
+  turn or a rejected wake marks the record `crashed` and releases any live activation.
+- **Recovery.** The next tick sees a non-live record and creates a fresh fork from the
+  parent's then-completed turns. The parent session, its leases, and every worker are
+  untouched.
+- **Parent end.** `agent/disposed` on the interactive session stops the tick and marks the
+  engine record `closed`; the engine is disposed if it is still live. The parent is never
+  disposed, reset, or steered by engine cleanup.
+- **Resume.** A resumed interactive session supersedes its previous engine record before the
+  host starts, so the next fork reflects the resumed history.
+- **Foreign owner.** If a record still names a live different process, the tick skips it
+  rather than forking a second engine for that session.
+- **Plugin unload.** Timers and watchers stop and live activations are disposed without marking
+  the record terminal, so an in-process reload adopts the same durable engine.
+
+### 6.13 Parallel-session invariants
+
+1. N interactive sessions in one home may each run their own engine. Engines are peers under
+   the unchanged per-task lease; none holds fleet-wide authority.
+2. Every task mutation stays behind that task's lease. Two engines contending for one task
+   produce exactly one winner; the loser sees an ordinary contention refusal.
+3. An engine may never take a task its own interactive session holds, or one another session's
+   engine holds. The owner label is the engine session id, so the lease resolves it.
+4. Duplicate observation is safe. Each engine may read the same fleet snapshot; every decision
+   is re-derived from durable records, so a second engine's identical read changes nothing.
+5. An engine observes for its own parent only and escalates only into that parent's session.
+   There is no cross-parent escalation channel.
+6. Engines never address the captain and never appear as backlog owners or fleet-wide actors.
+7. Merge authority and delivery rigor are still resolved per task; being an engine grants
+   nothing extra.
+8. Engine records, inboxes, and escalation stores are per parent, so one session's engine
+   cannot read or corrupt another's traffic.
+9. The deterministic tick is model-free; the engine model wakes only for judgment or an
+   escalation retry. A quiet fleet costs no turns.
+10. Retirement of the single-owner machinery remains gated as in phase 5; this mechanism adds
+    no fleet-wide owner and no new shared lock.
+
 ## 7. Strangler phases
 
 Each phase is independently shippable, keeps the old path working, and has a rollback (the
@@ -737,6 +896,10 @@ temporary home created by `mkdtemp`:
 - Tools: registration gated by `enabled`, refusal outside an opted-in home, fixed allowlist,
   bounded output, JSON shaping.
 - Transport: message shape, dedupe, claim/discard clearing.
+- Engine: completed-turn seed boundary, durable record marker and lineage gating, tool-surface
+  gating for an engine versus an ordinary subagent, inbox batching, escalation delivery and
+  dedupe, tick-driven retry, two-engine contention, crash recreation, parent-end close, and a
+  quiet tick creating nothing.
 
 Integration tests (phase 1+) mint a disposable home with `bin/fm-lab-home.sh` and never touch
 the real fleet. The gate-refusal library keeps lab enforcement separate from the live fleet.
@@ -752,6 +915,10 @@ These are implementation choices this page makes; none reopens a settled decisio
    identity.
 5. The plugin ships inert (`enabled: false` plus a per-home marker) rather than replacing
    the old bundle by default.
+6. The engine child's explicit marker is the plugin's durable engine record matched against the
+   child's `origin`/`delegationDepth`/`parentSession`, because DSH exposes no plugin-writable
+   custom session metadata. The record is written with status `creating` before the child
+   exists, so its first tool call already resolves the engine surface.
 
 If any of these should be decided differently, record it in the handoff page's decision log
 before the phase that depends on it.

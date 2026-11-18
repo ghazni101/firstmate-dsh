@@ -1,0 +1,32 @@
+name: CI
+
+# Minimal Forgejo/Gitea Actions CI for this repository's self-hosted runner.
+# GitHub-compatible syntax; no other hosted CI exists for this fork.
+# Every pull request and every push to main gets one real check: the canonical
+# lint gate (ShellCheck plus pinned actionlint) and the DSH plugin tests.
+# Live, network, harness-token, Herdr, and fleet suites stay out: they need a
+# firstmate home and machine-local state this workflow does not have.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-plugin-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned lint tools
+        run: |
+          set -eu
+          tools="${RUNNER_TEMP:-/tmp}/bin"
+          mkdir -p "$tools"
+          bin/fm-install-shellcheck.sh "$tools"
+          bin/fm-install-actionlint.sh "$tools"
+          printf '%s\n' "$tools" >> "$GITHUB_PATH"
+      - name: Lint
+        run: bin/fm-lint.sh
+      - name: Plugin tests
+        run: cd dsh-plugin && node --test test/*.test.mjs

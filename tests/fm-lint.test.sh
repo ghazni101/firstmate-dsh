@@ -2,7 +2,7 @@
 # Parity guard for firstmate's shell-lint definition.
 #
 # bin/fm-lint.sh is the single owner invoked by CI
-# (.github/workflows/ci.yml) and by the pre-push gate (.no-mistakes.yaml
+# (.forgejo/workflows/ci.yml) and by the pre-push gate (.no-mistakes.yaml
 # commands.lint). CI and the local gate deliberately select different roots;
 # bin/fm-lint.sh owns their analysis modes, memory fallback, configuration,
 # and tool versions.
@@ -796,11 +796,11 @@ test_changed_mode_hides_cross_file_codes_that_ci_still_sees() {
   local tmp fakebin diff_file fixture out rc test_root lint
   tmp=$(fm_test_tmproot fm-lint-local-exclude-behavior)
   test_root="$tmp/repo"
-  mkdir -p "$test_root/bin/backends" "$test_root/tests" "$test_root/.github/workflows"
+  mkdir -p "$test_root/bin/backends" "$test_root/tests" "$test_root/.forgejo/workflows"
   lint="$test_root/bin/fm-lint.sh"
   cp "$LINT" "$lint"
   cp "$ROOT/bin/fm-lint-workflows.sh" "$test_root/bin/"
-  cp "$ROOT"/.github/workflows/* "$test_root/.github/workflows/"
+  cp "$ROOT"/.forgejo/workflows/* "$test_root/.forgejo/workflows/"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$test_root/bin/backends/noop.sh"
   fixture="$test_root/tests/fm-lint-local-exclude-fixture.test.sh"
   cat > "$fixture" <<'SH'
@@ -1887,7 +1887,7 @@ test_sidecar_result_exit_reflects_final_status() {
   log="$tmp/shellcheck.log"
   telemetry="$tmp/lint.tsv"
   roots_log="$tmp/lint.roots.tsv"
-  mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests" "$tmp/repo/.github/workflows"
+  mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests" "$tmp/repo/.forgejo/workflows"
   cp "$LINT" "$tmp/repo/bin/fm-lint.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$tmp/repo/bin/fm-timeout-lib.sh"
   cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'

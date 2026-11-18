@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034 # Output parameters and mode tables are read by bin/fm-delivery.sh and bin/fm-spawn.sh.
 # fm-delivery-lib.sh - per-PR (and per-task) delivery decisions.
 #
 # WHY. Firstmate resolves a task's delivery mode (no-mistakes | direct-PR |

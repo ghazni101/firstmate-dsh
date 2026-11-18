@@ -30,8 +30,49 @@ the twelve settled decisions in
   `bin/fm-lease-lib.sh` routes `fm_lease_guard` / `fm_lease_forbid_branch` to
   `bin/fm-native-lib.sh`, so the existing mutating entrypoints enforce the DSH lease instead
   of the fleet lock. A mutation without a live token/session is refused.
+- **Supervision engine.** One headless, forked child session per interactive session absorbs
+  routine fleet traffic so the captain's conversation only receives captain-relevant outcomes.
+  The plugin's deterministic tick routes batches; the engine decides and escalates. Off by
+  default until a home creates `config/dsh-engine`.
 - **Native startup.** `firstmate_native_start` composes identity, readiness, backlog, lease,
   and wake-queue state without running `fm-session-start.sh` and without reading `state/.lock`.
+
+## Supervision engine
+
+`config/dsh-engine` in a home opts in. The plugin then gives each interactive root session at
+most one **engine**: a durable child session created with the in-process `fork` subagent
+provider, seeded once from that session's completed-turn prefix. It is created lazily after the
+session's first lease claim or task dispatch, so the dispatch turn is already part of the seed.
+A resumed session gets a fresh fork; an existing engine is never re-seeded with newer history.
+
+Durable state per parent session (under the home):
+
+```text
+state/engines/<parent>.json               engine identity, status, model, last seen map
+state/engines/<parent>.inbox.json         routine traffic batches routed to the engine
+state/engines/<parent>.escalations.json   escalations and their delivery state
+```
+
+The engine's model and effort come from the home's `config/crew-dispatch.json` `default`
+profile (`provider/model` is split into DSH `provider` and `model`). Its tool surface is only
+`firstmate_native_status`, `_tasks`, `_inbox`, `_lease`, `_run`, `_reconcile`,
+`_engine_inbox`, and `_escalate`. Ordinary subagents and deeper forks are refused.
+
+Routing is model-free until there is traffic: an interval tick plus a debounced state-file
+signal reads `fm-fleet-snapshot.sh --json`, diffs the task signatures already classified by
+`bin/fm-classify-lib.sh`, and sends at most one batch per tick through
+`ctx.subagents.sendMessage`. A quiet fleet consumes no model turn. The engine reads its inbox,
+decides what the captain must see, and calls `firstmate_native_escalate`. Escalations are
+written durably before delivery, deduplicate by key or task+outcome, and are retried by the
+next tick if delivery failed.
+
+Several interactive sessions in one home each get their own engine and their own records.
+They are peers under the unchanged per-task lease: two engines contending for one task produce
+exactly one winner, contention is a normal refusal, and duplicate observation is harmless
+because every decision is re-derived from durable records. An engine never escalates into
+another parent's session. Creating, closing, or crashing an engine never closes, resets, or
+steers its parent; a crashed engine is recreated by the next tick from the parent's
+then-completed turns.
 
 ## Wiring a native home
 
@@ -40,6 +81,7 @@ the twelve settled decisions in
 <home>/config/dsh-native-lease      # opt in to lease enforcement in bin/ entrypoints
 <home>/config/native-plugin-dir     # one line: this plugin package root, for bin/ callers
 <home>/config/native-loop.json      # the loop's authored rules (see below)
+<home>/config/dsh-engine            # opt in to one supervision engine per interactive session
 ```
 
 The plugin exports `FM_NATIVE_PLUGIN_DIR` to every script it runs, so `native-plugin-dir` is
@@ -95,6 +137,7 @@ instead of double-acting, and a loop that loses its lease stops writing.
 | Loader row `config.enabled` | `false` | Registers nothing. |
 | `<home>/config/dsh-native` | absent | Enables tools and the native surface for that home. |
 | `<home>/config/dsh-native-lease` | absent | Enforces the native lease in `bin/` entrypoints. |
+| `<home>/config/dsh-engine` | absent | Enables the per-session supervision engine. |
 
 ## Tests
 
@@ -106,8 +149,10 @@ node --test test/*.test.mjs
 Every test runs against temporary homes: lease protocol, bash adapter, native engine guard,
 tool surface, reconciliation loop, and the end-to-end chain (tick or channel → lease → real
 engine guard seam → mutation, including the holding lease session the channel exports),
-including concurrency, crash recovery, posture gating, and cross-home refusal. No live fleet,
-no network.
+including concurrency, crash recovery, posture gating, and cross-home refusal. The engine suite
+covers fork-seed boundaries, engine tool gating, escalation delivery and its durable record,
+deduplication, two-engine contention, crash recreation, parent-end close, and quiet-tick cost.
+No live fleet, no network.
 
 ## Engine compatibility
 

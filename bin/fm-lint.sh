@@ -17,8 +17,10 @@
 # Tests stop source analysis at imported production modules because CI analyzes
 # every production shell separately as a canonical, source-aware root.
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
-# malformed GitHub workflow, including a self-broken ci.yml, fails locally
-# before merge instead of only failing to run as CI.
+# malformed workflow under .github/workflows or .forgejo/workflows, including a
+# self-broken ci.yml, fails locally before merge instead of only failing to run
+# as CI. A checkout with neither directory is a pass, so a CI-less repository
+# still lints.
 #
 # With no explicit paths, the file set and source-following posture depend
 # on context:
@@ -469,7 +471,7 @@ fm_lint_usage() {
   ' "$SELF"
 }
 
-# Default no-args lint also validates GitHub workflows. Explicit paths stay a
+# Default no-args lint also validates CI workflows. Explicit paths stay a
 # ShellCheck-only override so callers can target one shell root.
 fm_lint_run_workflows() {
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0

@@ -9,10 +9,8 @@ We require this to reduce the maintainer's burden of reviewing and merging contr
 `no-mistakes` puts a local git proxy in front of your real remote.
 Pushing through it runs an AI-driven review/test/lint pipeline in an isolated worktree, forwards the push upstream only after every check passes, and opens a clean PR automatically.
 
-A GitHub Actions check (`Require no-mistakes`) runs on PRs targeting `main` and requires both the deterministic signature and a parseable structured attestation from no-mistakes v1.46.0 or newer.
-The attestation must bind to the current PR head commit and report the review, test, and document steps as completed, so a stale attestation, a missing `head_sha`, or a skipped required step fails.
-It evaluates every PR opening and body edit independently, reruns after head synchronization or reopening, and prevents a later edit from replacing an earlier pending compliance check.
-GitHub Actions and Dependabot are exempt so their automation keeps working, but other contributor PRs that do not satisfy the attestation contract will not be reviewed or merged.
+CI does not enforce that rule.
+The repository's only CI check proves a branch lints and its DSH plugin tests pass, so a maintainer checks the no-mistakes signature and attestation while reviewing the pull request.
 
 ## Workflow
 
@@ -30,44 +28,17 @@ GitHub Actions and Dependabot are exempt so their automation keeps working, but 
    Follow the installed no-mistakes version's SKILL.md and live `axi` help for gate mechanics.
 7. Once the pipeline passes, it pushes the branch to your fork and opens the PR against the parent repo for you.
 
-### The `full-ci` label
-
-CI on a pull request from an author without write access runs only the quick checks at first: `Test coverage guard`, `Repo invariants`, and the no-mistakes body check.
-Lint and the behavior suites wait for a maintainer, or the maintainer's fleet, to add the `full-ci` label when the pull request is picked up for review.
-Until then the `Full suite` check fails with a message naming the label; that is expected and needs no action from you.
-Adding the label runs the full suite, and every later push to that pull request runs it again.
-This keeps the repository's public CI within GitHub's limit on jobs running at once, while no-mistakes already reviews, tests, and lints your change locally.
-Pull requests from this repository's own branches or from authors with write access run the full suite without the label.
-
 See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/start-here/quick-start/) for the full first-run walkthrough.
 
 ## Agent-driven contributions
 
 Before dispatching an agent-driven contribution, follow the [Firstmate role and task-consent policy](docs/configuration.md#firstmate-role-configfirstmate-role); clone-and-run use alone grants no publication authority.
 
-## Maintaining required checks
-
-GitHub required checks are configured in the repository's existing main ruleset, not activated by committing workflow YAML.
-When applying this CI layout, preserve its existing pull-request, merge-method, linear-history, deletion, non-fast-forward, and administrator-bypass settings.
-Add required status checks with `strict_required_status_checks_policy: false`; a main update alone must not force a branch update and retest.
-Bind the checks to the GitHub Actions app already producing them, rather than accepting the same context from any integration.
-No new app installation or manual runner setup is needed for that setting.
-
-Require the actual job contexts: `Full suite`, `Lint 1`, `Lint 2`, `Test coverage guard`, `Repo invariants`, `Stock macOS Bash snapshot compatibility`, `Behavior portable parallel 1`, `Behavior portable parallel 2`, `Behavior portable serial 1` through `Behavior portable serial 10`, `Behavior tests (Herdr)`, `Behavior timing aggregate`, and `PR must be raised via no-mistakes`.
-The last name is the compliance job context, not its workflow title; its existing automation exceptions remain unchanged.
-The timing aggregate is not a substitute for individual jobs because it can succeed while collecting evidence from a failed run.
-The individual lanes skip on an outside pull request until it has the `full-ci` label, and a skipped job satisfies a required check, so `Full suite` must be required too: it fails until the label is on and whenever a lane failed or was cancelled.
-
-Apply the approved rule change only after the corresponding workflow is green and landed, confirming exact names and the Actions integration id from real checks first.
-Snapshot the current ruleset, amend that same rule with the authenticated GitHub API or settings UI, and read back both the ruleset and effective branch rules.
-Verify missing or red checks prevent ordinary merging without creating a test merge; administrator override intentionally remains available.
-Coordinate any workflow rollback with its required-check names so a retired check cannot leave ordinary merges waiting forever.
-
 ## Repo conventions
 
 - This repo is a template for running a firstmate orchestrator agent.
   [`AGENTS.md`](AGENTS.md) owns the supervisor contract, role boundary, and bundled firstmate skill triggers; `CLAUDE.md` is a real `@AGENTS.md` pointer to it, and `.claude/skills` is a symlink to `.agents/skills`.
-- Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, `.agents/skills/`, and `skills/`.
+- Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.forgejo/workflows/`, `bin/`, `.agents/skills/`, and `skills/`.
   `.agents/skills/` holds agent-loaded skills that assume a live firstmate home and carry `metadata.internal: true` so installers such as [skills.sh](https://skills.sh) hide them from discovery; `skills/` holds standalone, installer-facing public skills with no firstmate dependency (see the README's "Two-tier skill layout").
   `.claude/mods/` holds Claude Code mods, plugins whose behavior lives in one function-hooks module; each is reached through an `.agents/skills/<mod>` symlink because Claude Code adopts project plugins only from `.claude/skills`, carries no `SKILL.md` so every other harness's skill loader ignores that entry, and imports only files physically inside its own folder because Claude Code refuses anything else.
   A module may load through `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` or Claude Code's `tengu_plugin_hooks_modules` rollout flag, but the Calm mod activates only when `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` is exactly `1` and is otherwise a complete no-op; Firstmate never sets that variable in any settings file, and [`docs/calm.md`](docs/calm.md) owns the contract.
@@ -80,10 +51,11 @@ Coordinate any workflow rollback with its required-check names so a retired chec
   Each starts with a usage header comment; keep it accurate when you change behavior.
   Test scripts and helpers in `tests/` are plain bash too.
   `bin/fm-lint.sh` must pass: it is the single owner of the lint definition (the shellcheck file set, config, pinned shellcheck version, pinned actionlint workflow lint, and the backend-purity check rejecting direct Beads CLI calls in core `bin/` scripts).
-  CI uses its full canonical partitions; the no-mistakes pre-push gate uses its context-selected default.
-  `docs/fm-test-portable-shards.md` owns partition verification and performance evidence.
+  CI runs the full canonical set in one job; the no-mistakes pre-push gate uses its context-selected default.
+  `docs/fm-test-portable-shards.md` owns lane packing evidence.
   Its header and `--help` output own the exact local lint modes, file-set selection, and analysis flags.
-  A malformed `.github/workflows/*.yml`, including a self-broken `ci.yml`, fails that local lint path before merge because a broken workflow cannot report its own breakage.
+  A malformed workflow under `.github/workflows/` or `.forgejo/workflows/`, including a self-broken `ci.yml`, fails that local lint path before merge because a broken workflow cannot report its own breakage.
+  A checkout with neither directory lints cleanly, so a CI-less repository is a deliberate state rather than a lint failure.
   It pins one exact shellcheck version and one exact actionlint version and refuses to run under any other.
   Print the shellcheck pin with `bin/fm-lint.sh --required-version` and the actionlint pin with `bin/fm-lint-workflows.sh --required-version`.
   Use `bin/fm-install-shellcheck.sh` and `bin/fm-install-actionlint.sh` to install those exact builds locally; each installer's header owns its destination usage and supported platforms.
@@ -96,7 +68,7 @@ Coordinate any workflow rollback with its required-check names so a retired chec
 
 ## Development
 
-Tracked changes to firstmate itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, `.agents/skills/`, and `skills/` - ship through the `no-mistakes` pipeline on a feature branch and require an explicit merge approval.
+Tracked changes to firstmate itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.forgejo/workflows/`, `bin/`, `.agents/skills/`, and `skills/` - ship through the `no-mistakes` pipeline on a feature branch and require an explicit merge approval.
 Before making any such change, load the agent-only `firstmate-coding-guidelines` skill (`.agents/skills/firstmate-coding-guidelines/SKILL.md`).
 It has the knowledge-placement rules that keep `AGENTS.md` from regrowing after each diet pass.
 Firstmate adds this skill's load line to firstmate-repo briefs by hand; the [coding-guidelines skill](.agents/skills/firstmate-coding-guidelines/SKILL.md#trigger-hygiene) owns the scaffold's detection limits.
@@ -113,7 +85,7 @@ Check and test the toolbelt before pushing:
 
 ```sh
 while IFS= read -r script; do /bin/bash -n "$script" || exit; done < <(bin/fm-lint.sh --list-files)   # syntax-check the shell surface fm-lint.sh will cover (changed files locally, full set in CI/on main)
-bin/fm-lint.sh   # lint that shell surface plus GitHub workflows via pinned actionlint; the single owner CI and the no-mistakes gate both run
+bin/fm-lint.sh   # lint that shell surface plus .github/.forgejo workflows via pinned actionlint; the single owner CI and the no-mistakes gate both run
 bin/fm-test-run.sh tests/<subject>.test.sh   # one script (primary local focus path, timed)
 bin/fm-test-run.sh tests/<a>.test.sh tests/<b>.test.sh   # several subjects at once: bounded automatic concurrency
 bin/fm-test-run.sh --family pure-contract-unit   # ordinary family-scoped local path (serial, timed)
@@ -144,10 +116,10 @@ Portable shard balance evidence lives in `docs/fm-test-portable-shards.md`.
 `bin/fm-test-linux.sh` is optional and never part of CI: on macOS, run it before publishing a branch whose tests depend on `stat`, `date`, or process behavior, because BSD and GNU tools differ.
 Its header owns selection, runtime detection, and exit codes.
 Family selection is the ordinary local path; `--all` is deliberate full regression only.
-CI owns broad regression across required portable parallel shards, the portable serial lane's separate-runner shards, the Herdr lane, lint, invariants, the coverage guard, and stock macOS Bash compatibility in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
-Pushing a new head to a pull request cancels that pull request's still-running CI so only the current head is validated, and a newer push to `main` cancels the older `main` run so only the newest merge's run finishes; the workflow owns that contract, the `full-ci` gate described under [The `full-ci` label](#the-full-ci-label), and their rationale.
-A fork can set the repository variable `FM_CI_SKIP_PUSH` to `1` to skip the push run of `CI`, and `FM_CI_SKIP_MACOS` to `1` to skip the stock macOS Bash job, without a tracked edit that drifts from upstream.
-Each skip is a job-level condition, so a skipped job reports success rather than leaving the pull request pending, and with neither variable set every job runs on upstream and on every fork exactly as before.
+CI is [`.forgejo/workflows/ci.yml`](.forgejo/workflows/ci.yml), a Gitea Actions workflow that runs on pull requests and on pushes to `main`.
+It installs the pinned ShellCheck and actionlint builds, then runs `bin/fm-lint.sh` and the DSH plugin tests (`cd dsh-plugin && node --test test/*.test.mjs`).
+It runs no live, network, harness-token, Herdr, or fleet suite, because those need a firstmate home and machine-local state a fresh checkout does not have.
+Broad behavior regression stays a local flow: `bin/fm-test-run.sh` owns lane selection, bounded concurrency, family totals, and the coverage guard, and `--all` is the deliberate complete walk.
 Use `bin/fm-test-run.sh --list-lanes` for exact lane names and `--help` for `--jobs` rules and required gate-skip flags when reproducing a lane locally.
 Leave the `sleep 0.1` cadence in the suites' bounded condition waits alone.
 Those sleeps look like recoverable overhead - the watch-triage suite (`fm-watch-triage.test.sh`, `fm-watch-triage-pause.test.sh`, and `fm-watch-triage-wedge-defer.test.sh`) issues about 1,900 of them, each paying a flat ~100ms scheduler wake-up penalty on macOS - but they are not overhead added to the clock; they are how a test waits for a subject that only moves on `fm-watch.sh`'s own one-second `FM_POLL` cadence.
