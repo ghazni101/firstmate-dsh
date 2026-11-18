@@ -103,10 +103,11 @@ cd dsh-plugin
 node --test test/*.test.mjs
 ```
 
-89 tests, all against temporary homes: lease protocol, bash adapter, native engine guard,
-tool surface, reconciliation loop, and the end-to-end chain (tick → lease → real engine guard
-seam → mutation), including concurrency, crash recovery, posture gating, and cross-home
-refusal. No live fleet, no network.
+Every test runs against temporary homes: lease protocol, bash adapter, native engine guard,
+tool surface, reconciliation loop, and the end-to-end chain (tick or channel → lease → real
+engine guard seam → mutation, including the holding lease session the channel exports),
+including concurrency, crash recovery, posture gating, and cross-home refusal. No live fleet,
+no network.
 
 ## Engine compatibility
 
