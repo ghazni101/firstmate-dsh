@@ -28,17 +28,17 @@ _FM_PROC_LIB_DIR=${BASH_SOURCE[0]%/*}
 . "${_FM_PROC_LIB_DIR:-/}/fm-omp-process-lib.sh"
 unset _FM_PROC_LIB_DIR
 
-# Known harness command names; extend when a new adapter is verified. omp and
-# agy are anchored exactly like pi: their process names are the bare words `omp`
-# (verified, omp 18.1.11) and `agy`, and a substring match would claim ompd or
+# Known harness command names; extend when a new adapter is verified. omp is
+# anchored exactly like pi: its process name is the bare word `omp`
+# (verified, omp 18.1.11), and a substring match would claim ompd or
 # comp.
-FM_HARNESS_RE='claude|codex|opencode|grok|kimi|^pi$|^pi-signed$|^omp$|^agy$'
+FM_HARNESS_RE='claude|^pi$|^omp$'
 
 # The same harnesses as exact executable names. Keep in sync with
 # FM_HARNESS_RE. Used only for the stricter path evidence below, where the
 # loose regex would also match ordinary firstmate paths such as
 # bin/fm-claude-stop-autoarm.sh.
-FM_HARNESS_NAMES=(claude codex opencode grok kimi pi-signed pi omp agy)
+FM_HARNESS_NAMES=(claude pi omp)
 
 # Print the exact harness name carried by executable path $1 - its own basename
 # or any directory component - or return 1.
@@ -615,7 +615,7 @@ fm_proc_info() {  # <pid>
   # cannot prove.
   #
   # The base read the ppid the same tolerant way, and the repository's
-  # grok and kimi harness suites pin that: their stubbed ps answers
+  # harness suites pin that: their stubbed ps answers
   # comm= and args= and refuses every other question, so a ppid read
   # that failed had to leave the identity intact.
   ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
@@ -633,15 +633,13 @@ fm_proc_info() {  # <pid>
 # into an unrelated harness further up the real process tree - for example the
 # live session that launched a test as its own subprocess.
 #
-# For every harness except Claude the innermost match is the session, which is
-# where e.g. Pi's shared signed-wrapper ancestry actually identifies it: a
-# "pi-signed" launcher can be the direct parent of the inner "pi" engine pid that
-# is the session, and the wrapper pid above it is not that session. Claude Code
-# instead runs hooks several levels below the session inside its own nested
-# worker chain (hook shell -> claude bg-spare -> claude bg-pty-host -> claude ->
-# claude), with no non-harness process between them. Which pid in that run is the
-# session cannot be read off the ancestry at all, so the whole contiguous run is
-# reported and the callers below decide what they need from it.
+# For every harness except Claude the innermost match is the session.
+# Claude Code instead runs hooks several levels below the session inside its
+# own nested worker chain (hook shell -> claude bg-spare -> claude bg-pty-host
+# -> claude -> claude), with no non-harness process between them. Which pid in
+# that run is the session cannot be read off the ancestry at all, so the whole
+# contiguous run is reported and the callers below decide what they need from
+# it.
 fm_harness_ancestry_pids() {
   local pid=$$ extending=0 printed=0
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do

@@ -3436,10 +3436,9 @@ fm_backend_herdr_composer_state() {  # <target> -> empty|pending|pending-unprove
 # 12 non-blank rows. This is NOT a worker-state source: herdr's native
 # agent-state (fm_backend_herdr_busy_state) stays the semantic owner, and this
 # read exists only so the submit core below can confirm a delivery for a
-# harness whose native state never transitions. Without a harness argument the
-# shared matcher uses its union of verified tokens; the submit core passes
-# polytoken only when the pane's native identity names polytoken, whose
-# `Running for` row is outside that union.
+# harness whose native state never transitions. The harness argument stays
+# empty on the only remaining call path, so the shared matcher uses its union
+# of verified tokens.
 fm_backend_herdr_rendered_busy_state() {  # <target> [harness] -> busy|idle|unknown
   local target=$1 harness=${2:-} cap visible
   cap=$(fm_backend_herdr_capture "$target" 40) || { printf 'unknown'; return 0; }
@@ -3655,7 +3654,6 @@ fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
   # that then starts a turn must not report empty. Other harnesses keep the
   # unproven type-then-Enter path.
   identity=$(fm_backend_herdr_agent_identity_raw "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || identity=
-  [ "${identity%%$'\t'*}" != polytoken ] || busy_harness=polytoken
   if [ "${identity%%$'\t'*}" = claude ]; then
     proof=1
     content=$(fm_backend_herdr_composer_content "$target") \
