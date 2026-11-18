@@ -150,6 +150,13 @@ FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX=".herdr-presentation"
 # projection.
 FM_BACKEND_HERDR_PRESENTATION_CONFIG="herdr-presentation-spaces"
 
+# The optional local config item naming a PRIMARY home's herdr workspace label
+# (docs/herdr-backend.md "Watching and task containers"). It is deliberately
+# not inherited by secondmate homes: an inherited name would merge a
+# secondmate's workspace into the primary's, so the marker-derived label always
+# wins there.
+FM_BACKEND_HERDR_WORKSPACE_LABEL_CONFIG="herdr-workspace"
+
 # fm_backend_herdr_presentation_preference <config-dir>: the single owner of
 # config/herdr-presentation-spaces parsing. Echoes exactly one of "off", "on"
 # (a deliberate opt-in, honored even below the version floor), or "default"
@@ -341,26 +348,64 @@ fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
   fm_backend_herdr_presentation_default_supported "$state_dir"
 }
 
+# fm_backend_herdr_workspace_label_name_valid: the single owner of what
+# config/herdr-workspace may name. A workspace label is matched exactly, is
+# embedded in legacy "<label>/<task> · p:<token>" child labels, and is printed
+# in operator messages, so whitespace, a colon (the target string's
+# session/pane separator), a slash (the legacy child separator), a control
+# character, or a value that already looks like the adapter's own
+# "└ <task> · p:<token>" projection label is unusable. Everything else,
+# including non-ASCII letters, is accepted.
+fm_backend_herdr_workspace_label_name_valid() {  # <name>
+  local name=${1:-}
+  [ -n "$name" ] || return 1
+  case "$name" in
+    *[[:space:]]*|*:*|*/*) return 1 ;;
+    *[[:cntrl:]]*) return 1 ;;
+    '└'*) return 1 ;;
+  esac
+  return 0
+}
+
 # fm_backend_herdr_workspace_label: the per-firstmate-HOME herdr workspace
-# label (docs/herdr-backend.md "Default task container shape"). The PRIMARY home (no
-# secondmate marker) resolves to the constant "firstmate", byte-identical to
-# every pre-existing task's recorded label - no forced migration. A SECONDMATE
-# home resolves to "2ndmate-<secondmate-id>", so its tasks land in their own
-# workspace, obviously distinguishable from the primary's (and from every
-# other secondmate's) in herdr's spaces sidebar. Read fresh from FM_HOME on
-# every call rather than cached at source time: FM_HOME is the home's own
-# durable identity, not env plumbing threaded through a call chain, so the
-# label is automatically stable across every respawn/recovery for the life of
-# that home. fm-spawn.sh briefly shadows FM_HOME to a secondmate's own home
-# when the PRIMARY spawns that secondmate (its own process's FM_HOME still
-# names the primary at that point) - see fm-spawn.sh's herdr case arm.
+# label (docs/herdr-backend.md "Watching and task containers"). A SECONDMATE
+# home resolves to "2ndmate-<secondmate-id>" from its validated marker, and
+# that marker always wins over the local config file, so a copied or inherited
+# name can never merge a secondmate's workspace into its primary's. A PRIMARY
+# home resolves to the trimmed contents of its local gitignored
+# config/herdr-workspace (or $FM_CONFIG_OVERRIDE/herdr-workspace) when that
+# file names a valid label, and otherwise to the constant "firstmate",
+# byte-identical to every pre-existing task's recorded label - no forced
+# migration. An unusable configured value is an actionable error on stderr and
+# a non-zero return, never a silent fall back to "firstmate".
+# Read fresh from FM_HOME on every call rather than cached at source time:
+# FM_HOME is the home's own durable identity, not env plumbing threaded through
+# a call chain, so the label is automatically stable across every
+# respawn/recovery for the life of that home. fm-spawn.sh briefly shadows
+# FM_HOME to a secondmate's own home when the PRIMARY spawns that secondmate
+# (its own process's FM_HOME still names the primary at that point) - see
+# fm-spawn.sh's herdr case arm.
 fm_backend_herdr_workspace_label() {
-  local marker="$FM_HOME/$FM_BACKEND_HERDR_SECONDMATE_MARKER" id
+  local marker="$FM_HOME/$FM_BACKEND_HERDR_SECONDMATE_MARKER" id config name
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
     if [ -n "$id" ]; then
       printf '2ndmate-%s' "$id"
       return 0
+    fi
+  fi
+  config="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/$FM_BACKEND_HERDR_WORKSPACE_LABEL_CONFIG"
+  if [ -f "$config" ]; then
+    name=$(cat "$config" 2>/dev/null) || name=
+    name=${name#"${name%%[![:space:]]*}"}
+    name=${name%"${name##*[![:space:]]}"}
+    if [ -n "$name" ]; then
+      if fm_backend_herdr_workspace_label_name_valid "$name"; then
+        printf '%s' "$name"
+        return 0
+      fi
+      echo "error: $config names an unusable herdr workspace label '$name': a workspace label cannot contain whitespace, ':', '/', or control characters, and cannot look like the adapter's own '└ <task> · p:<token>' presentation label; fix that value or remove the file to keep the default 'firstmate'" >&2
+      return 1
     fi
   fi
   printf 'firstmate'
@@ -1522,13 +1567,13 @@ fm_backend_herdr_projection_order_best_effort() {  # <session> <created-workspac
       end;
     def is_top_level_parent:
       (.label | type) == "string"
-      and ((.label == "firstmate") or (.label | test("^2ndmate-[^/]+$")));
+      and ((.label == $parent) or (.label == "firstmate") or (.label | test("^2ndmate-[^/]+$")));
     def is_new_child:
       (.label | type) == "string"
       and (.label | test("^└ .+ · p:[A-Za-z0-9_-]{22}$"));
     def is_legacy_child:
       (.label | type) == "string"
-      and (.label | test("^(firstmate|2ndmate-[^/]+)/.+ · p:[A-Za-z0-9_-]{22}$"));
+      and (.label | test("^[^/]+/.+ · p:[A-Za-z0-9_-]{22}$"));
     def is_legacy_child_for($owner):
       is_legacy_child and (.label | startswith($owner + "/"));
     def is_child_for($owner):
@@ -1781,7 +1826,7 @@ fm_backend_herdr_server_ensure() {  # <session>
 # historical first-match behavior.
 fm_backend_herdr_workspace_find_all() {  # <session>
   local session=$1 label list
-  label=$(fm_backend_herdr_workspace_label)
+  label=$(fm_backend_herdr_workspace_label) || return 1
   list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 0
   # NOTE: the jq variable is $want, NOT $label - `label` is a jq reserved
   # keyword (label/break), so declaring a jq variable named "label" is a
@@ -1800,7 +1845,9 @@ fm_backend_herdr_workspace_find_all() {  # <session>
 # NOT the spawn-time resolver: placing a new worker by first label match is
 # exactly the defect fm_backend_herdr_workspace_ensure now refuses.
 fm_backend_herdr_workspace_find() {  # <session>
-  fm_backend_herdr_workspace_find_all "$1" | head -1
+  local matches
+  matches=$(fm_backend_herdr_workspace_find_all "$1") || return 1
+  printf '%s\n' "$matches" | head -1
 }
 
 # fm_backend_herdr_launcher_identity: the EXACT herdr workspace that the
@@ -2063,6 +2110,10 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
   local session=$1 cwd=$2 relationship=${3:-launcher-home} wsid out label matches count status
   FM_BACKEND_HERDR_WS_ID=""
   FM_BACKEND_HERDR_WS_SEEDED_TAB_ID=""
+  # Resolve and validate this home's label before ANY placement decision, so a
+  # misconfigured config/herdr-workspace refuses the spawn with its exact
+  # actionable error instead of quietly placing the worker elsewhere.
+  label=$(fm_backend_herdr_workspace_label) || return 3
   if [ "$relationship" = launcher-home ]; then
     fm_backend_herdr_launcher_identity "$session" && status=0 || status=$?
     case "$status" in
@@ -2075,8 +2126,7 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
       *) return 3 ;;
     esac
   fi
-  label=$(fm_backend_herdr_workspace_label)
-  matches=$(fm_backend_herdr_workspace_find_all "$session")
+  matches=$(fm_backend_herdr_workspace_find_all "$session") || return 3
   count=$(printf '%s' "$matches" | grep -c '[^[:space:]]' || true)
   if [ "$count" -gt 1 ]; then
     echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and this spawn has no herdr parent pane to identify which one is its own; rename or close the extras, or run firstmate inside the workspace its workers belong in" >&2
@@ -2132,7 +2182,7 @@ fm_backend_herdr_container_ensure() {  # <cwd-for-a-fresh-workspace> [<launcher-
   # generic message here would bury it.
   [ "$status" -ne 3 ] || return 1
   if [ "$status" -ne 0 ] || [ -z "$FM_BACKEND_HERDR_WS_ID" ]; then
-    label=$(fm_backend_herdr_workspace_label)
+    label=$(fm_backend_herdr_workspace_label 2>/dev/null) || label=
     echo "error: failed to ensure herdr workspace '$label' in session '$session'" >&2
     return 1
   fi
@@ -2876,8 +2926,8 @@ fm_backend_herdr_projection_live_binding_matches() {  # <session> <token> <works
         and (.label | test("^└ .+ · p:[A-Za-z0-9_-]{22}$"));
       def is_legacy_child_for($owner):
         (.label | type) == "string"
-        and (.label | test("^(firstmate|2ndmate-[^/]+)/.+ · p:[A-Za-z0-9_-]{22}$"))
-        and (.label | startswith($owner + "/"));
+        and (.label | startswith($owner + "/"))
+        and (.label | test("/.+ · p:[A-Za-z0-9_-]{22}$"));
       (.result.workspaces // null) as $spaces
       | select(($spaces | type) == "array")
       | select(([$spaces[]? | select(.workspace_id == $workspace)] | length) == 1)
@@ -3975,7 +4025,7 @@ EOF
 # "<session>:<pane_id>\t<label>" line per live task tab.
 fm_backend_herdr_list_live() {  # <session>
   local session=$1 wsid tabs tab_id label pane_id
-  wsid=$(fm_backend_herdr_workspace_find "$session") || return 0
+  wsid=$(fm_backend_herdr_workspace_find "$session") || return 1
   [ -n "$wsid" ] || return 0
   tabs=$(fm_backend_herdr_cli "$session" tab list --workspace "$wsid" 2>/dev/null) || return 0
   while IFS=$'\t' read -r tab_id label; do

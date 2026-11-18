@@ -430,6 +430,67 @@ test_workspace_label_different_secondmates_get_different_labels() {
   pass "fm_backend_herdr_workspace_label: two different secondmate homes get two different, non-colliding labels"
 }
 
+test_workspace_label_config_file_names_the_primary_workspace() {
+  local home out
+  home="$TMP_ROOT/primary-configured"; mkdir -p "$home/config"
+  printf 'fm-dsh\n' > "$home/config/herdr-workspace"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "fm-dsh" ] || fail "a primary home with config/herdr-workspace 'fm-dsh' should resolve to 'fm-dsh', got '$out'"
+  pass "fm_backend_herdr_workspace_label: config/herdr-workspace names the primary home's workspace label"
+}
+
+test_workspace_label_config_file_trims_surrounding_whitespace_only() {
+  local home out
+  home="$TMP_ROOT/primary-configured-padded"; mkdir -p "$home/config"
+  printf '\n  fm-dsh  \n\n' > "$home/config/herdr-workspace"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "fm-dsh" ] || fail "surrounding whitespace should be trimmed from config/herdr-workspace, got '$out'"
+  pass "fm_backend_herdr_workspace_label: trims surrounding whitespace around a configured label"
+}
+
+test_workspace_label_config_honors_config_override() {
+  local home cfg out
+  home="$TMP_ROOT/primary-config-override-home"; mkdir -p "$home"
+  cfg="$TMP_ROOT/primary-config-override-dir"; mkdir -p "$cfg"
+  printf 'fm-other\n' > "$cfg/herdr-workspace"
+  out=$( FM_HOME="$home" FM_CONFIG_OVERRIDE="$cfg" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "fm-other" ] || fail "FM_CONFIG_OVERRIDE should select the config dir holding herdr-workspace, got '$out'"
+  pass "fm_backend_herdr_workspace_label: reads the configured label from FM_CONFIG_OVERRIDE's config dir"
+}
+
+test_workspace_label_empty_config_file_keeps_the_default() {
+  local home out
+  home="$TMP_ROOT/primary-configured-empty"; mkdir -p "$home/config"
+  : > "$home/config/herdr-workspace"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "firstmate" ] || fail "an empty config/herdr-workspace should keep 'firstmate', got '$out'"
+  pass "fm_backend_herdr_workspace_label: an empty config/herdr-workspace keeps the 'firstmate' default"
+}
+
+test_workspace_label_unusable_config_value_is_refused() {
+  local home value out status
+  home="$TMP_ROOT/primary-configured-bad"; mkdir -p "$home/config"
+  for value in 'fm dsh' 'fm:dsh' 'fm/dsh' '└ fm-dsh · p:AAAAAAAAAAAAAAAAAAAAAA'; do
+    printf '%s\n' "$value" > "$home/config/herdr-workspace"
+    out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" 2>&1 )
+    status=$?
+    [ "$status" -ne 0 ] || fail "config/herdr-workspace '$value' should be refused, got success with '$out'"
+    assert_contains "$out" "unusable herdr workspace label" "the refusal for '$value' did not name the unusable label"
+    assert_contains "$out" "$home/config/herdr-workspace" "the refusal for '$value' did not name the offending file"
+  done
+  pass "fm_backend_herdr_workspace_label: refuses an unusable configured value with an actionable error instead of falling back"
+}
+
+test_workspace_label_secondmate_marker_wins_over_config() {
+  local home out
+  home="$TMP_ROOT/secondmate-configured"; mkdir -p "$home/config"
+  printf 'alpha-a1\n' > "$home/.fm-secondmate-home"
+  printf 'fm-dsh\n' > "$home/config/herdr-workspace"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "2ndmate-alpha-a1" ] || fail "a secondmate home's marker must win over config/herdr-workspace, got '$out'"
+  pass "fm_backend_herdr_workspace_label: the secondmate marker keeps precedence over config/herdr-workspace"
+}
+
 # --- fm_backend_herdr_cli: session targeting (2026-07-02 incident fix) -------
 
 test_cli_helper_sets_env_and_appends_trailing_session_flag() {
@@ -1898,6 +1959,58 @@ test_container_ensure_uses_secondmate_home_label() {
   assert_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create'$'\x1f''--cwd'$'\x1f''/tmp'$'\x1f''--label'$'\x1f''2ndmate-sshhip-h7' \
     "container_ensure did not create the workspace under this secondmate home's own label"
   pass "fm_backend_herdr_container_ensure: creates the workspace under the SECONDMATE home's own label, not 'firstmate'"
+}
+
+test_container_ensure_creates_configured_home_label() {
+  local dir log resp fb out home
+  dir="$TMP_ROOT/container-configured-label"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$TMP_ROOT/container-configured-home"; mkdir -p "$home/config"
+  printf 'fm-dsh\n' > "$home/config/herdr-workspace"
+  printf '{"client":{"version":"0.7.1","protocol":14}}\n' > "$resp/1.out"
+  printf '{"server":{"running":true}}\n' > "$resp/2.out"
+  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"}]}}\n' > "$resp/3.out"
+  printf '{"result":{"workspace":{"workspace_id":"w2","label":"fm-dsh"},"tab":{"tab_id":"w2:t1"},"root_pane":{"pane_id":"w2:p1"}}}\n' > "$resp/4.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HOME="$home" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_HERDR_SCRIPT_STATUS=1 HERDR_SESSION=fmtest \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_container_ensure /tmp' "$ROOT" )
+  [ "$out" = $'fmtest:w2\tw2:t1' ] || fail "container_ensure should create the configured workspace, got '$out'"
+  assert_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create'$'\x1f''--cwd'$'\x1f''/tmp'$'\x1f''--label'$'\x1f''fm-dsh' \
+    "container_ensure did not create the workspace under the configured label"
+  pass "fm_backend_herdr_container_ensure: creates the workspace under config/herdr-workspace's label instead of 'firstmate'"
+}
+
+test_container_ensure_adopts_only_the_configured_home_label() {
+  local dir log resp fb out home
+  dir="$TMP_ROOT/container-configured-adopt"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$TMP_ROOT/container-configured-adopt-home"; mkdir -p "$home/config"
+  printf 'fm-dsh\n' > "$home/config/herdr-workspace"
+  printf '{"client":{"version":"0.7.1","protocol":14}}\n' > "$resp/1.out"
+  printf '{"server":{"running":true}}\n' > "$resp/2.out"
+  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w2","label":"fm-dsh"}]}}\n' > "$resp/3.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HOME="$home" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_HERDR_SCRIPT_STATUS=1 HERDR_SESSION=fmtest \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_container_ensure /tmp' "$ROOT" )
+  [ "$out" = $'fmtest:w2\t' ] || fail "container_ensure should adopt only the configured 'fm-dsh' workspace, got '$out'"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' "container_ensure should not create a workspace when the configured one exists"
+  pass "fm_backend_herdr_container_ensure: exact-matches the configured label and never falls back to the legacy 'firstmate' workspace"
+}
+
+test_container_ensure_refuses_unusable_configured_label() {
+  local dir log resp fb out status home
+  dir="$TMP_ROOT/container-configured-refused"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$TMP_ROOT/container-configured-bad-home"; mkdir -p "$home/config"
+  printf 'fm dsh\n' > "$home/config/herdr-workspace"
+  printf '{"client":{"version":"0.7.1","protocol":14}}\n' > "$resp/1.out"
+  printf '{"server":{"running":true}}\n' > "$resp/2.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HOME="$home" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_HERDR_SCRIPT_STATUS=1 HERDR_SESSION=fmtest \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_container_ensure /tmp' "$ROOT" 2>&1 )
+  status=$?
+  [ "$status" -ne 0 ] || fail "container_ensure must refuse an unusable config/herdr-workspace value"
+  assert_contains "$out" "unusable herdr workspace label" "container_ensure buried the actionable label refusal"
+  assert_contains "$out" "$home/config/herdr-workspace" "the refusal did not name the offending config file"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' "container_ensure created a workspace despite the unusable configured label"
+  pass "fm_backend_herdr_container_ensure: refuses an unusable configured label before any workspace mutation"
 }
 
 test_create_task_creates_with_no_focus_flag() {
@@ -6541,6 +6654,12 @@ test_workspace_label_secondmate_home_uses_marker_id
 test_workspace_label_secondmate_marker_trims_whitespace
 test_workspace_label_empty_marker_falls_back_to_primary
 test_workspace_label_different_secondmates_get_different_labels
+test_workspace_label_config_file_names_the_primary_workspace
+test_workspace_label_config_file_trims_surrounding_whitespace_only
+test_workspace_label_config_honors_config_override
+test_workspace_label_empty_config_file_keeps_the_default
+test_workspace_label_unusable_config_value_is_refused
+test_workspace_label_secondmate_marker_wins_over_config
 test_cli_helper_sets_env_and_appends_trailing_session_flag
 test_agent_state_bypasses_a_stale_client_shadowing_a_compatible_one
 test_recovery_grade_read_widens_only_at_its_own_boundary
@@ -6595,6 +6714,9 @@ test_server_ensure_reports_a_replacement_that_never_ends
 test_container_ensure_reuses_existing_workspace
 test_container_ensure_creates_with_no_focus_flag
 test_container_ensure_uses_secondmate_home_label
+test_container_ensure_creates_configured_home_label
+test_container_ensure_adopts_only_the_configured_home_label
+test_container_ensure_refuses_unusable_configured_label
 test_workspace_ensure_prunes_default_tab
 test_repeated_cycles_reuse_one_workspace_no_orphans
 test_adopted_workspace_never_prunes_default_tab
