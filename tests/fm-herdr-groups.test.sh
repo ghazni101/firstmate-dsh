@@ -6,9 +6,9 @@
 # started. docs/herdr-backend.md "Project groups" owns the contract.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=tests/herdr-test-safety.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/herdr-test-safety.sh"
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the herdr adapter)"; exit 0; }

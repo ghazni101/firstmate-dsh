@@ -170,13 +170,13 @@ case "${1:-}" in
   -h|--help) usage; exit 0 ;;
 esac
 
-# shellcheck source=bin/fm-marker-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-marker-lib.sh"
-# shellcheck source=bin/fm-classify-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-classify-lib.sh"
-# shellcheck source=bin/fm-dod-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-dod-lib.sh"
-# shellcheck source=bin/fm-role-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-role-lib.sh"
 PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
 IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true

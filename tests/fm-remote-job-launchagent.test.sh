@@ -6,7 +6,7 @@
 # and print reports the pid launchd tracks.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 TMP_ROOT=$(fm_test_tmproot fm-remote-job-launchagent)
@@ -157,7 +157,7 @@ export FM_TEST_REMOVING="$TMP_ROOT/launchagent.removing"
 export FM_TEST_PLIST="$ACCOUNT_HOME/Library/LaunchAgents/dev.firstmate.remote-job.plist"
 export FM_TEST_SWEEP_GATE="$SWEEP_GATE"
 export FM_REMOTE_JOB_STATE_ROOT="$STATE_ROOT" FM_REMOTE_JOB_PLATFORM_OVERRIDE=Darwin
-# shellcheck source=bin/fm-remote-job-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-remote-job-lib.sh"
 
 stop_pid() {

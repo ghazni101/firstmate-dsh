@@ -27,7 +27,7 @@
 # one (tests/herdr-test-safety.sh; bin/fm-herdr-lab.sh owns the isolation).
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -38,7 +38,7 @@ note() { printf '# %s\n' "$1"; }
 
 fm_live_gate default-on FM_HERDR_PI_STALE_REGISTRATION_LIVE_E2E herdr pi jq
 
-# shellcheck source=tests/herdr-test-safety.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/herdr-test-safety.sh"
 herdr_forget_inherited_pane
 

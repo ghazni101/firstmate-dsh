@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck source=bin/fm-hermes-process-lib.sh
+# shellcheck source=/dev/null
 . "${BASH_SOURCE[0]%/*}/fm-hermes-process-lib.sh"
 
 # fm-tmux-lib.sh — shared tmux pane primitives for firstmate.
@@ -48,9 +48,9 @@
 # probe can re-source this adapter inside a subshell on every watcher cycle.
 _FM_TMUX_LIB_DIR=${BASH_SOURCE[0]%/*}
 [ "$_FM_TMUX_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _FM_TMUX_LIB_DIR=.
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "${_FM_TMUX_LIB_DIR:-/}/fm-composer-lib.sh"
-# shellcheck source=bin/fm-cursor-lib.sh
+# shellcheck source=/dev/null
 . "${_FM_TMUX_LIB_DIR:-/}/fm-cursor-lib.sh"
 unset _FM_TMUX_LIB_DIR
 

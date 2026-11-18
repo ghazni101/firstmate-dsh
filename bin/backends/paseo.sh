@@ -89,13 +89,13 @@ FM_BACKEND_PASEO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-${FM_ROOT:-$FM_BACKEND_PASEO_ROOT}}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
-# shellcheck source=bin/fm-backend-hometag-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_PASEO_ROOT/bin/fm-backend-hometag-lib.sh"
 
 # Shared composer-content classifier (empty|pending|unknown, and the fleet-wide
 # dead-shell-vs-agent-composer rule). Owned by bin/fm-composer-lib.sh, reused by
 # every backend so the decision cannot drift.
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_PASEO_ROOT/bin/fm-composer-lib.sh"
 
 # Verified minimum: the version the live pass ran against
@@ -208,14 +208,14 @@ fm_backend_paseo_daemon_state() {
 # that starts but never becomes reachable fails fast with a pointer to
 # docs/paseo-backend.md instead of retry-looping.
 fm_backend_paseo_ensure_running() {
-  local state i
+  local state
   state=$(fm_backend_paseo_daemon_state)
   [ "$state" = ok ] && return 0
   fm_backend_paseo_cli start >/dev/null 2>&1 || {
     echo "error: 'paseo start' failed; is the Paseo app installed? See docs/paseo-backend.md 'Setup'." >&2
     return 1
   }
-  for i in $(seq 1 20); do
+  for _ in $(seq 1 20); do
     state=$(fm_backend_paseo_daemon_state)
     [ "$state" = ok ] && return 0
     sleep 0.5
@@ -355,7 +355,7 @@ fm_backend_paseo_workspace_lock_path() {
 fm_backend_paseo_workspace_lock() {
   local attempt=0 lock
   if ! declare -F fm_lock_try_acquire >/dev/null 2>&1; then
-    # shellcheck source=bin/fm-wake-lib.sh
+    # shellcheck source=/dev/null
     . "$FM_BACKEND_PASEO_ROOT/bin/fm-wake-lib.sh"
   fi
   lock=$(fm_backend_paseo_workspace_lock_path)

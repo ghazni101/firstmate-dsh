@@ -4,7 +4,7 @@
 # Linux only; enable FM_READ_REPETITION_LIVE=1 to require the installed tools.
 set -eu
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate default-on FM_READ_REPETITION_LIVE pi node

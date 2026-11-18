@@ -12,7 +12,7 @@
 # tests/fm-spawn-compact-adviser-disable-remote.test.sh.
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 CONTROL="$ROOT/bin/fm-control.sh"

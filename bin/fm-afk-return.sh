@@ -68,11 +68,11 @@ RETURN_GRACE=${FM_GUARD_GRACE:-300}
 # The posture-record owner: path helpers only; every read goes through its
 # subcommands. It sources fm-classify-lib.sh, which has no side effects, so the
 # advertised read-only guard stays literal.
-# shellcheck source=bin/fm-afk-contract.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-afk-contract.sh"
 CONTRACT="$SCRIPT_DIR/fm-afk-contract.sh"
 # Functions only: decodes the stored hold reasons the catch-up listing shows.
-# shellcheck source=bin/fm-hold-reason-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-hold-reason-lib.sh"
 
 usage() {
@@ -372,7 +372,7 @@ $note" "$evidence"
 engine_snapshot() {  # <evidence-file> <since-epoch>
   local evidence=$1 since=$2 summary errors trip last latch_errors cooldown recovered retry paused="" state line count_clause episodes episode_count episode lost_trip=""
   case "$since" in ''|*[!0-9]*) since=0 ;; esac
-  # shellcheck source=bin/fm-supervision-engine-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-supervision-engine-lib.sh" || return 0
   # The window is the caller's own since: a session start no longer leaves a
   # durable timestamp to read.
@@ -533,7 +533,7 @@ render_return_brief() {  # <evidence-file> <blockers-file> <since-epoch> <drain-
   # the drain alone presents the window's visible notes and owns their read
   # cursor, so the brief points there only when visible outcomes exist, or says
   # they await a successful drain when this return's drain failed.
-  # shellcheck source=bin/fm-supervision-engine-lib.sh
+  # shellcheck source=/dev/null
   if . "$SCRIPT_DIR/fm-supervision-engine-lib.sh" \
     && fm_supervision_host_outcomes_drained "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"; then
     drained=1
@@ -894,13 +894,13 @@ main() {
   # backlog reader. `guard` returned above without sourcing fm-wake-lib.sh,
   # whose initialization creates the state directory, so the advertised
   # read-only guard is literal.
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-wake-lib.sh"
-  # shellcheck source=bin/fm-tasks-axi-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-  # shellcheck source=bin/fm-backlog-transition-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
-  # shellcheck source=bin/fm-pr-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-pr-lib.sh"
 
   mkdir -p "$STATE" || return 1

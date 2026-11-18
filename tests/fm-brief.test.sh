@@ -13,9 +13,11 @@
 # test_no_heredoc_in_command_substitution guards that structure directly.
 # Ambient `bash -n` here is Bash 5 and cannot see the bug, so the real
 # cross-version enforcement lives in a macos-stock-bash run (FM_TEST_STOCK_BASH=1).
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-brief)
@@ -1402,7 +1404,7 @@ test_base_branch_is_rendered_and_bounded() {
   local home out rc brief base meta_base
   home="$TMP_ROOT/base-branch-home"
   mkdir -p "$home/data"
-  # shellcheck source=bin/fm-dod-lib.sh
+  # shellcheck source=/dev/null
   . "$ROOT/bin/fm-dod-lib.sh"
 
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-base-dp-b1 some-proj --mode direct-PR --base-branch feature/hub >/dev/null 2>&1 \

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Behavioral coverage for the daily startup growth check.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-pr-lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-startup-growth-check)

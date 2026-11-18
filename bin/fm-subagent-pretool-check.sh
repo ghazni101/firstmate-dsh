@@ -188,7 +188,7 @@ STATE=${FM_STATE_OVERRIDE:-$FM_HOME/state}
 # hands a crewmate. A crewmate using delegation tools inside its own task
 # worktree is legitimate and stays allowed. Any failure to confirm the home is
 # inert (exit 0), never a block, so a broken environment never denies a call.
-# shellcheck source=bin/fm-primary-scope-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 

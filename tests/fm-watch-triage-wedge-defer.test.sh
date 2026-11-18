@@ -4,7 +4,7 @@
 # (bin/fm-watch.sh). Shared fixtures live in tests/watch-triage-helpers.sh.
 set -u
 
-# shellcheck source=tests/watch-triage-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/watch-triage-helpers.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-watch-triage-wedge-defer-tests)

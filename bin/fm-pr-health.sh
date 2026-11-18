@@ -88,9 +88,9 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 export FM_HOME FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA"
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
 fail() { printf 'fm-pr-health: %s\n' "$*" >&2; exit 1; }
@@ -381,9 +381,11 @@ poll() {
   timeout=${FM_CHECK_TIMEOUT:-30}
   case "$timeout" in ''|*[!0-9]*) timeout=30 ;; esac
   deadline=$(( $(date +%s) + (timeout > 10 ? timeout - 5 : 5) ))
+  # shellcheck disable=SC2034 # Input global for the wake library sourced below.
   FM_WAKE_QUEUE="$STATE/.wake-queue"
+  # shellcheck disable=SC2034 # Input global for the wake library sourced below.
   FM_WAKE_QUEUE_LOCK="$STATE/.wake-queue.lock"
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   fm_lock_try_acquire "$STATE/.pr-health.lock" || exit 0
   LOCK_HELD=1

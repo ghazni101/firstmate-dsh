@@ -15,7 +15,7 @@ fail() {
 }
 pass() { printf 'ok - %s\n' "$1"; }
 
-# shellcheck source=tests/rex-test-safety.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/rex-test-safety.sh"
 trap rex_test_cleanup EXIT
 rex_test_prepare || { rc=$?; [ "$rc" = 1 ] && exit 0; exit "$rc"; }

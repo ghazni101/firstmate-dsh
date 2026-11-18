@@ -3,8 +3,9 @@
 # producer, writer, watcher-carried status trigger, and snapshot ledger consumer.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 WRITER="$ROOT/bin/fm-home-summary-refresh.sh"

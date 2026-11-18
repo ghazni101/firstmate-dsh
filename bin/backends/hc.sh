@@ -48,11 +48,11 @@
 # at or above FM_BACKEND_HC_MIN_VERSION, and container_ensure additionally
 # proves the session speaks protocol generation 1 through `hello`.
 
-# shellcheck source=bin/fm-backend-hometag-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_LIB_DIR/fm-backend-hometag-lib.sh"
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_LIB_DIR/fm-composer-lib.sh"
-# shellcheck source=bin/fm-agent-process-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_LIB_DIR/fm-agent-process-lib.sh"
 
 # The verified floor: the oldest herdr-core release every adapter surface

@@ -2556,7 +2556,7 @@ fi
 
 if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
   [ -r "$ROOT/bin/fm-timeout-lib.sh" ] || die "per-script timeout helper not found: bin/fm-timeout-lib.sh"
-  # shellcheck source=bin/fm-timeout-lib.sh
+  # shellcheck source=/dev/null
   . "$ROOT/bin/fm-timeout-lib.sh"
 fi
 
@@ -2662,8 +2662,9 @@ run_script_bounded() {  # <script> <out> <stream> <id>
   # Declaring the variables local first keeps the helper's export scoped to this
   # call and its child script, so the runner's own environment is left as the
   # caller had it.
+  # shellcheck disable=SC2034 # scoped so tests/git-config-helpers.sh exports them only here
   local GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM
-  # shellcheck source=tests/git-config-helpers.sh
+  # shellcheck source=/dev/null
   . "$ROOT/tests/git-config-helpers.sh" || return
   local rc
   : "$id"

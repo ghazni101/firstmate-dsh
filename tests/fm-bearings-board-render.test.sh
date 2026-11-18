@@ -7,8 +7,9 @@
 # template's source text.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 BOARD="$ROOT/bin/fm-bearings-board.sh"

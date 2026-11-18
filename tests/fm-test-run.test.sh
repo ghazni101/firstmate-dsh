@@ -7,7 +7,7 @@
 # focused scheduler checks, not the complete Firstmate suite.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 RUNNER="$ROOT/bin/fm-test-run.sh"

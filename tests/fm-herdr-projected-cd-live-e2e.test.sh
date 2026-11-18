@@ -4,7 +4,7 @@
 # allocates, returns, or changes the developer's shared Treehouse pool.
 set -eu
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/fixtures.sh"
 fm_live_gate default-on FM_HERDR_PROJECTED_CD_LIVE_E2E herdr jq
 HERDR_LAB_HELPER=${HERDR_LAB_HELPER:-$ROOT/bin/fm-herdr-lab.sh}

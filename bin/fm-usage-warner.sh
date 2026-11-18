@@ -82,15 +82,15 @@ REGISTER_BIN="$SCRIPT_DIR/fm-check-register.sh"
 PROVIDER=claude
 MAX_LINE=1000
 
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-line-cap-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-line-cap-lib.sh"
-# shellcheck source=bin/fm-check-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-check-lib.sh"
-# shellcheck source=bin/fm-quota-axi-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
 
 usage() {
@@ -305,7 +305,7 @@ action_check() {
   local thresholds
   thresholds=$(config_thresholds)
   [ -n "$thresholds" ] || return 0
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   fm_lock_try_acquire "$CHECK_LOCK" || return 0
   check_locked "$thresholds"

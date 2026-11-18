@@ -12,7 +12,7 @@
 # public pull request holds stably.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # The shared gate is the live-harness family's one on/off contract: it is what

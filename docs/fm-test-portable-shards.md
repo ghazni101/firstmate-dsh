@@ -139,9 +139,11 @@ The retired hosted CI uploaded runner-generated timing JSON for the portable sha
 
 ## Lint partitions and end-to-end latency
 
-`bin/fm-lint.sh` owns two canonical partitions for split runs, each attempting full source-aware ShellCheck analysis and running workflow validation and backend-purity checks.
-No CI runner uses those partitions now; a local `bin/fm-lint.sh` run uses the default full canonical set.
-`FM_LINT_REQUIRE_BOUNDS=1` gives a bounded run its per-root deadline and address-space limit, so an unenforceable bound refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
+`bin/fm-lint.sh` owns two canonical partitions, each running full dataflow analysis without following imports, plus workflow validation and backend-purity checks.
+Import following is not part of the canonical posture: each shared library is a root of its own, and following a variable-path import measured about twenty times the root's own cost.
+No CI runner uses those partitions now; a local `bin/fm-lint.sh` run uses the default full canonical set, and the partitions remain complete and disjoint for two-runner use.
+`FM_LINT_REQUIRE_BOUNDS=1` gives a bounded run its per-root deadline and address-space limit, so an unenforceable bound refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, memory fallback, resident ceiling, cost scheduling, and the run-level memory scope.
+Every canonical root also runs under a resident memory ceiling, so a root that would allocate gigabytes is stopped and named instead of exhausting the host.
 Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, initial analysis flags, and fallback reporting.
 `--telemetry` writes the quiet metrics snapshot plus its per-root lifecycle sidecar, so any run can distinguish analysis cost, memory use, and host contention.
 No fast mode, path skips, or paid runner provisioning is part of this layout.

@@ -90,17 +90,17 @@ case "$ARM_ATTEMPTS" in 1|2|3) : ;; *) ARM_ATTEMPTS=2 ;; esac
 case "$POLL" in ''|*[!0-9]*|0) POLL=2 ;; esac
 case "$LOCK_ATTEMPTS" in ''|*[!0-9]*|0) LOCK_ATTEMPTS=50 ;; esac
 
-# shellcheck source=bin/fm-primary-scope-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-# shellcheck source=bin/fm-supervision-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-proc-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-proc-lib.sh"
-# shellcheck source=bin/fm-supervision-engine-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
-# shellcheck source=bin/fm-operational-input.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-operational-input.sh"
 
 PAYLOAD=$(cat 2>/dev/null || true)

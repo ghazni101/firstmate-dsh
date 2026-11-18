@@ -148,24 +148,24 @@ FM_AFK_LAUNCH_RECORD="$FM_AFK_LAUNCH_STATE/.afk-daemon-terminal"
 FM_AFK_LAUNCH_LOCK="$FM_AFK_LAUNCH_STATE/.afk-launch.lock"
 FM_AFK_LAUNCH_WS_LABEL="firstmate-afk-daemon"
 
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$FM_AFK_LAUNCH_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-supervisor-target-lib.sh
+# shellcheck source=/dev/null
 . "$FM_AFK_LAUNCH_DIR/fm-supervisor-target-lib.sh"
 # fm-afk-start.sh provides the daemon-lock liveness helpers and
 # fm_afk_clear_stale_artifacts; it is sourceable (BASH_SOURCE guard) and its
 # main does not run on source. It sets `set -eu`, so turn errexit back off for
 # this script's best-effort flow immediately after.
-# shellcheck source=bin/fm-afk-start.sh
+# shellcheck source=/dev/null
 . "$FM_AFK_LAUNCH_DIR/fm-afk-start.sh"
 set +e
 # The away-posture record owner; sourced for its path helpers, driven as a
 # command for every record mutation so its output reaches the captain.
-# shellcheck source=bin/fm-afk-contract.sh
+# shellcheck source=/dev/null
 . "$FM_AFK_LAUNCH_DIR/fm-afk-contract.sh"
 FM_AFK_CONTRACT_CMD="$FM_AFK_LAUNCH_DIR/fm-afk-contract.sh"
 # The supervision host's home gate and attended readiness check.
-# shellcheck source=bin/fm-supervision-engine-lib.sh
+# shellcheck source=/dev/null
 . "$FM_AFK_LAUNCH_DIR/fm-supervision-engine-lib.sh"
 
 fm_afk_launch_log() { printf 'fm-afk-launch: %s\n' "$*" >&2; }

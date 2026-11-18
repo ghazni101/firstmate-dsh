@@ -18,7 +18,7 @@
 # tests/fm-afk-inject-herdr-e2e.test.sh for the harnesses that still run it.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate opt-in FM_AFK_PI_HERDR_E2E herdr jq pi python3

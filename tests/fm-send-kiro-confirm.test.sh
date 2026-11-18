@@ -17,7 +17,7 @@
 #   3. No meta, foreground comm is bash, bordered empty composer: exit 0.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SEND="$ROOT/bin/fm-send.sh"

@@ -156,6 +156,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC2034 # Input global for the libraries this script sources.
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 usage() {
@@ -167,7 +168,7 @@ case "${1:-}" in
   -h|--help) usage; exit 0 ;;
 esac
 
-# shellcheck source=bin/fm-gate-refuse-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never
 # drive a crewmate's lifecycle (see bin/fm-gate-refuse-lib.sh).
@@ -188,23 +189,23 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
   exit 1
 }
 
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-busy-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-busy-lib.sh"
-# shellcheck source=bin/fm-control-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-control-lib.sh"
-# shellcheck source=bin/fm-polytoken-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-polytoken-lib.sh"
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-worker-account-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
-# shellcheck source=bin/fm-omp-profile-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-omp-profile-lib.sh"
-# shellcheck source=bin/fm-exclude-tools-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-exclude-tools-lib.sh"
 
 POLL=${FM_CONTROL_POLL:-0.5}
@@ -346,7 +347,7 @@ ID=$RAW_ID
 # Supervision lease guard: lifecycle control is overlap territory between the
 # two Pi supervision actors; refuse while the OTHER actor holds this task's
 # live lease (contract: bin/fm-lease-lib.sh; no-op in homes without leases).
-# shellcheck source=bin/fm-lease-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-lease-lib.sh"
 fm_lease_guard "$ID" "lifecycle control (fm-control)"
 CONTROL_LOCK="$STATE/.control-$ID.lock"
@@ -658,9 +659,9 @@ clear_retired_meta_busy_gen() {  # <gen>
   [ -n "$gen" ] || return 0
   [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
   if ! declare -F fm_backlog_atomic_transition >/dev/null 2>&1; then
-    # shellcheck source=bin/fm-tasks-axi-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-    # shellcheck source=bin/fm-backlog-transition-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
   fi
   lock=$(fm_meta_lock_path "$meta") || return 1
@@ -1064,7 +1065,7 @@ resolve_relaunch_profile() {
   if [ "$TARGET_HARNESS" = hermes ]; then
     [ "$BACKEND" = tmux ] || die 'Hermes is verified on tmux only; refusing before the current worker stops'
     [ "$TARGET_MODEL" = default ] || die 'Hermes models are profile-owned; relaunch requires the default model axis'
-    # shellcheck source=bin/fm-hermes-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-hermes-lib.sh"
     fm_hermes_managed_check || return 1
     local hermes_bin hermes_home hermes_profile

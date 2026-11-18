@@ -17,9 +17,11 @@
 #   6. Marker non-regression: a control command to a kind=secondmate task
 #      carries NO from-firstmate marker and opens no pending-reply expectation,
 #      while fm-send's marking of the same task is untouched.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-control-lib.sh"
@@ -847,6 +849,7 @@ test_remote_secondmate_is_refused_by_placement() {
 
 hold_lifecycle_lock() {  # <lock-path>
   local lifecycle_lock_path=$1
+  # shellcheck source=/dev/null
   . "$ROOT/bin/fm-wake-lib.sh"
   fm_lock_try_acquire "$lifecycle_lock_path" || return 1
   sleep 30

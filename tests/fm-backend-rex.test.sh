@@ -11,7 +11,7 @@
 # real-server smoke test lives in tests/fm-backend-rex-smoke.test.sh.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the rex adapter)"; exit 0; }
@@ -25,7 +25,7 @@ DEAD_PID=99999999
 # The fake rex CLI and its driver helpers moved to the shared fixture so the
 # remote second-mate suites can install the same server model on a fake remote
 # host.
-# shellcheck source=tests/rex-fake-fixture.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/rex-fake-fixture.sh"
 
 # rex_env: run a bash snippet with the adapter loaded through the dispatcher,

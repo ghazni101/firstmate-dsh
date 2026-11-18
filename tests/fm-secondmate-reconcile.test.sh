@@ -7,9 +7,11 @@
 # steering record, a home is asked at most once per cooldown window however
 # often the snapshot runs, a mismatch still sitting there after the window
 # earns one gentle re-nudge, and the parent never touches the mate's own files.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/secondmate-helpers.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/secondmate-helpers.sh"
 
 RECONCILE="$ROOT/bin/fm-secondmate-reconcile.sh"

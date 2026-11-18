@@ -22,7 +22,7 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/lib.sh"
 
 # Binary resolution identical to the adapter, installer, and lab: FM_HC_BIN
@@ -37,7 +37,7 @@ fi
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the hc adapter)"; exit 0; }
 export FM_HC_BIN=$HC_BIN
 
-# shellcheck source=tests/hc-test-safety.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/hc-test-safety.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-backend-hc-smoke)

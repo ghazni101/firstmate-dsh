@@ -15,9 +15,9 @@
 # remote-secondmate suites fake it, rather than exercising a real host.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-pr-lib.sh"
 
 command -v perl >/dev/null 2>&1 || { echo "skip: perl not found"; exit 0; }

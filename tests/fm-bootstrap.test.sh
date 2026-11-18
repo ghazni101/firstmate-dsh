@@ -22,9 +22,11 @@
 # one run into its local and network halves, and the one-hop tasks-axi
 # compatibility handoff that keeps a session start from paying for that verdict
 # twice.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
@@ -1854,17 +1856,17 @@ test_record_hygiene_old_orphan_survives_spawn_publication() {
   # metadata write there is a spawn publishing between that check and the move.
   out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_TEST_LIB_SOURCED=1 bash -c '
     SCRIPT_DIR="$1/bin"; STATE="$2/state"; DATA="$2/data"
-    # shellcheck source=bin/fm-classify-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-classify-lib.sh"
-    # shellcheck source=bin/fm-tasks-axi-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-    # shellcheck source=bin/fm-backlog-transition-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
-    # shellcheck source=bin/fm-backend.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-backend.sh"
-    # shellcheck source=bin/fm-timeout-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-timeout-lib.sh"
-    # shellcheck source=bin/fm-record-hygiene-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-record-hygiene-lib.sh"
     _fm_status_file_mtime() {
       [ "${1##*/}" != orphan.status ] || [ -e "$STATE/orphan.meta" ] \

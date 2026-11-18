@@ -2,7 +2,7 @@
 # Tests for harness-aware supervision instruction rendering.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-supervision-instructions)

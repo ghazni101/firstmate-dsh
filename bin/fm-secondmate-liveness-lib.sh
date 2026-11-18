@@ -58,11 +58,11 @@ set -u
 
 FM_SM_LIVE_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$FM_SM_LIVE_LIB_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-remote-readiness-lib.sh
+# shellcheck source=/dev/null
 . "$FM_SM_LIVE_LIB_DIR/fm-remote-readiness-lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$FM_SM_LIVE_LIB_DIR/fm-timeout-lib.sh"
 
 # Per-task probe+kill+relaunch serialization. A busy lock means another
@@ -73,7 +73,7 @@ FM_SM_LIVE_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 # sourcing this library stays side-effect free for read-only bootstrap runs.
 fm_sm_live_require_locks() {
   command -v fm_lock_try_acquire >/dev/null 2>&1 && return 0
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$FM_SM_LIVE_LIB_DIR/fm-wake-lib.sh"
 }
 

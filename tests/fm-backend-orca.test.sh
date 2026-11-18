@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # tests/fm-backend-orca.test.sh - fake-Orca-CLI unit tests for the Orca
 # terminal adapter primitives in bin/backends/orca.sh.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-backend-orca-tests)

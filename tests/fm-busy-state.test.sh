@@ -11,7 +11,7 @@
 # footer text. All hermetic over temp dirs; no real agent session is invoked.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # shellcheck source=/dev/null

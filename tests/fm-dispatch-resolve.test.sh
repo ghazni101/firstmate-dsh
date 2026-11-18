@@ -11,7 +11,7 @@
 set -u
 unset TYPESAFE_BASE
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TOOL="$ROOT/bin/fm-dispatch-resolve.sh"

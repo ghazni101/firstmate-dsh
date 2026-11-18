@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Behavior tests for the firstmate-invoked persistent fallback command.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -eu
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-approval-failover)
 BIN="$TMP_ROOT/bin"
@@ -16,8 +18,10 @@ cat > "$BIN/fm-control.sh" <<'SH'
 #!/usr/bin/env bash
 set -eu
 STATE=$FM_HOME/state
+# shellcheck source=/dev/null
 . "$(dirname "$0")/fm-gate-refuse-lib.sh"
 fm_refuse_if_gate_agent
+# shellcheck source=/dev/null
 . "$(dirname "$0")/fm-lease-lib.sh"
 trap fm_lease_guard_release EXIT
 fm_lease_guard "$1" 'test lifecycle control'
@@ -170,6 +174,7 @@ for harness in codex claude; do
   pass "$harness keeps the setting while reporting incomplete recovery"
 done
 
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-config-inherit-lib.sh"
 primary="$TMP_ROOT/primary/config"
 local_config="$TMP_ROOT/local/config"

@@ -199,21 +199,21 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-proc-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-proc-lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
-# shellcheck source=bin/fm-supervision-engine-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
-# shellcheck source=bin/fm-afk-contract.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-afk-contract.sh"
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-supervisor-target-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-supervisor-target-lib.sh"
-# shellcheck source=bin/fm-warm-compact-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-warm-compact-lib.sh"
 
 FIRST_ARM_RESTART=0

@@ -2,7 +2,7 @@
 # Behavior tests for bin/fm-herdr-lab.sh using a stateful fake Herdr client.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 unset FM_HERDR_LAB_FLEET_SESSION

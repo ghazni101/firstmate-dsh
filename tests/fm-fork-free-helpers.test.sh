@@ -7,7 +7,7 @@
 # case where the two disagree fails here instead of drifting silently.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-fork-free-helpers)

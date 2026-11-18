@@ -32,7 +32,7 @@
 # unreadable-composer state and correctly fails the check.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate default-on FM_COMPOSER_CODEX_IDLE_LIVE codex tmux

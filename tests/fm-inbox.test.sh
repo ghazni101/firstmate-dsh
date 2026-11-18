@@ -9,7 +9,7 @@
 # behaviour stays unchanged when the new flags are omitted.
 set -euo pipefail
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-inbox)

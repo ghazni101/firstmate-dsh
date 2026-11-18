@@ -83,15 +83,15 @@ if [ "${1:-}" = retire ] && [ ! -e "$TARGET_HOME" ] && [ ! -L "$TARGET_HOME" ]; 
   esac
 fi
 
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-ff-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-ff-lib.sh"
-# shellcheck source=bin/fm-pending-reply-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
-# shellcheck source=bin/fm-task-inbox-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
-# shellcheck source=bin/fm-remote-herdr-identity-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-remote-herdr-identity-lib.sh"
 
 # The Herdr session this code root's remote mates live in, resolved by the same

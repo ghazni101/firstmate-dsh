@@ -181,39 +181,39 @@ PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
-# shellcheck source=bin/fm-classify-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-classify-lib.sh"
-# shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-# shellcheck source=bin/fm-backlog-transition-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
-# shellcheck source=bin/fm-quota-axi-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
-# shellcheck source=bin/fm-control-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-control-lib.sh"
-# shellcheck source=bin/fm-env-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-env-lib.sh"
-# shellcheck source=bin/fm-tangle-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-tangle-lib.sh"
-# shellcheck source=bin/fm-ff-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-ff-lib.sh"
-# shellcheck source=bin/fm-cursor-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-cursor-lib.sh"
-# shellcheck source=bin/fm-config-inherit-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
-# shellcheck source=bin/fm-secondmate-nudge-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-secondmate-nudge-lib.sh"
-# shellcheck source=bin/fm-startup-memory-budget-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-startup-memory-budget-lib.sh"
-# shellcheck source=bin/fm-x-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-x-lib.sh"
-# shellcheck source=bin/fm-backend.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-remote-readiness-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
-# shellcheck source=bin/fm-credential-source-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-credential-source-lib.sh"
 # Shared secondmate endpoint probe + guarded relaunch; the watcher's poll tick
 # drives the same library so session start and ordinary supervision recover
@@ -222,7 +222,7 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-secondmate-liveness-lib.sh"
 # fm-timing-lib.sh is inert unless FM_TIMING_LOG names a file, which only the
 # deferred network stage sets, so an ordinary bootstrap run records nothing.
-# shellcheck source=bin/fm-timing-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-timing-lib.sh"
 
 # Network-phase selection (see the header). An unrecognized value resolves to
@@ -368,7 +368,7 @@ fleet_sync() {
 }
 
 secondmate_sync() {
-  # shellcheck source=bin/fm-wake-lib.sh disable=SC1091
+  # shellcheck source=/dev/null disable=SC1091
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   # Placement-specific secondmate sync: EVERY home, local or remote, follows the
   # primary checkout's current default-branch commit. The local path is purely
@@ -395,6 +395,9 @@ secondmate_sync() {
     done
     return 0
   fi
+  # read back by bin/fm-ff-lib.sh after the sweep, so the assignment is a
+  # cross-file contract rather than a dead store.
+  # shellcheck disable=SC2034
   FF_NUDGE_WINDOWS=""
   FF_SEEN_HOMES=""
   SECOND_MATE_NUDGE_MESSAGE=$FM_SECOND_MATE_NUDGE_MESSAGE
@@ -410,6 +413,7 @@ secondmate_sync() {
     fm_secondmate_nudge_write "$STATE" "$id" "$home" "$commit" "$instr" "$message" "$remote" "$owed"
   }
 
+  # shellcheck disable=SC2329 # invoked through fm_ff_after_instruction_update
   secondmate_send_nudge() {
     local id=$1 home=$2 commit=$3 instr=$4 selector marker out
     selector="fm-$id"
@@ -429,6 +433,7 @@ secondmate_sync() {
     fi
   }
 
+  # shellcheck disable=SC2329 # invoked by bin/fm-ff-lib.sh
   fm_ff_after_instruction_update() {
     local id=$1 home=$2 _window=$3 instr=$4
     secondmate_send_nudge "$id" "$home" "$primary_head" "$instr"
@@ -1307,7 +1312,7 @@ backlog_record_reconcile() {
   fi
   # Keep the wake library's source-time state-directory creation inside
   # this mutating sweep, so FM_BOOTSTRAP_DETECT_ONLY remains read-only.
-  # shellcheck source=bin/fm-wake-lib.sh disable=SC1091
+  # shellcheck source=/dev/null disable=SC1091
   . "$SCRIPT_DIR/fm-wake-lib.sh"
 
   # Finish any close an interrupted cleanup recorded but never landed.
@@ -1621,7 +1626,7 @@ treehouse_pool_report() {
   rm -f "$records"
 }
 
-# shellcheck source=bin/fm-record-hygiene-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-record-hygiene-lib.sh"
 
 detect_local_config() {

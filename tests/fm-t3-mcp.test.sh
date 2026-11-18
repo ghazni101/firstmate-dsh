@@ -5,9 +5,9 @@
 # credential expiry and permissions, and every verb's result shape.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=tests/t3-fake-lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/t3-fake-lib.sh"
 
 command -v node >/dev/null 2>&1 || { echo "skip: node absent"; exit 0; }

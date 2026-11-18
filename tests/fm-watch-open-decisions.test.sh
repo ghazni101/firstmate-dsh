@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # Opt-in record-age reminders through the watcher's real queue interface.
 # No endpoint, harness process, model call, or remote host is needed.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -eu
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-watch-open-decisions)
 export FM_HOME="$TMP_ROOT" FM_STATE_OVERRIDE="$TMP_ROOT/state"
 export FM_CONFIG_OVERRIDE="$TMP_ROOT/config"
 mkdir -p "$FM_STATE_OVERRIDE" "$FM_CONFIG_OVERRIDE"
-# shellcheck source=bin/fm-watch.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-watch.sh"
 
 FM_OPEN_DECISION_OVERDUE_SECS=100

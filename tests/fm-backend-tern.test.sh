@@ -24,9 +24,11 @@
 # the Lua program it is handed; what the window would have answered is each
 # case's fixture.
 # shellcheck disable=SC2016 # File-wide: run_tern/safety_run and the dispatcher cases pass single-quoted snippets to `bash -c`, where the CHILD shell expands $1..$4 and $0 from the arguments that follow, exactly as tests/fm-backend.test.sh's child-Bash cases do.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the tern adapter)"; exit 0; }
@@ -1515,7 +1517,7 @@ safety_run() {
 # environment with a probe in place of the harness. What the probe prints is
 # what a real agent would have been started with.
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 install_stateful_fake_tern() {  # <fakebin>

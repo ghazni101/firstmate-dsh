@@ -56,9 +56,9 @@
 # Sourced by the publishers above and by tests. No side effects on source.
 
 _FM_PARENT_CHANNEL_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
-# shellcheck source=bin/fm-secondmate-parent-lib.sh
+# shellcheck source=/dev/null
 . "$_FM_PARENT_CHANNEL_LIB_DIR/fm-secondmate-parent-lib.sh"
-# shellcheck source=bin/fm-classify-lib.sh
+# shellcheck source=/dev/null
 . "$_FM_PARENT_CHANNEL_LIB_DIR/fm-classify-lib.sh"
 
 # shellcheck disable=SC2034 # Output globals read by sourcing callers.

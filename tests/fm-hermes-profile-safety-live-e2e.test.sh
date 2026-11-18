@@ -6,7 +6,7 @@
 # session/memory writers in the same disposable profile. This does not verify
 # a real mid-turn gateway, external memory providers, or same-session writes.
 set -u
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 fm_live_gate opt-in FM_HERMES_PROFILE_SAFETY_LIVE hermes tmux python3
 : "${FM_HERMES_PYTHON:?provide the installed Hermes Python environment}"

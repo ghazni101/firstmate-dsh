@@ -19,17 +19,17 @@
 set -u
 
 SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-classify-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-classify-lib.sh"
-# shellcheck source=bin/fm-line-cap-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-line-cap-lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
-# shellcheck source=bin/fm-supervision-engine-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
-# shellcheck source=bin/fm-afk-contract.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-afk-contract.sh"
 
 DRAIN_TMP=
@@ -265,6 +265,7 @@ assert_watcher_liveness() {
 # receipt path rather than a second interpretation of general check wakes.
 inactive_outcome_fingerprints() { # <sequence> <key-prefix> [<rows-file>]
   local cutoff=$1 prefix=$2 rows=${3:-} epoch seq kind key payload
+  # shellcheck disable=SC2034 # epoch and payload frame the fields the loop reads
   while IFS=$(printf '\t') read -r epoch seq kind key payload; do
     [ "$kind" = check ] || continue
     case "$seq" in ''|*[!0-9]*) continue ;; esac

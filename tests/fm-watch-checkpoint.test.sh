@@ -2,7 +2,7 @@
 # Tests for bounded foreground watcher checkpoints used by Codex supervision.
 set -u
 
-# shellcheck source=tests/wake-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
 CHECKPOINT="$ROOT/bin/fm-watch-checkpoint.sh"

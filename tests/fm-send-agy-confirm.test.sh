@@ -29,7 +29,7 @@
 #      untouched, so the send still exits 1 verdict=unknown.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SEND="$ROOT/bin/fm-send.sh"

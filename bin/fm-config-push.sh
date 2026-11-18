@@ -70,15 +70,15 @@ SECONDMATES_MD="$DATA/secondmates.md"
 
 "$SCRIPT_DIR/fm-guard.sh" || true
 
-# shellcheck source=bin/fm-ff-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-ff-lib.sh"
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-config-inherit-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
-# shellcheck source=bin/fm-secondmate-nudge-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-secondmate-nudge-lib.sh"
 
 print_item_report() {

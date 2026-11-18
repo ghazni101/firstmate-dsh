@@ -15,7 +15,7 @@
 # cheap because a disabled gate exits before a guard touches a harness.
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-live-gate)

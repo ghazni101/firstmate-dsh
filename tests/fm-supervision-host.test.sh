@@ -11,9 +11,11 @@
 # construction, bounding, and reaping are exercised without a model. A real
 # status append drives each wake through the real watcher.
 # shellcheck disable=SC2016 # single-quoted scripts expand inside their own shells
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/supervision-host-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/supervision-host-helpers.sh"
 
 test_park_exit_probe_uses_half_second_child_sleeps() {

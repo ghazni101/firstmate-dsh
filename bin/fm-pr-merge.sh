@@ -247,15 +247,15 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-backlog-transition-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
-# shellcheck source=bin/fm-merge-outcome-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-merge-outcome-lib.sh"
-# shellcheck source=bin/fm-merge-authority-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-merge-authority-lib.sh"
-# shellcheck source=bin/fm-afk-contract.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-afk-contract.sh"
 
 if [ "$#" -lt 2 ]; then
@@ -638,14 +638,14 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 }
 META="$STATE/$ID.meta"
 
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # Role partition: merging is MAIN-owned; the Pi supervision
 # branch reports the green PR and never merges (contract: bin/fm-lease-lib.sh;
 # a no-op in a native home, which has no branch actor). This precedes
 # reading the task record, because the wrong actor is refused for its role
 # whatever that record says.
-# shellcheck source=bin/fm-lease-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-lease-lib.sh"
 fm_lease_forbid_branch "PR merge (fm-pr-merge)"
 

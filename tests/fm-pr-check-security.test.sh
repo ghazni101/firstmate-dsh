@@ -3,7 +3,7 @@
 # private atomic artifacts, authenticated custom checks, and teardown cleanup.
 set -u
 
-# shellcheck source=tests/lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-pr-lib.sh"

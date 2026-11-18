@@ -18,12 +18,12 @@
 # from this guard after a harness upgrade.
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 fm_live_gate default-on FM_SECONDMATE_BUSY_LIVE tmux
 
-# shellcheck source=bin/fm-busy-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-busy-lib.sh"
 
 REAL_TMUX=$(command -v tmux)

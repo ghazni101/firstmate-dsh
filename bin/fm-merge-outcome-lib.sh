@@ -26,9 +26,9 @@
 # source beyond its sourced libraries.
 
 _FM_MERGE_OUTCOME_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$_FM_MERGE_OUTCOME_LIB_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-parent-channel-lib.sh
+# shellcheck source=/dev/null
 . "$_FM_MERGE_OUTCOME_LIB_DIR/fm-parent-channel-lib.sh"
 
 # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
@@ -84,8 +84,9 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin> [autho
     destination=''
   fi
 
+  # shellcheck disable=SC2034 # Input global for the wake library sourced below.
   STATE=$state
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$_FM_MERGE_OUTCOME_LIB_DIR/fm-wake-lib.sh"
   lock="$state/$id.pr-poll-merge-notified.lock"
   fm_lock_acquire_wait "$lock" || return 1

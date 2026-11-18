@@ -16,7 +16,7 @@ if [ -n "${FM_WATCH_TRIAGE_HELPERS_SOURCED:-}" ]; then
 fi
 FM_WATCH_TRIAGE_HELPERS_SOURCED=1
 
-# shellcheck source=tests/wake-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-classify-lib.sh"

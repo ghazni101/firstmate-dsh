@@ -7,7 +7,7 @@
 # what bin/fm-dod-lib.sh's ready-report gate reads.
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-spawn-external-review)

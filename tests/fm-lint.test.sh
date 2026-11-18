@@ -13,10 +13,13 @@
 # ShellCheck retired in 0.11.0.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 LINT="$ROOT/bin/fm-lint.sh"
+# The run-level memory scope has its own case below; every other case stubs
+# ShellCheck and stays hermetic instead of nesting a cgroup.
+export FM_LINT_MEMORY_SCOPE=0
 INSTALLER="$ROOT/bin/fm-install-shellcheck.sh"
 # The pinned version, read from the single source (the one owner itself).
 REQUIRED=$("$LINT" --required-version)
@@ -201,8 +204,8 @@ test_canonical_partitions_preserve_full_lint() {
       || fail "canonical partition $part failed: $(cat "$tmp/$part.out")"
     [ "$(LC_ALL=C sort "$log")" = "$(printf '%s\n' "$selected" | LC_ALL=C sort)" ] \
       || fail "partition $part executed a different root set than it listed"
-    [ "$(LC_ALL=C sort -u "$flags")" = "$(printf 'exclude=none\nexternal-sources=yes')" ] \
-      || fail "partition $part weakened source-aware analysis"
+    [ "$(LC_ALL=C sort -u "$flags")" = "$(printf 'exclude=SC1091\nexternal-sources=no')" ] \
+      || fail "partition $part followed sources or changed the canonical SC1091 exclusion"
     [ "$(LC_ALL=C sort -u "$mode")" = on ] || fail "partition $part disabled full analysis"
     root_count=$(printf '%s\n' "$selected" | grep -c .)
     invocation_count=$(grep -c '^external-sources=' "$flags" || true)
@@ -687,7 +690,7 @@ test_changed_mode_invokes_shellcheck_once_per_root() {
   pass "fm-lint.sh changed mode invokes ShellCheck once per root"
 }
 
-test_ci_keeps_external_sources_without_local_exclusions() {
+test_ci_explicit_path_keeps_source_following() {
   local tmp fakebin log flag_log mode_log fixture out
   tmp=$(fm_test_tmproot fm-lint-ci-follow)
   fakebin=$(fm_fakebin "$tmp")
@@ -708,10 +711,10 @@ SH
   [ "$(cat "$mode_log")" = on ] \
     || fail "CI lint disabled dataflow analysis"
   fm_lint_assert_flag_log "$flag_log" yes none
-  pass "fm-lint.sh CI keeps source following without the local exclusion list"
+  pass "fm-lint.sh CI explicit paths keep source following without the canonical exclusion"
 }
 
-test_main_branch_keeps_external_sources() {
+test_main_branch_runs_without_source_following() {
   local tmp fakebin log flag_log out
   tmp=$(fm_test_tmproot fm-lint-main-follow)
   fakebin=$(fm_fakebin "$tmp")
@@ -724,11 +727,11 @@ test_main_branch_keeps_external_sources() {
     FM_TEST_GIT_BRANCH=main \
     FM_TEST_FLAG_LOG="$flag_log" "$LINT" 2>&1) \
     || fail "main-branch lint failed"$'\n'"$out"
-  fm_lint_assert_flag_log "$flag_log" yes none
-  pass "fm-lint.sh on main keeps source following without the local exclusion list"
+  fm_lint_assert_flag_log "$flag_log" no SC1091
+  pass "fm-lint.sh on main runs the canonical set without following sources"
 }
 
-test_merge_base_less_keeps_external_sources() {
+test_merge_base_less_runs_without_source_following() {
   local tmp fakebin log flag_log out
   tmp=$(fm_test_tmproot fm-lint-nomergebase-follow)
   fakebin=$(fm_fakebin "$tmp")
@@ -741,8 +744,8 @@ test_merge_base_less_keeps_external_sources() {
     FM_TEST_GIT_BRANCH=feature FM_TEST_GIT_MERGE_BASE_OK=0 \
     FM_TEST_FLAG_LOG="$flag_log" "$LINT" 2>&1) \
     || fail "merge-base-less lint failed"$'\n'"$out"
-  fm_lint_assert_flag_log "$flag_log" yes none
-  pass "fm-lint.sh without a merge-base keeps source following without the local exclusion list"
+  fm_lint_assert_flag_log "$flag_log" no SC1091
+  pass "fm-lint.sh without a merge-base runs the canonical set without following sources"
 }
 
 test_explicit_path_keeps_external_sources() {
@@ -763,7 +766,7 @@ test_explicit_path_keeps_external_sources() {
   pass "fm-lint.sh explicit paths keep source following"
 }
 
-test_fast_mode_on_a_local_branch_keeps_source_following() {
+test_fast_mode_on_a_local_branch_disables_source_following() {
   local tmp fakebin log flag_log mode_log diff_file out target
   tmp=$(fm_test_tmproot fm-lint-fast-follow)
   fakebin=$(fm_fakebin "$tmp")
@@ -784,11 +787,11 @@ test_fast_mode_on_a_local_branch_keeps_source_following() {
     || fail "fast local-branch lint failed"$'\n'"$out"
   [ "$(cat "$mode_log")" = off ] \
     || fail "fast local-branch lint did not disable extended analysis"
-  fm_lint_assert_flag_log "$flag_log" yes none
-  pass "fm-lint.sh --fast on a local branch keeps source following"
+  fm_lint_assert_flag_log "$flag_log" no "SC1091,SC2034,SC2153,SC2329"
+  pass "fm-lint.sh --fast on a local branch disables source following and cross-file codes"
 }
 
-test_changed_mode_hides_cross_file_codes_that_ci_still_sees() {
+test_changed_mode_hides_cross_file_codes_that_explicit_paths_report() {
   if ! pinned_ready; then
     pass "SKIP (ShellCheck $REQUIRED not resolved): changed-mode exclusion behavior"
     return
@@ -828,8 +831,8 @@ SH
     FM_TEST_GIT_DIFF_FILE="$diff_file" "$lint" 2>&1) || rc=$?
   [ "$rc" -eq 0 ] \
     || fail "changed-mode local lint failed a cross-file-only fixture"$'\n'"$out"
-  assert_not_contains "$out" "SC2034" "changed-mode local lint still reported SC2034"
-  assert_not_contains "$out" "SC2329" "changed-mode local lint still reported SC2329"
+  assert_not_contains "$out" "[SC2034]" "changed-mode local lint still reported SC2034"
+  assert_not_contains "$out" "[SC2329]" "changed-mode local lint still reported SC2329"
 
   rc=0
   out=$("$lint" "$fixture" 2>&1) || rc=$?
@@ -1586,15 +1589,18 @@ SH
     awk -F '\t' '$1 == "end" && $3 ~ /teardown\.sh$/ && $9 == 0 && $10 == "memory-fallback" { found=1 } END { exit !found }' \
       "$tmp/pass.$mode.roots.tsv" || fail "the clean fallback was not recorded distinctly"
     rss_kib=$(awk -F '\t' '$1 == "end" && $3 ~ /teardown\.sh$/ { print $11 }' "$tmp/pass.$mode.roots.tsv")
+    # Both modes record per-root peak RSS now: the measurement is what a
+    # splitting decision and the memory report rest on, and unbounded mode
+    # still wraps the tool in /usr/bin/time, just without the address-space
+    # limit and the wall watchdog.
     if [ "$mode" -eq 1 ]; then
       assert_grep $'meta\tbounds_enforced\t1' "$tmp/pass.$mode.roots.tsv" \
         "the bounded fallback did not enforce bounds"
-      case "$rss_kib" in ''|*[!0-9]*) fail "the fallback attempts lost per-root RSS reporting: $rss_kib" ;; esac
     else
       assert_grep $'meta\tbounds_enforced\t0' "$tmp/pass.$mode.roots.tsv" \
         "the unbounded fallback unexpectedly enforced bounds"
-      [ "$rss_kib" = unavailable ] || fail "the unbounded fallback unexpectedly reported RSS: $rss_kib"
     fi
+    case "$rss_kib" in ''|*[!0-9]*) fail "the fallback attempts lost per-root RSS reporting: $rss_kib" ;; esac
   done
 
   if ! pinned_ready; then
@@ -2026,6 +2032,167 @@ SH
   pass "seeded dispatcher, adapter, production-owner, and test-local diagnostics preserve parity"
 }
 
+# fm_lint_plan_repo <dir>: a throwaway lint owner root whose only roots are the
+# files the caller creates under bin/ and tests/. bin/fm-lint.sh resolves its
+# repository root from its own location, so --list-plan on this copy describes
+# exactly those fixtures.
+fm_lint_plan_repo() {
+  local dir=$1
+  mkdir -p "$dir/bin/backends" "$dir/tests"
+  cp "$LINT" "$dir/bin/fm-lint.sh"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$dir/bin/fm-timeout-lib.sh"
+  chmod +x "$dir/bin/fm-lint.sh"
+}
+
+# fm_lint_plan_row <plan-output> <basename-pattern>: one plan row as
+# "<lines> <estimate-mib> <class>".
+fm_lint_plan_row() {
+  printf '%s\n' "$1" | awk -F '\t' -v want="$2" '$1 == "root" && $2 ~ want { print $3 " " $4 " " $5 }'
+}
+
+test_plan_classifies_roots_and_sizes_workers_from_memory() {
+  local tmp out plan_heavy plan_light small_budget jobs_one
+  tmp=$(fm_test_tmproot fm-lint-plan)
+  fm_lint_plan_repo "$tmp/repo"
+  awk 'BEGIN { for (i = 0; i < 2600; i++) print "# filler line " i }' > "$tmp/repo/bin/fm-large.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/repo/bin/fm-small.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/repo/tests/fm-small.test.sh"
+
+  out=$(FM_LINT_JOBS=2 FM_LINT_MEMORY_BUDGET_MIB=4096 "$tmp/repo/bin/fm-lint.sh" --list-plan) \
+    || fail "--list-plan failed on a fixture root"
+  assert_contains "$out" $'heavy_lines\t2500' "--list-plan did not report the heavy line threshold"
+  assert_contains "$out" $'root_memory_ceiling_mib\t1500' "--list-plan did not report the per-root ceiling"
+  plan_heavy=$(fm_lint_plan_row "$out" 'fm-large\.sh')
+  plan_light=$(fm_lint_plan_row "$out" 'fm-small\.sh')
+  [ "$plan_heavy" = "2600 568 heavy" ] \
+    || fail "a 2600-line root was not classified heavy with its line-count estimate, got: $plan_heavy"
+  [ "$plan_light" = "2 49 light" ] \
+    || fail "a 2-line root was not classified light with its line-count estimate, got: $plan_light"
+
+  # With a heavy root present and --jobs 2, one concurrency slot belongs to the
+  # heavy lane, so exactly one light worker is left however much memory the host
+  # has.
+  assert_contains "$out" $'light_workers\t1' "a heavy root did not take one of the two job slots"
+
+  # Drop the heavy root: two light workers now fit, and a budget below two light
+  # estimates drops the count to one.
+  rm -f "$tmp/repo/bin/fm-large.sh"
+  out=$(FM_LINT_JOBS=2 FM_LINT_MEMORY_BUDGET_MIB=4096 "$tmp/repo/bin/fm-lint.sh" --list-plan) \
+    || fail "--list-plan failed without a heavy root"
+  assert_contains "$out" $'light_workers\t2' "two light workers did not fit a 4096 MiB budget"
+  small_budget=$(FM_LINT_JOBS=2 FM_LINT_MEMORY_BUDGET_MIB=60 "$tmp/repo/bin/fm-lint.sh" --list-plan) \
+    || fail "--list-plan failed under a small budget"
+  assert_contains "$small_budget" $'light_workers\t1' "a 60 MiB budget still scheduled two workers"
+
+  # --jobs 1 with a heavy root must run that root alone rather than beside a
+  # light analysis, and the run cap follows the ceiling times concurrency plus
+  # the driver headroom.
+  awk 'BEGIN { for (i = 0; i < 2600; i++) print "# filler line " i }' > "$tmp/repo/bin/fm-large.sh"
+  jobs_one=$(FM_LINT_JOBS=1 FM_LINT_MEMORY_BUDGET_MIB=4096 "$tmp/repo/bin/fm-lint.sh" --list-plan) \
+    || fail "--list-plan failed for --jobs 1"
+  assert_contains "$jobs_one" $'heavy_alone\t1' "--jobs 1 did not serialize the heavy root"
+  assert_contains "$jobs_one" $'scope_memory_mib\t4024' \
+    "the run cap did not follow the ceiling times concurrency plus headroom"
+  pass "lint schedules by line-cost class and sizes workers from the memory budget"
+}
+
+test_root_memory_ceiling_stops_the_root_by_name() {
+  local tmp fakebin out rc
+  tmp=$(fm_test_tmproot fm-lint-ceiling)
+  fakebin=$(fm_fakebin "$tmp")
+  cat > "$fakebin/shellcheck" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in --version) printf 'version: 0.11.0\n'; exit 0 ;; esac
+done
+sleep 1
+exit 0
+SH
+  chmod +x "$fakebin/shellcheck"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/slow.sh"
+
+  rc=0
+  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_MEMORY_SCOPE=0 \
+    FM_LINT_ROOT_MEMORY_MIB=1 "$LINT" --telemetry "$tmp/lint.tsv" "$tmp/slow.sh" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a root over the memory ceiling unexpectedly passed"
+  assert_contains "$out" "slow.sh exceeded the per-root memory ceiling" \
+    "the ceiling diagnostic did not name the root"
+  assert_contains "$out" "1 MiB allowed" "the ceiling diagnostic did not report the configured ceiling"
+  awk -F '\t' '$1 == "end" && $3 ~ /slow\.sh$/ && $10 == "memory-ceiling" { found = 1 } END { exit !found }' \
+    "$tmp/lint.roots.tsv" || fail "the sidecar did not record the ceiling stop as memory-ceiling"
+  pass "a root that passes the resident ceiling is stopped and named as memory-ceiling"
+}
+
+test_run_memory_scope_wraps_the_whole_run() {
+  local tmp fakebin log out rc
+  tmp=$(fm_test_tmproot fm-lint-scope)
+  fakebin=$(fm_fakebin "$tmp")
+  log="$tmp/systemd-run.log"
+  cat > "$fakebin/systemd-run" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_TEST_SCOPE_LOG:?}"
+while [ "$#" -gt 0 ] && [ "$1" != -- ]; do shift; done
+if [ "$#" -gt 0 ]; then shift; exec "$@"; fi
+exit 0
+SH
+  chmod +x "$fakebin/systemd-run"
+  fm_lint_stub_shellcheck "$fakebin" "$tmp/shellcheck.log"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/root.sh"
+
+  rc=0
+  out=$(cd "$tmp" && PATH="$fakebin:$PATH" FM_TEST_SCOPE_LOG="$log" FM_LINT_JOBS=1 \
+    FM_LINT_MEMORY_BUDGET_MIB=512 FM_LINT_MEMORY_SCOPE=auto \
+    FM_LINT_SCOPE_MEMORY_MIB=4321 FM_LINT_SCOPE_SWAP_MIB=0 \
+    "$LINT" --telemetry "$tmp/lint.tsv" "$tmp/root.sh" 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "the scope-wrapped run failed (exit $rc): $out"
+  assert_contains "$out" "run memory cap 4321 MiB (swap 0 MiB)" \
+    "the run did not announce its memory cap"
+  grep -q -- '--user --scope' "$log" || fail "the run did not probe a user scope"
+  grep -q -- '-p MemoryMax=4321M' "$log" || fail "the run did not cap itself with MemoryMax"
+  grep -q -- '-p MemorySwapMax=0M' "$log" || fail "the run did not cap swap with MemorySwapMax"
+  awk -F '\t' '$1 == "meta" && $2 == "run_memory_scope_mib" && $3 == 4321 { found = 1 } END { exit !found }' \
+    "$tmp/lint.roots.tsv" || fail "the sidecar did not record the run-level cap"
+  pass "the run enters one memory-capped scope and reports its cap"
+}
+
+test_heavy_root_runs_alone() {
+  local tmp fakebin timeline out rc heavy_start heavy_end overlap
+  tmp=$(fm_test_tmproot fm-lint-heavy-serial)
+  fakebin=$(fm_fakebin "$tmp")
+  timeline="$tmp/timeline"
+  cat > "$fakebin/shellcheck" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in --version) printf 'version: 0.11.0\n'; exit 0 ;; esac
+done
+root=${!#}
+now=$(date +%s%N)
+printf 'start %s %s\n' "$(basename "$root")" "$((now / 1000000))" >> "${FM_TEST_TIMELINE:?}"
+sleep 0.3
+now=$(date +%s%N)
+printf 'end %s %s\n' "$(basename "$root")" "$((now / 1000000))" >> "${FM_TEST_TIMELINE:?}"
+exit 0
+SH
+  chmod +x "$fakebin/shellcheck"
+  awk 'BEGIN { for (i = 0; i < 2600; i++) print "# filler line " i }' > "$tmp/heavy.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/light-a.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/light-b.sh"
+
+  rc=0
+  out=$(PATH="$fakebin:$PATH" FM_TEST_TIMELINE="$timeline" FM_LINT_JOBS=1 FM_LINT_MEMORY_SCOPE=0 \
+    FM_LINT_MEMORY_BUDGET_MIB=4096 "$LINT" "$tmp/heavy.sh" "$tmp/light-a.sh" "$tmp/light-b.sh" 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "the serialized heavy run failed (exit $rc): $out"
+  heavy_start=$(awk '$1 == "start" && $2 == "heavy.sh" { print $3 }' "$timeline")
+  heavy_end=$(awk '$1 == "end" && $2 == "heavy.sh" { print $3 }' "$timeline")
+  [ -n "$heavy_start" ] && [ -n "$heavy_end" ] || fail "the heavy root never ran"
+  overlap=$(awk -v hs="$heavy_start" -v he="$heavy_end" '
+    $1 == "start" && $2 != "heavy.sh" { start[$2] = $3 }
+    $1 == "end" && $2 != "heavy.sh" { if (start[$2] < he && $3 > hs) print $2 }
+  ' "$timeline")
+  [ -z "$overlap" ] || fail "a heavy root ran beside another analysis: $overlap"
+  pass "an over-threshold root is serialized and never shares the run with another analysis"
+}
+
 test_help_reports_the_complete_interface
 test_list_files_reports_the_shell_inventory
 test_canonical_partitions_preserve_full_lint
@@ -2068,10 +2235,14 @@ test_zero_changed_files_exits_clean
 test_list_files_respects_changed_mode
 test_changed_mode_drops_external_sources_and_excludes_cross_file_codes
 test_changed_mode_invokes_shellcheck_once_per_root
-test_ci_keeps_external_sources_without_local_exclusions
-test_main_branch_keeps_external_sources
-test_merge_base_less_keeps_external_sources
+test_ci_explicit_path_keeps_source_following
+test_main_branch_runs_without_source_following
+test_merge_base_less_runs_without_source_following
 test_explicit_path_keeps_external_sources
-test_fast_mode_on_a_local_branch_keeps_source_following
-test_changed_mode_hides_cross_file_codes_that_ci_still_sees
+test_fast_mode_on_a_local_branch_disables_source_following
+test_changed_mode_hides_cross_file_codes_that_explicit_paths_report
 test_local_exclusion_list_covers_every_no_external_sources_code
+test_plan_classifies_roots_and_sizes_workers_from_memory
+test_root_memory_ceiling_stops_the_root_by_name
+test_run_memory_scope_wraps_the_whole_run
+test_heavy_root_runs_alone

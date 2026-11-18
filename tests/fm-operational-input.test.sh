@@ -2,7 +2,7 @@
 # Canonical current and isolated legacy operational-input protocol matrices.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 OWNER="$ROOT/bin/fm-operational-input.sh"

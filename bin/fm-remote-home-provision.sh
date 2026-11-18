@@ -26,7 +26,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME=${FM_HOME:?FM_HOME is required}
 MAX_MANIFEST_BYTES=1048576
 
-# shellcheck source=bin/fm-project-origin-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-project-origin-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
@@ -142,8 +142,9 @@ elif command -v sha256sum >/dev/null 2>&1; then
 else
   die "no SHA-256 tool is available for provisioning serialization"
 fi
+# shellcheck disable=SC2034 # Input global that anchors the wake library below.
 FM_STATE_OVERRIDE="$PROVISION_LOCK_STATE"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 PROVISION_LOCK="$STATE/.remote-home-provision-$HOME_LOCK_KEY.lock"
 fm_lock_acquire_wait "$PROVISION_LOCK"

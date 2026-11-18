@@ -2,9 +2,9 @@
 # Regression tests for cleanup endpoint and worktree-slot identity validation.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=tests/t3-fake-lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/t3-fake-lib.sh"
 
 TEARDOWN="$ROOT/bin/fm-teardown.sh"

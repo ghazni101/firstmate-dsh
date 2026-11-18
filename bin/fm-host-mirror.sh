@@ -98,7 +98,7 @@ MIRROR_CAP=4000
 MIRROR_KEEP=200
 FEED_CAP=16000
 
-# shellcheck source=bin/fm-supervision-engine-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
 
 usage() {
@@ -127,7 +127,7 @@ if ! command -v jq >/dev/null 2>&1 || [ ! -d "$STATE" ]; then
   exit 0
 fi
 
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 
 umask 077
@@ -149,9 +149,9 @@ ENTRIES='if . == "" or endswith("\n") then .[:-1] else error("unterminated mirro
 
 # A writer records only the lock-owning primary session's dialog.
 writer_in_scope() {
-  # shellcheck source=bin/fm-primary-scope-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-  # shellcheck source=bin/fm-proc-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-proc-lib.sh"
   fm_primary_scope_matches "$FM_ROOT" "$STATE"
 }
@@ -240,7 +240,7 @@ case "$1" in
     PAYLOAD=$(cat 2>/dev/null || true)
     [ -n "$PAYLOAD" ] || exit 0
     if [ "$2" = claude ]; then
-      # shellcheck source=bin/fm-hook-host-lib.sh
+      # shellcheck source=/dev/null
       . "$SCRIPT_DIR/fm-hook-host-lib.sh"
       # Cursor loads the tracked Claude settings too; its own entries mirror it.
       fm_hook_payload_is_foreign_host "$PAYLOAD" && exit 0

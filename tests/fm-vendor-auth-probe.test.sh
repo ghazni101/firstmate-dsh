@@ -21,7 +21,7 @@
 #    "stdin stays closed" are observable facts rather than comments.
 set -u
 
-# shellcheck source=tests/lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}

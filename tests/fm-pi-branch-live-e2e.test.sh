@@ -32,7 +32,7 @@
 # (docs/verification/runtime-backends.md).
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate opt-in FM_PI_BRANCH_LIVE_E2E npm jq node

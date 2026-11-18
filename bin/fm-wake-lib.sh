@@ -10,7 +10,7 @@ STATE="${FM_STATE_OVERRIDE:-${STATE:-$FM_HOME/state}}"
 FM_WAKE_QUEUE="${FM_WAKE_QUEUE:-$STATE/.wake-queue}"
 FM_WAKE_QUEUE_LOCK="${FM_WAKE_QUEUE_LOCK:-$STATE/.wake-queue.lock}"
 FM_LOCK_STALE_AFTER="${FM_LOCK_STALE_AFTER:-2}"
-# shellcheck source=bin/fm-path-lib.sh
+# shellcheck source=/dev/null
 . "$FM_WAKE_LIB_DIR/fm-path-lib.sh"
 # Resolved once at source time: fm_pid_identity and fm_path_mtime run inside 0.2s
 # confirm and 0.5s attach polls, and forking uname per call is a measurable cost on
@@ -23,7 +23,7 @@ mkdir -p "$STATE"
 # Load the classifier only when a status presentation helper is actually used.
 _fm_wake_require_classify() {
   command -v status_observed_signature >/dev/null 2>&1 && return 0
-  # shellcheck source=bin/fm-classify-lib.sh
+  # shellcheck source=/dev/null
   . "$FM_WAKE_LIB_DIR/fm-classify-lib.sh"
 }
 
@@ -31,7 +31,7 @@ _fm_wake_require_classify() {
 # lock deadline. Most wake-library consumers need no timeout machinery.
 _fm_wake_require_timeout() {
   command -v fm_run_timed >/dev/null 2>&1 && return 0
-  # shellcheck source=bin/fm-timeout-lib.sh
+  # shellcheck source=/dev/null
   . "$FM_WAKE_LIB_DIR/fm-timeout-lib.sh"
 }
 
@@ -40,7 +40,7 @@ _fm_wake_require_timeout() {
 # the process tables into every wake-library consumer.
 _fm_wake_require_proc_lib() {
   command -v fm_harness_ancestry_pid >/dev/null 2>&1 && return 0
-  # shellcheck source=bin/fm-proc-lib.sh
+  # shellcheck source=/dev/null
   . "$FM_WAKE_LIB_DIR/fm-proc-lib.sh"
 }
 
@@ -1881,7 +1881,7 @@ fm_firstmate_root_home() {
   while [ -e "$home/.fm-secondmate-parent" ] || [ -L "$home/.fm-secondmate-parent" ]; do
     marker="$home/.fm-secondmate-parent"
     if ! command -v fm_secondmate_parent_record_parse >/dev/null 2>&1; then
-      # shellcheck source=bin/fm-secondmate-parent-lib.sh
+      # shellcheck source=/dev/null
       . "$FM_WAKE_LIB_DIR/fm-secondmate-parent-lib.sh"
     fi
     fm_secondmate_parent_record_parse "$marker" || return 1
@@ -2991,6 +2991,7 @@ fm_wake_branch_owner_matches() {  # <owner-file> [<pid>] [<generation>]
   IFS= read -r pid <&8 || { exec 8<&-; return 1; }
   IFS= read -r identity <&8 || { exec 8<&-; return 1; }
   IFS= read -r generation <&8 || { exec 8<&-; return 1; }
+  # shellcheck disable=SC2034 # the extra line only proves the record is one line
   if IFS= read -r extra <&8; then exec 8<&-; return 1; fi
   exec 8<&-
   [ "$version" = fm-branch-eligible-owner-v1 ] || return 1

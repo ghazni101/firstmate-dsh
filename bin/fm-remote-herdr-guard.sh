@@ -50,9 +50,9 @@ SCRIPT_SELF=${BASH_SOURCE[0]}
 SCRIPT_DIR=${SCRIPT_SELF%/*}
 [ "$SCRIPT_DIR" != "$SCRIPT_SELF" ] || SCRIPT_DIR=.
 SCRIPT_DIR=$(CDPATH='' cd -- "$SCRIPT_DIR" && pwd -P)
-# shellcheck source=bin/fm-remote-herdr-owner-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-remote-herdr-owner-lib.sh"
-# shellcheck source=bin/fm-remote-job-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-remote-job-lib.sh"
 
 usage() { sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }

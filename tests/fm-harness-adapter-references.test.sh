@@ -2,7 +2,7 @@
 # Portable structural validation for the harness-adapters routing artifact.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ROUTER="$ROOT/.agents/skills/harness-adapters/SKILL.md"

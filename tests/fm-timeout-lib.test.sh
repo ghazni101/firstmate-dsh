@@ -10,7 +10,7 @@
 # shellcheck disable=SC2016 # each bounded bash -c script expands its own arguments
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-timeout-lib)
@@ -30,6 +30,7 @@ exec_timed() {
   local path=$1
   shift
   (
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-timeout-lib.sh"
     PATH=$path fm_exec_timed "$@"
   )
@@ -42,6 +43,7 @@ chmod +x "$RUN124/timeout"
 
 run_timed() {
   (
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-timeout-lib.sh"
     PATH="$RUN124:$PATH" fm_run_timed "$@"
   )
@@ -186,6 +188,7 @@ test_the_bound_replaces_the_calling_shell() {
   for path in "$PATH" "$PERL_ONLY"; do
     rm -f "$dir/caller" "$dir/parent"
     (
+      # shellcheck source=/dev/null
       . "$ROOT/bin/fm-timeout-lib.sh"
       perl -e 'print getppid(), "\n"' > "$dir/caller"
       PATH=$path fm_exec_timed 5 1 bash -c 'echo "$PPID" > "$1"' _ "$dir/parent"
@@ -233,6 +236,7 @@ test_a_signal_to_the_bounding_process_reaches_the_command() {
   # The positional parameters belong to the bounded shell.
   # shellcheck disable=SC2016
   (
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-timeout-lib.sh"
     PATH=$PERL_ONLY
     fm_exec_timed 60 30 bash -c '
@@ -263,6 +267,7 @@ test_a_named_owner_that_is_gone_ends_the_command() {
   wait "$gone" 2>/dev/null || true
   started=$SECONDS
   (
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-timeout-lib.sh"
     PATH=$PERL_ONLY FM_EXEC_TIMED_OWNER_PID=$gone \
       fm_exec_timed 60 1 bash -c 'echo $$ > "$1"; exec sleep 300' _ "$dir/pid"
@@ -575,6 +580,7 @@ test_run_timed_keeps_stdout_and_nonzero_status_when_a_function_shadows_timeout()
     timeout() { echo shadowed-timeout; return 0; }
     # shellcheck disable=SC2329 # Steal a bare gtimeout invocation; the runner must not call it.
     gtimeout() { echo shadowed-gtimeout; return 0; }
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-timeout-lib.sh"
     fm_run_timed 5 bash -c 'echo hello-stdout; exit 7'
   ) || rc=$?

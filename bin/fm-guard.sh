@@ -61,13 +61,12 @@ CONTINUE_LINE=${FM_GUARD_CONTINUE_LINE:-This is a supervision warning only; the 
 # Cleared when the home leaves the unhealthy state so a later episode re-arms.
 STALE_BANNER_MARKER="$STATE/.guard-watcher-stale-banner"
 
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-tangle-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-tangle-lib.sh"
-# shellcheck source=bin/fm-supervision-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
-
 # The actor identity: the supervision branch's own guarded shell marks itself
 # (FM_SUPERVISION_ACTOR=branch, injected by the extension's bash tool), and
 # every other caller is main. The two-actor lease that used to own this
@@ -131,16 +130,6 @@ fm_guard_claim_stale_banner() {
   done
   # Contended past the spin budget: stay loud rather than dropping the alarm.
   return 0
-}
-
-fm_guard_stale_banner_seen() {
-  local state=$1 key=$2
-  local marker="$state/.guard-watcher-stale-banner"
-  local seen
-
-  seen=$(cat "$marker" 2>/dev/null || true)
-  seen=${seen%$'\n'}
-  [ "$seen" = "$key" ]
 }
 
 fm_guard_clear_stale_banner() {

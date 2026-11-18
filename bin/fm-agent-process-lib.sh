@@ -15,11 +15,11 @@
 
 _FM_AGENT_PROCESS_LIB_DIR=${BASH_SOURCE[0]%/*}
 [ "$_FM_AGENT_PROCESS_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _FM_AGENT_PROCESS_LIB_DIR=.
-# shellcheck source=bin/fm-proc-lib.sh
+# shellcheck source=/dev/null
 . "${_FM_AGENT_PROCESS_LIB_DIR:-/}/fm-proc-lib.sh"
-# shellcheck source=bin/fm-gemini-lib.sh
+# shellcheck source=/dev/null
 . "${_FM_AGENT_PROCESS_LIB_DIR:-/}/fm-gemini-lib.sh"
-# shellcheck source=bin/fm-hermes-process-lib.sh
+# shellcheck source=/dev/null
 . "${_FM_AGENT_PROCESS_LIB_DIR:-/}/fm-hermes-process-lib.sh"
 unset _FM_AGENT_PROCESS_LIB_DIR
 

@@ -26,7 +26,7 @@
 #      the turn-end guard continuation and the model reaches for the tool.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 if [ "${FM_OMP_LIVE_E2E:-0}" != 1 ]; then

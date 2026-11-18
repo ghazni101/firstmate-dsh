@@ -130,18 +130,18 @@ DELIVERED_FILE="$STATE/.startup-network.delivered"
 TIMINGS_FILE="$STATE/.startup-network.timings"
 PUBLISH_LOCK="$STATE/.startup-network.lock"
 
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # fm-timing-lib.sh owns the per-step elapsed record this stage publishes beside
 # its report. Recording is opt-in per run: it stays inert until cmd_run points
 # FM_TIMING_LOG at a file, so nothing else that sources these scripts pays for it.
-# shellcheck source=bin/fm-timing-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timing-lib.sh"
 # fm-wake-lib.sh owns both the portable lock helpers used below and the durable
 # wake queue this stage publishes into.
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-proc-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-proc-lib.sh"
 
 usage() {

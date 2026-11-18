@@ -197,9 +197,9 @@ EOF
 LIBS_LOADED=0
 load_status_libs() {
   [ "$LIBS_LOADED" = 1 ] && return 0
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-wake-lib.sh" || return 1
-  # shellcheck source=bin/fm-classify-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-classify-lib.sh" || return 1
   LIBS_LOADED=1
 }
@@ -297,7 +297,7 @@ cmd_plan() {
 BACKEND_LOADED=0
 load_backend() {
   [ "$BACKEND_LOADED" = 1 ] && return 0
-  # shellcheck source=bin/fm-backend.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-backend.sh" || return 1
   fm_backend_source herdr || return 1
   BACKEND_LOADED=1

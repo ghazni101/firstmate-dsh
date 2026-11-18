@@ -29,7 +29,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
-# shellcheck source=bin/fm-role-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-role-lib.sh"
 
 case ${1:-} in

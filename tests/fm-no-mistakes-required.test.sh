@@ -2,7 +2,7 @@
 # Regression tests for the pinned shared no-mistakes gate action.
 set -u
 
-# shellcheck source=tests/lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ACTION_REF=32d396ac0f29135daf7fcb9964aba9d5f4e796d6

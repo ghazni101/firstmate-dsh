@@ -8,9 +8,11 @@
 #                scopes in-flight work to the PRIMARY checkout only and requires
 #                a live, identity-matched watcher lock plus a fresh beacon.
 # All hermetic over temp dirs; no real agent session is invoked.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # shellcheck source=/dev/null

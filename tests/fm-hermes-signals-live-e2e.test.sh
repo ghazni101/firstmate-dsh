@@ -3,8 +3,10 @@
 # FM_HERMES_SIGNALS_LIVE=1 FM_HERMES_LIVE_HOME=<throwaway-root>
 # FM_HERMES_LIVE_PROFILE=<name> (default worker). Never sends gateway messages or assigns
 # domain work. The profile's own model and auth are used unchanged.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 fm_live_gate opt-in FM_HERMES_SIGNALS_LIVE hermes tmux jq python3
 : "${FM_HERMES_LIVE_HOME:?provide a configured throwaway Hermes root}"
@@ -26,15 +28,15 @@ cleanup() {
 }
 trap cleanup EXIT
 fail() { printf 'not ok - %s: %s (evidence %s)\n' "$VERSION" "$1" "$LAB" >&2; exit 1; }
-# shellcheck source=bin/fm-busy-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-busy-lib.sh"
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-backend.sh"
 # Observe the real first-run offer on a fresh uncredentialed profile. This
 # sends no model prompt and never touches the configured live-check profile.
-# shellcheck source=bin/fm-hermes-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-hermes-lib.sh"
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-composer-lib.sh"
 CONSENT_ROOT="$LAB/consent-root"
 mkdir -p "$CONSENT_ROOT/profiles/consent"

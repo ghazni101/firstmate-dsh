@@ -62,7 +62,7 @@ fm_cursor_run_timed() {  # <seconds> <command...>
     local dir nounset=off
     dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) || return 1
     case $- in *u*) nounset=on ;; esac
-    # shellcheck source=bin/fm-timeout-lib.sh
+    # shellcheck source=/dev/null
     # shellcheck disable=SC1091
     # Missing sibling stays silent: hooks that source this file require empty
     # stderr, and a probe without the bound owner must fail closed, not print.

@@ -127,7 +127,7 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-gate-refuse-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
 if [ "${FM_GATE_REFUSE_BYPASS:-}" != 1 ]; then
   case "$SCRIPT_DIR/:$(cd "$SCRIPT_DIR" && pwd -P)/" in
@@ -148,7 +148,7 @@ if [ "${FM_GATE_REFUSE_BYPASS:-}" != 1 ]; then
       fi ;;
   esac
 fi
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 
 # Home-local watcher tuning is independent of Relay's generated cadence

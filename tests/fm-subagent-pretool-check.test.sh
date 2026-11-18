@@ -3,7 +3,7 @@
 # hook registration, shared settings boundary, and PreToolUse classifier.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 CHECK="$ROOT/bin/fm-subagent-pretool-check.sh"

@@ -6,6 +6,8 @@
 # throwaway home, so they prove routing by the digest that actually appears,
 # not by inspecting the wrapper's source. docs/sessionstart-nudge.md owns the
 # tier assignment and the source table these pin.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
 # Run the whole suite beneath one long-lived fixture harness, matching the real
@@ -23,7 +25,7 @@ if [ "${FM_SESSIONSTART_TEST_HARNESS:-0}" != 1 ]; then
   exit "$HARNESS_STATUS"
 fi
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 unset NO_MISTAKES_GATE

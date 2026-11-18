@@ -10,7 +10,7 @@
 # a literal-dot pattern would have matched, yet still reject the label itself.
 set -eu
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-assertions)

@@ -5,9 +5,11 @@
 # banner.
 # Repeated commands in that same stale episode should print only a concise
 # reminder, while unrelated alarms such as queued wakes stay independent.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-guard-stale-banner)

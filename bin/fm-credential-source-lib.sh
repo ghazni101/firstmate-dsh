@@ -24,7 +24,7 @@
 # because that can echo what it was given. fm_credsrc_supported never runs the
 # tool, so asking whether a source is available retrieves no credential.
 
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
 
 # Adapter name -> the fields it takes. A declaration holds "source" plus

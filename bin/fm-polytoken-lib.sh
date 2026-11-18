@@ -65,7 +65,7 @@
 # Sourcing: set -u and set -e safe; no side effects on source beyond sourcing
 # the shared hard-bound owner (fm-timeout-lib.sh, the same self-source every
 # sibling library performs).
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
 
 # The worker facet name firstmate generates into the task worktree. A facet

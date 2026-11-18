@@ -11,7 +11,7 @@
 # lifecycle calls it made.
 set -u
 
-# shellcheck source=tests/lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 fm_git_identity fmtest fmtest@example.invalid
 
@@ -425,6 +425,7 @@ test_park_serializes_final_check_with_inbox_delivery() {
   w=$(make_world park-inbox-lock "$GH_URL")
   local FM_HOME="$w"
   export FM_HOME
+  # shellcheck source=/dev/null
   . "$ROOT/bin/fm-task-inbox-lib.sh"
   gh_fixture "$w/gh.1.json"
   lock=$(fm_task_inbox_delivery_lock_path "$w/state" lane)
@@ -454,6 +455,7 @@ test_park_does_not_hold_metadata_lock_through_control_exit() {
   gh_fixture "$w/gh.1.json"
   cat > "$w/fakebin/fm-control.sh" <<SH
 #!/usr/bin/env bash
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-wake-lib.sh"
 lock=\$(fm_meta_lock_path "$w/state/lane.meta")
 fm_lock_acquire_wait "\$lock" || exit 1

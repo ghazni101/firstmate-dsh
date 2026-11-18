@@ -27,9 +27,9 @@
 #      thread and never asked to persist for a restart that cannot come.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=tests/t3-fake-lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/t3-fake-lib.sh"
 
 RESTART="$ROOT/bin/fm-secondmate-restart.sh"

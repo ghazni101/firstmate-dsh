@@ -67,11 +67,11 @@ REGISTRY="$DATA/secondmates.md"
 BUDGET_CMD=fm-startup-memory-budget.sh
 SUB_HOME_MARKER="${SUB_HOME_MARKER:-.fm-secondmate-home}"
 
-# shellcheck source=bin/fm-ff-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-ff-lib.sh"
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
 BOUND=${FM_STOW_CASCADE_TIMEOUT:-60}

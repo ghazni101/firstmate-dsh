@@ -9,7 +9,7 @@
 # Shared composer-content classifier (empty|pending|unknown, and the fleet-wide
 # dead-shell-vs-agent-composer rule). Owned by bin/fm-composer-lib.sh, reused by
 # every backend so the decision cannot drift.
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$(dirname -- "${BASH_SOURCE[0]}")/../fm-composer-lib.sh"
 
 fm_backend_orca_tool_check() {

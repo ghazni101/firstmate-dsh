@@ -127,16 +127,16 @@ FM_BACKEND_TERN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-${FM_ROOT:-$FM_BACKEND_TERN_ROOT}}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
-# shellcheck source=bin/fm-backend-hometag-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_TERN_ROOT/bin/fm-backend-hometag-lib.sh"
 
 # Shared composer-content classifier and submit helpers (bin/fm-composer-lib.sh).
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_TERN_ROOT/bin/fm-composer-lib.sh"
 
 # Shared harness-process identity (agent|shell|other), the same classifier the
 # tmux and herdr adapters prove liveness with (bin/fm-agent-process-lib.sh).
-# shellcheck source=bin/fm-agent-process-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_TERN_ROOT/bin/fm-agent-process-lib.sh"
 
 # bin/fm-timeout-lib.sh owns bounded execution (fm_run_timed). It declares
@@ -144,7 +144,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # that runs without it, so the caller's nounset setting is restored.
 _fm_backend_tern_nounset=off
 case $- in *u*) _fm_backend_tern_nounset=on ;; esac
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_TERN_ROOT/bin/fm-timeout-lib.sh"
 [ "$_fm_backend_tern_nounset" = on ] || set +u
 unset _fm_backend_tern_nounset

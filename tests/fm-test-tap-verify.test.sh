@@ -6,7 +6,7 @@
 # Bash CI job.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 VERIFY="$ROOT/bin/fm-test-tap-verify.sh"
@@ -108,6 +108,7 @@ test_fm_test_run_declares_plan_from_names() {
 #!/usr/bin/env bash
 set -u
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$ROOT/tests/lib.sh"
 test_alpha() { pass "alpha"; }
 test_beta() { pass "beta"; }
@@ -131,6 +132,7 @@ test_fm_test_run_early_function_exit_fails() {
 #!/usr/bin/env bash
 set -u
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$ROOT/tests/lib.sh"
 test_alpha() { pass "alpha"; exit 0; }
 test_beta() { pass "beta"; }

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Behavioral coverage for the visible startup-memory budget, its safe parser,
 # accounting command, primary-to-secondmate convergence, and exact reread bytes.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}

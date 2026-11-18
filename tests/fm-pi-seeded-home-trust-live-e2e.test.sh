@@ -13,10 +13,9 @@
 # Policy: default-on wherever pi and tmux are installed (fm_live_gate).
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REAL_TMUX=$(command -v tmux 2>/dev/null || true)
 SOCKET="fm-pi-seeded-trust-$$"
 LAB=

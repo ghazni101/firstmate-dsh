@@ -7,7 +7,7 @@
 # selects Pi. FM_NATIVE_TEST_KEEP=1 preserves the isolated fixture for diagnosis.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 fm_live_gate default-on FM_PI_CODEX_NATIVE_LIVE node "${FM_PI_BIN:-pi}"
 PI_CODEX_NATIVE_PACKAGE=${PI_CODEX_NATIVE_PACKAGE:-"$HOME/.pi/agent/packages/pi-codex-native"}

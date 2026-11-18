@@ -15,7 +15,7 @@
 #   4. The --key path never pauses (it bypasses the submit/settle path entirely).
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-busy-lib.sh"

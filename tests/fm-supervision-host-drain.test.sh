@@ -13,7 +13,7 @@
 # shellcheck disable=SC2016 # single-quoted scripts expand inside their own shells
 set -u
 
-# shellcheck source=tests/supervision-host-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/supervision-host-helpers.sh"
 
 

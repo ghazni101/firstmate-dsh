@@ -4,7 +4,7 @@
 # copying credentials and pins the captain-approved openai-codex model.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate opt-in FM_PI_LIVE_E2E pi tmux

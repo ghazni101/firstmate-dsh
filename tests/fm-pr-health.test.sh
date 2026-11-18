@@ -5,7 +5,7 @@
 # real task records, task copies and durable contributions.
 # A barrier at the forge boundary proves reads fan out across owned PRs.
 set -u
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-pr-health)
 HEAD_A=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -407,7 +407,7 @@ test_many_recorded_contributions_do_not_starve_a_new_branch_pr() {
   real_jq=$(command -v jq)
   printf '#!/bin/sh\nsleep 0.05\nexec %s "$@"\n' "$real_jq" > "$home/fakebin/jq"
   chmod +x "$home/fakebin/jq"
-  # shellcheck source=bin/fm-timeout-lib.sh
+  # shellcheck source=/dev/null
   . "$ROOT/bin/fm-timeout-lib.sh"
   with_home "$home" fm_run_timed 20 bash "$home/state/pr-health.check.sh" >/dev/null 2>&1 || rc=$?
   rm "$home/fakebin/jq"

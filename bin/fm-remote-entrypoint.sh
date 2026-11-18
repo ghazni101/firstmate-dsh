@@ -37,7 +37,7 @@ REAL_SOURCE=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' 
   REAL_SOURCE=${BASH_SOURCE[0]}
 SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$REAL_SOURCE")" && pwd -P)
 
-# shellcheck source=bin/fm-remote-job-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-remote-job-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit "${2:-64}"; }
@@ -67,10 +67,13 @@ path_is_ancestor() { # <ancestor> <path>
 sha256_file() { # <path>
   local path=$1 digest extra
   if [ -x /usr/bin/shasum ]; then
+    # shellcheck disable=SC2034 # the extra word only proves the line is one field
     read -r digest extra < <(/usr/bin/shasum -a 256 "$path") || return 1
   elif [ -x /usr/bin/sha256sum ]; then
+    # shellcheck disable=SC2034 # the extra word only proves the line is one field
     read -r digest extra < <(/usr/bin/sha256sum "$path") || return 1
   elif [ -x /bin/sha256sum ]; then
+    # shellcheck disable=SC2034 # the extra word only proves the line is one field
     read -r digest extra < <(/bin/sha256sum "$path") || return 1
   else
     return 1
@@ -179,6 +182,7 @@ if ! JOB_ID=$(fm_remote_job_stage "$ACCOUNT_HOME" "$ROOT" "$HOME_PATH" "$COMMAND
   JOB_ID=
   die "${FM_REMOTE_JOB_ERROR:-cannot stage remote job}" 70
 fi
+# shellcheck disable=SC2034 # Input global for bin/fm-remote-job-lib.sh.
 FM_REMOTE_JOB_DISCONNECT_PROBE=entrypoint_caller_connected
 if ! fm_remote_job_wait "$ACCOUNT_HOME" "$JOB_ID"; then
   die "${FM_REMOTE_JOB_ERROR:-remote job did not complete}" 70

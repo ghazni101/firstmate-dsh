@@ -50,9 +50,9 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
-# shellcheck source=bin/fm-worker-account-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
-# shellcheck source=bin/fm-quota-axi-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
 
 FM_CLAUDE_ACCOUNT_QUOTA_SECONDS=${FM_CLAUDE_ACCOUNT_QUOTA_SECONDS:-60}

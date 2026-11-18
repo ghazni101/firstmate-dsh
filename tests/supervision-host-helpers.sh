@@ -17,7 +17,7 @@ if [ -n "${FM_SUPERVISION_HOST_HELPERS_SOURCED:-}" ]; then
 fi
 FM_SUPERVISION_HOST_HELPERS_SOURCED=1
 
-# shellcheck source=tests/wake-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
 HOST="$ROOT/bin/fm-supervision-host.sh"

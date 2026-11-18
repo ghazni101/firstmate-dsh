@@ -9,7 +9,7 @@
 # subcommands every consumer uses instead of parsing the file.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 CONTRACT="$ROOT/bin/fm-afk-contract.sh"

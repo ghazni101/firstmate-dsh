@@ -6,7 +6,7 @@
 # shellcheck disable=SC2016 # single quotes are deliberate: $FM_HOME expands inside the fake harness child
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-agy-primary)

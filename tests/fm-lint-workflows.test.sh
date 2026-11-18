@@ -9,11 +9,14 @@
 # deliberate CI-less state and must pass instead of failing lint.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 LINT_WF="$ROOT/bin/fm-lint-workflows.sh"
 LINT="$ROOT/bin/fm-lint.sh"
+# Fixture lints stay hermetic; run-level scoping has its own case in
+# tests/fm-lint.test.sh.
+export FM_LINT_MEMORY_SCOPE=0
 INSTALLER="$ROOT/bin/fm-install-actionlint.sh"
 REQUIRED=$("$LINT_WF" --required-version)
 

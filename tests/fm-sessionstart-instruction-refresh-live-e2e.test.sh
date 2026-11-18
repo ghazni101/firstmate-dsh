@@ -24,7 +24,7 @@
 # This costs real Pi model turns and requires its normal authenticated profile.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate opt-in FM_SESSIONSTART_INSTRUCTION_REFRESH_LIVE_E2E pi tmux git

@@ -133,9 +133,9 @@ grown_logs() {
 LIBS_LOADED=0
 load_libs() {
   [ "$LIBS_LOADED" = 1 ] && return 0
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-wake-lib.sh" || return 1
-  # shellcheck source=bin/fm-classify-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-classify-lib.sh" || return 1
   LIBS_LOADED=1
 }

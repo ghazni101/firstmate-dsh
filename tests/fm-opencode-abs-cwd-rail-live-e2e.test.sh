@@ -7,7 +7,7 @@
 # credentials; it runs on an isolated tmux socket and a throwaway directory.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate opt-in FM_OPENCODE_ABS_CWD_LIVE opencode tmux

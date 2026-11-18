@@ -2,7 +2,7 @@
 # Structural regression tests for the tracked documentation audience inventory.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 CHECK="$ROOT/bin/fm-doc-audience-check.sh"

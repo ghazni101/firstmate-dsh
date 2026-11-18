@@ -8,9 +8,11 @@
 # so these stay hermetic: no ports, no server, deterministic in CI. jq stays the
 # real tool. End-to-end verification against a real HTTP relay is done out of
 # band; this suite pins the client logic and the activation contract.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
@@ -2708,7 +2710,9 @@ test_meta_helpers_refuse_a_symlinked_task_record() {
   rm -f "$meta" "$target"
   ln -s "$target" "$meta"
   FM_HOME="$home" STATE="$home/state" ROOT="$ROOT" META="$meta" bash -c '
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-x-lib.sh"
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-wake-lib.sh"
     fmx_meta_link_clear "$META"
   ' >/dev/null 2>&1; rc=$?

@@ -13,7 +13,7 @@
 # spawned; live per-harness evidence lives in docs/cd-guard.md.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_git_identity fmtest fmtest@example.invalid
@@ -408,7 +408,9 @@ test_policy_cli_direct() {
 test_scripts_are_shellcheck_clean() {
   local out
   command -v shellcheck >/dev/null 2>&1 || { pass "shellcheck not installed, skipping"; return; }
-  out=$("$ROOT/bin/fm-lint.sh" "$ROOT/bin/fm-cd-pretool-check.sh" 2>&1) \
+  # One bounded single-root analysis; the suite stays hermetic rather than
+  # nesting its own memory cgroup.
+  out=$(FM_LINT_MEMORY_SCOPE=0 "$ROOT/bin/fm-lint.sh" "$ROOT/bin/fm-cd-pretool-check.sh" 2>&1) \
     || fail "bin/fm-cd-pretool-check.sh is not lint-clean under the pinned definition: $out"
   pass "bin/fm-cd-pretool-check.sh is clean under bin/fm-lint.sh"
 }

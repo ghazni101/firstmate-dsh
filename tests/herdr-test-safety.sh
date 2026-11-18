@@ -4,7 +4,7 @@
 # fleet-state tripwire contract is bin/fm-herdr-lab.sh.
 set -u
 
-# shellcheck source=tests/git-config-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/git-config-helpers.sh"
 
 # Herdr backend tests drive the real fm-spawn/fm-teardown but do not source

@@ -17,9 +17,11 @@
 # propagation owner bin/fm-config-inherit-lib.sh, bin/fm-brief.sh,
 # bin/fm-spawn.sh, bin/fm-promote.sh, and fm_dod_block. Nothing here greps
 # source for policy prose.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-role-lib.sh"

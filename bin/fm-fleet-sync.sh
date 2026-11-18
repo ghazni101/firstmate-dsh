@@ -40,11 +40,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
-# shellcheck source=bin/fm-lock-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-lock-lib.sh"
 # Inert unless FM_TIMING_LOG names a file; only the deferred network stage sets it.
-# shellcheck source=bin/fm-timing-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timing-lib.sh"
+# shellcheck disable=SC2034 # Input global: the lock library prefixes its log lines with it.
 FM_LOCK_LOG_PREFIX=fleet-sync
 "$FM_ROOT/bin/fm-guard.sh" || true
 

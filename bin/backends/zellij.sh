@@ -116,12 +116,12 @@ FM_BACKEND_ZELLIJ_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-${FM_ROOT:-$FM_BACKEND_ZELLIJ_ROOT}}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
-# shellcheck source=bin/fm-backend-hometag-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_ZELLIJ_ROOT/bin/fm-backend-hometag-lib.sh"
 
 # Shared composer classification (the fleet-wide shape catalogue and verdict
 # owner; this adapter contributes only capture and capability facts).
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_ZELLIJ_ROOT/bin/fm-composer-lib.sh"
 
 # Verified minimum: report.md recommends "likely Zellij 0.44 or newer" for
@@ -234,10 +234,10 @@ fm_backend_zellij_session_exists() {  # <session>
 # harmless here because existence is checked first and the launch is
 # backgrounded, its exit status never inspected.
 fm_backend_zellij_server_ensure() {  # <session>
-  local session=$1 i
+  local session=$1
   fm_backend_zellij_session_exists "$session" && return 0
   ( nohup zellij attach -b "$session" </dev/null >/dev/null 2>&1 & ) || return 1
-  for i in $(seq 1 20); do
+  for _ in $(seq 1 20); do
     fm_backend_zellij_session_exists "$session" && return 0
     sleep 0.5
   done

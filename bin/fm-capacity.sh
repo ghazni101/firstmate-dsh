@@ -910,11 +910,11 @@ auto_budget() {
 "
     return 0
   fi
-  # shellcheck source=bin/fm-timeout-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-timeout-lib.sh"
-  # shellcheck source=bin/fm-lane-vitals-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-lane-vitals-lib.sh"
-  # shellcheck source=bin/fm-classify-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-classify-lib.sh"
   [ "$mode" != admit ] || [ -n "$min_gpu_free_gb" ] || want_gpu=0
   fm_lane_vitals_probe "$os" "$want_gpu"
@@ -931,9 +931,9 @@ auto_budget() {
   # Lanes: this home first, then every other local home on this machine.
   auto_lane_rows 0 "$STATE" > "$tmp/lanes"
   if [ -d "$STATE" ]; then
-    # shellcheck source=bin/fm-secondmate-registry-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
-    # shellcheck source=bin/fm-wake-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-wake-lib.sh"
     if fm_local_firstmate_state_dirs "$STATE" 2>/dev/null; then
       have_states=1
@@ -1292,7 +1292,7 @@ quota_json=null
 if [ -n "$quota_provider" ]; then
   runway=unknown
   if command -v quota-axi >/dev/null 2>&1; then
-    # shellcheck source=bin/fm-timeout-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-timeout-lib.sh"
     qout=$(fm_run_timed "$QUOTA_TIMEOUT" quota-axi --json --provider "$quota_provider" --max-age 15m 2>/dev/null) || qout=
     v=$(printf '%s' "$qout" | jq -r --arg p "$quota_provider" '

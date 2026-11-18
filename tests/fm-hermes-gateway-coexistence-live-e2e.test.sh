@@ -8,7 +8,7 @@
 # idle gateway and checks the session store, memory and gateway afterward.
 # The profile's config is restored after it temporarily sets gateway.standalone.
 set -u
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 fm_live_gate opt-in FM_HERMES_GATEWAY_LIVE hermes tmux jq python3
 : "${FM_HERMES_LIVE_HOME:?provide a configured throwaway Hermes root}"
@@ -71,7 +71,7 @@ if [ "$(jq -r .gateway_state "$PROFILE_HOME/gateway_state.json" 2>/dev/null)" !=
   fail "native gateway did not reach running: $(tmux -S "$SOCKET" capture-pane -p -t gateway | tail -20)"
 fi
 printf 'idle gateway before: %s\n' "$(gateway_state)"
-# shellcheck source=bin/fm-hermes-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-hermes-lib.sh"
 HERMES_GATEWAY_LOCK_DIR="$LAB/locks" fm_hermes_gateway_check "$PROFILE_HOME" "$PROFILE" || fail 'idle own gateway refused'
 pass 'real idle profile gateway accepted by the read-only preflight'

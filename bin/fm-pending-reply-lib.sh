@@ -122,11 +122,11 @@
 # This directive does double duty: it also binds _FM_PENDING_REPLY_LIB_DIR as
 # the bin/ source prefix so the deliberately undirected lazy sources below
 # still resolve for ShellCheck instead of warning SC1091.
-# shellcheck source=bin/fm-marker-lib.sh
+# shellcheck source=/dev/null
 _FM_PENDING_REPLY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || _FM_PENDING_REPLY_LIB_DIR="."
-# shellcheck source=bin/fm-marker-lib.sh
+# shellcheck source=/dev/null
 . "$_FM_PENDING_REPLY_LIB_DIR/fm-marker-lib.sh"
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$_FM_PENDING_REPLY_LIB_DIR/fm-backend.sh"
 # Deliberately undirected: this library consumes no symbols from
 # bin/fm-tmux-lib.sh, so following it under ShellCheck's external-source
@@ -439,8 +439,8 @@ fm_pending_reply_prepare_delivery() {  # <state-dir> <corr_id>
 
 fm_pending_reply_confirm_delivery() {  # <state-dir> <corr_id>
   local state=$1 corr=$2 lock rc=0
-  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
-  STATE=$state
+  # shellcheck disable=SC2034 # Input globals for the wake library sourced below.
+  local STATE=$state FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
   lock="$state/.pending-reply-$corr.lock"
   . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
   fm_lock_acquire_wait "$lock" || return 1
@@ -520,8 +520,8 @@ _fm_pending_reply_reconcile_delivery_locked() {  # <state-dir> <corr_id>
 
 fm_pending_reply_reconcile_delivery() {  # <state-dir> <corr_id>
   local state=$1 corr=$2 lock rc=0
-  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
-  STATE=$state
+  # shellcheck disable=SC2034 # Input globals for the wake library sourced below.
+  local STATE=$state FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
   lock="$state/.pending-reply-$corr.lock"
   . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
   fm_lock_acquire_wait "$lock" || return 1
@@ -551,8 +551,8 @@ fm_pending_reply_delivery_attempt_unresolved() {  # <state-dir> <corr_id>
 # confirmed delivery can never be reset, whatever its phase.
 fm_pending_reply_reset_known_undelivered() {  # <state-dir> <corr_id>
   local state=$1 corr=$2 lock rc=0
-  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
-  STATE=$state
+  # shellcheck disable=SC2034 # Input globals for the wake library sourced below.
+  local STATE=$state FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
   lock="$state/.pending-reply-$corr.lock"
   . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
   fm_lock_acquire_wait "$lock" || return 1
@@ -671,10 +671,10 @@ fm_pending_reply_try_resolve() {  # <state-dir> <corr_id> [status-file-override]
   # The lock is released explicitly rather than from an EXIT trap, because a trap
   # in a plain function would clobber the caller's own.
   local state=$1 corr=$2 lock rc=0
-  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
-  STATE=$state
+  # shellcheck disable=SC2034 # Input globals for the wake library sourced below.
+  local STATE=$state FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
   lock="$state/.pending-reply-$corr.lock"
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
   fm_lock_acquire_wait "$lock" || return 1
   _fm_pending_reply_try_resolve_locked "$@" || rc=$?
@@ -966,7 +966,8 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   local state=$1 corr=$2
   local rec phase completed delivered attempted grace now age task_id msg parent_home send_status=0
   local sender_pid sender_identity status_file lock
-  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
+  # shellcheck disable=SC2034 # Input globals for the wake library sourced below.
+  local STATE=$state FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
   phase=$(fm_pending_reply_get "$rec" phase)
@@ -1199,8 +1200,8 @@ fm_pending_reply_close_escalation() {  # <state-dir> <corr_id>
   # The lock is released explicitly rather than from an EXIT trap, because a trap
   # in a plain function would clobber the caller's own.
   local state=$1 corr=$2 lock rc=0
-  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
-  STATE=$state
+  # shellcheck disable=SC2034 # Input globals for the wake library sourced below.
+  local STATE=$state FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
   lock="$state/.pending-reply-$corr.lock"
   # Deliberately undirected: bin/fm-wake-lib.sh is expanded once at the
   # fm_pending_reply_try_resolve site; each directed site would re-expand its
@@ -1267,8 +1268,8 @@ fm_pending_reply_maybe_escalate() {  # <state-dir> <corr_id>
   # The lock is released explicitly rather than from an EXIT trap, because a trap
   # in a plain function would clobber the caller's own.
   local state=$1 corr=$2 lock rc=0
-  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
-  STATE=$state
+  # shellcheck disable=SC2034 # Input globals for the wake library sourced below.
+  local STATE=$state FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
   lock="$state/.pending-reply-$corr.lock"
   # Deliberately undirected: bin/fm-wake-lib.sh is expanded once at the
   # fm_pending_reply_try_resolve site; each directed site would re-expand its
@@ -1388,7 +1389,7 @@ fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <secondmate-home
     return 0
   fi
   sightings=$(fm_pending_reply_get "$rec" wrong_home_sightings)
-  # shellcheck source=bin/fm-parent-channel-lib.sh
+  # shellcheck source=/dev/null
   . "$_FM_PENDING_REPLY_LIB_DIR/fm-parent-channel-lib.sh"
   if fm_parent_channel_destination "$sm_home" "$sm_home/state" >/dev/null 2>&1 \
     && [ "$FM_PARENT_CHANNEL_ROUTE" = remote ]; then

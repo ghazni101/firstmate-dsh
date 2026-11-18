@@ -67,7 +67,7 @@ FM_CREW_STATE_BIN="${FM_CREW_STATE_BIN:-$_FM_CLASSIFY_LIB_DIR/fm-crew-state.sh}"
 # THIS library's consumers - several of them deliberately run without it - so the
 # caller's setting is restored around the source.
 case $- in *u*) _fm_classify_nounset=on ;; *) _fm_classify_nounset=off ;; esac
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
 . "$_FM_CLASSIFY_LIB_DIR/fm-timeout-lib.sh"
 [ "$_fm_classify_nounset" = on ] || set +u
@@ -1230,7 +1230,7 @@ EOF
 status_scan_parent_channel_exclude() {  # <state>
   local state=$1 exclude
   if ! command -v fm_parent_channel_outbound_status >/dev/null 2>&1; then
-    # shellcheck source=bin/fm-parent-channel-lib.sh
+    # shellcheck source=/dev/null
     . "$_FM_CLASSIFY_LIB_DIR/fm-parent-channel-lib.sh"
   fi
   exclude=$(fm_parent_channel_outbound_status "$(dirname "$state")" "$state") || return 0

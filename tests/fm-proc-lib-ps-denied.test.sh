@@ -16,7 +16,7 @@
 # shellcheck disable=SC2016 # single quotes are deliberate where they expand inside the fixture child
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-proc-lib-ps-denied)

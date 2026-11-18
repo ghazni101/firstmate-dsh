@@ -31,7 +31,7 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/lib.sh"
 
 fail() { printf 'not ok - %s\n' "$1" >&2; exit 1; }
@@ -49,7 +49,7 @@ command -v treehouse >/dev/null 2>&1 || { echo "skip: treehouse not found (requi
 command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found (required by the socket probes)"; exit 0; }
 export FM_HC_BIN=$HC_BIN
 
-# shellcheck source=tests/hc-test-safety.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/hc-test-safety.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-backend-hc-appdetect)

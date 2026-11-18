@@ -207,7 +207,7 @@ load_wake_lib() {
   local lib="$FM_ROOT/bin/fm-wake-lib.sh"
   [ "${FM_INBOX_WAKE_LIB:-}" = 1 ] && return 0
   [ -r "$lib" ] || return 1
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   FM_ROOT_OVERRIDE="$FM_ROOT" FM_HOME="$FM_HOME" STATE="$STATE" . "$lib"
   FM_INBOX_WAKE_LIB=1
 }
@@ -846,7 +846,7 @@ PY
 cmd_ready() {
   [ "$#" -eq 0 ] || die "usage: fm-inbox.sh ready"
   need_python
-  # shellcheck source=bin/fm-proc-lib.sh
+  # shellcheck source=/dev/null
   . "$SELF_DIR/fm-proc-lib.sh"
   load_wake_lib || true
   local session_pid="" session_identity="" harness_alive=unknown
