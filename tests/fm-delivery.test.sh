@@ -7,6 +7,7 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOME_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-delivery-test.XXXXXX") || exit 1
+# shellcheck disable=SC2329 # Invoked by the EXIT trap below.
 cleanup() { rm -rf "$HOME_DIR"; }
 trap cleanup EXIT
 
@@ -110,9 +111,21 @@ case "$LIST" in
 esac
 
 # --- refusal paths --------------------------------------------------------------
-"$DELIVERY" set --pr not-a-pr --pipeline off >/dev/null 2>&1 && not_ok 'unusable PR URL is refused' || ok 'unusable PR URL is refused'
-"$DELIVERY" set --task fm-x --mode bogus >/dev/null 2>&1 && not_ok 'invalid mode is refused' || ok 'invalid mode is refused'
-"$DELIVERY" set --task 'bad id' --mode no-mistakes >/dev/null 2>&1 && not_ok 'invalid task id is refused' || ok 'invalid task id is refused'
+if "$DELIVERY" set --pr not-a-pr --pipeline off >/dev/null 2>&1; then
+  not_ok 'unusable PR URL is refused'
+else
+  ok 'unusable PR URL is refused'
+fi
+if "$DELIVERY" set --task fm-x --mode bogus >/dev/null 2>&1; then
+  not_ok 'invalid mode is refused'
+else
+  ok 'invalid mode is refused'
+fi
+if "$DELIVERY" set --task 'bad id' --mode no-mistakes >/dev/null 2>&1; then
+  not_ok 'invalid task id is refused'
+else
+  ok 'invalid task id is refused'
+fi
 
 # --- spawn enforcement ----------------------------------------------------------
 printf 'pr=%s\nbranch=fm/fm-gate\n' "$PR" > "$HOME_DIR/state/fm-gate.meta"
@@ -125,8 +138,16 @@ case "$spawn_out" in
   *) not_ok "spawn refusal names the decision (got: $spawn_out)" ;;
 esac
 
-"$DELIVERY" enforce-task fm-gate no-mistakes off >/dev/null 2>&1 && ok 'matching spawn values pass enforcement' || not_ok 'matching spawn values pass enforcement'
-"$DELIVERY" enforce-task fm-free direct-PR off >/dev/null 2>&1 && ok 'a task with no record passes enforcement' || not_ok 'a task with no record passes enforcement'
+if "$DELIVERY" enforce-task fm-gate no-mistakes off >/dev/null 2>&1; then
+  ok 'matching spawn values pass enforcement'
+else
+  not_ok 'matching spawn values pass enforcement'
+fi
+if "$DELIVERY" enforce-task fm-free direct-PR off >/dev/null 2>&1; then
+  ok 'a task with no record passes enforcement'
+else
+  not_ok 'a task with no record passes enforcement'
+fi
 
 if [ "$FAILED" -eq 0 ]; then
   printf '# all fm-delivery tests passed\n'

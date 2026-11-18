@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034 # Output parameters and mode tables are read by bin/fm-delivery.sh and bin/fm-spawn.sh.
 # fm-delivery-lib.sh - per-PR (and per-task) delivery decisions.
 #
 # WHY. Firstmate resolves a task's delivery mode (no-mistakes | direct-PR |
@@ -232,10 +233,10 @@ fm_delivery_resolve() {
   if [ -n "${pr_key:-}" ] && fm_delivery_read "$pr_key"; then
     mode=$FM_DELIVERY_MODE
     yolo=$FM_DELIVERY_YOLO
-    source=pr
+    source='pr'
     reason=$FM_DELIVERY_REASON
     [ -n "$project" ] || project=$FM_DELIVERY_PROJECT
-    if [ "$yolo" != inherit ]; then yolo_source=pr; fi
+    if [ "$yolo" != inherit ]; then yolo_source='pr'; fi
   fi
 
   # 2. Task record.
@@ -257,7 +258,7 @@ fm_delivery_resolve() {
 
   # 3. Project registry posture, and the yolo fallback for a record that
   # inherits it.
-  local registry_mode= registry_yolo=
+  local registry_mode='' registry_yolo=''
   if [ -n "$project" ]; then
     if registry_line=$(FM_HOME="$(fm_delivery_home)" FM_DATA_OVERRIDE="$(fm_delivery_data_dir)" \
       "$(dirname "${BASH_SOURCE[0]}")/fm-project-mode.sh" "$project" 2>/dev/null); then

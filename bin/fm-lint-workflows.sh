@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# fm-lint-workflows.sh - owner of firstmate's GitHub workflow lint.
+# fm-lint-workflows.sh - owner of firstmate's CI workflow lint.
 #
-# Runs pinned actionlint on every .github/workflows/*.{yml,yaml} so a malformed
-# workflow, including a self-broken ci.yml, fails in the local and no-mistakes
-# lint lane before merge. A broken ci.yml cannot report its own breakage, so
-# this check must not live only as a step inside that workflow. bin/fm-lint.sh
-# invokes this owner on its default (no explicit-path) path, which CI and
-# commands.lint both use.
+# Runs pinned actionlint on every workflow file under .github/workflows and
+# .forgejo/workflows so a malformed workflow, including a self-broken ci.yml,
+# fails in the local and no-mistakes lint lane before merge. A broken ci.yml
+# cannot report its own breakage, so this check must not live only as a step
+# inside that workflow. bin/fm-lint.sh invokes this owner on its default
+# (no explicit-path) path, which CI and commands.lint both use. A checkout with
+# no workflow directory at all is a pass: a CI-less repository is a deliberate
+# choice, not a lint failure.
 #
 # Usage:
 #   fm-lint-workflows.sh                 lint workflows under this repo
@@ -27,7 +29,7 @@ if [ "${1:-}" = "--required-version" ]; then
 fi
 
 fm_lint_workflows_usage() {
-  sed -n '2,16{s/^# \{0,1\}//;p;}' "$SELF"
+  sed -n '2,18{s/^# \{0,1\}//;p;}' "$SELF"
 }
 
 EXPLICIT_ROOT=
@@ -95,15 +97,15 @@ if [ "$#" -gt 0 ]; then
     FILES+=("$path")
   done
 else
-  workflow_dir="$ROOT/.github/workflows"
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    FILES+=("$path")
-  done < <(collect_workflow_files "$workflow_dir")
+  for workflow_dir in "$ROOT/.github/workflows" "$ROOT/.forgejo/workflows"; do
+    while IFS= read -r path; do
+      [ -n "$path" ] || continue
+      FILES+=("$path")
+    done < <(collect_workflow_files "$workflow_dir")
+  done
   if [ "${#FILES[@]}" -eq 0 ]; then
-    printf 'fm-lint-workflows.sh: no GitHub workflow files found under %s\n' \
-      "$workflow_dir" >&2
-    exit 1
+    printf 'fm-lint-workflows.sh: no workflow files under .github/workflows or .forgejo/workflows; nothing to lint\n'
+    exit 0
   fi
 fi
 
