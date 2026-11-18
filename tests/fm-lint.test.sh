@@ -2,7 +2,7 @@
 # Parity guard for firstmate's shell-lint definition.
 #
 # bin/fm-lint.sh is the single owner invoked by CI
-# (.github/workflows/ci.yml) and by the pre-push gate (.no-mistakes.yaml
+# (.forgejo/workflows/ci.yml) and by the pre-push gate (.no-mistakes.yaml
 # commands.lint). CI and the local gate deliberately select different roots;
 # bin/fm-lint.sh owns their analysis modes, memory fallback, configuration,
 # and tool versions.

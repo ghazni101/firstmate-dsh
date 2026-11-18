@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# GitHub workflow lint gate owned by bin/fm-lint-workflows.sh.
+# CI workflow lint gate owned by bin/fm-lint-workflows.sh.
 #
-# A malformed .github/workflows/*.yml, including a self-broken ci.yml, must fail
-# in the local/no-mistakes lint path before merge. Regression origin: #2512 put
-# a column-0 heredoc body inside a `run: |` block in ci.yml; there was no
-# workflow YAML lint, and the broken workflow could not report its own breakage.
+# A malformed workflow under .github/workflows or .forgejo/workflows, including
+# a self-broken ci.yml, must fail in the local/no-mistakes lint path before
+# merge. Regression origin: #2512 put a column-0 heredoc body inside a `run: |`
+# block in ci.yml; there was no workflow YAML lint, and the broken workflow
+# could not report its own breakage. A checkout with no workflow directory is a
+# deliberate CI-less state and must pass instead of failing lint.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -173,7 +175,7 @@ test_current_workflows_pass() {
   [ "$rc" -eq 0 ] || fail "current workflows must parse, got $rc"$'\n'"$out"
   assert_contains "$out" "workflow files valid" \
     "current-workflow lint did not report a valid count"
-  pass "current .github/workflows YAML files parse"
+  pass "current .github/.forgejo workflow YAML files parse"
 }
 
 test_col0_heredoc_fails_with_clear_error() {
@@ -204,16 +206,41 @@ test_valid_fixture_passes() {
   pass "valid fixture workflow passes"
 }
 
-test_empty_workflows_dir_fails() {
+test_empty_workflows_dir_passes() {
   local tmp out rc
   tmp=$(fm_test_tmproot fm-lint-wf-empty)
-  mkdir -p "$tmp/.github/workflows"
+  mkdir -p "$tmp/.forgejo/workflows"
   rc=0
   out=$("$LINT_WF" --root "$tmp" 2>&1) || rc=$?
-  [ "$rc" -ne 0 ] || fail "empty workflows dir unexpectedly passed"$'\n'"$out"
-  assert_contains "$out" "no GitHub workflow files found" \
-    "empty workflows dir did not report the missing files"
-  pass "empty workflows directory fails closed"
+  [ "$rc" -eq 0 ] || fail "empty workflows dir unexpectedly failed, got $rc"$'\n'"$out"
+  assert_contains "$out" "nothing to lint" \
+    "empty workflows dir did not report that there was nothing to lint"
+  pass "empty workflows directory passes"
+}
+
+test_absent_workflows_dir_passes() {
+  local tmp out rc
+  tmp=$(fm_test_tmproot fm-lint-wf-absent)
+  mkdir -p "$tmp"
+  rc=0
+  out=$("$LINT_WF" --root "$tmp" 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "absent workflows dir must pass, got $rc"$'\n'"$out"
+  assert_contains "$out" "nothing to lint" \
+    "absent workflows dir did not report that there was nothing to lint"
+  pass "absent workflows directory passes instead of failing lint"
+}
+
+test_forgejo_workflow_is_linted() {
+  local tmp out rc
+  tmp=$(fm_test_tmproot fm-lint-wf-forgejo)
+  mkdir -p "$tmp/.forgejo/workflows"
+  write_col0_heredoc_workflow "$tmp/.forgejo/workflows/ci.yml"
+  rc=0
+  out=$("$LINT_WF" --root "$tmp" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "broken .forgejo/workflows file unexpectedly passed"$'\n'"$out"
+  assert_contains "$out" "ci.yml" \
+    ".forgejo/workflows lint failure did not name the workflow file"
+  pass ".forgejo/workflows files are linted like .github/workflows"
 }
 
 test_explicit_broken_path_fails() {
@@ -518,7 +545,9 @@ test_pins_an_explicit_version
 test_current_workflows_pass
 test_col0_heredoc_fails_with_clear_error
 test_valid_fixture_passes
-test_empty_workflows_dir_fails
+test_empty_workflows_dir_passes
+test_absent_workflows_dir_passes
+test_forgejo_workflow_is_linted
 test_explicit_broken_path_fails
 test_non_mapping_root_fails
 test_missing_actionlint_fails_closed
