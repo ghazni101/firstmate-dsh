@@ -89,7 +89,11 @@ spawn_abort_cleanup() {
     if fm_backend_herdr_projection_cleanup_exact \
       "$HERDR_PROJECTION_ABORT_SESSION" \
       "$HERDR_PROJECTION_ABORT_TASK_PANE" \
-      "$HERDR_PROJECTION_ABORT_SEEDED_PANE"; then
+      "$HERDR_PROJECTION_ABORT_SEEDED_PANE" \
+      "$HERDR_PROJECTION_ABORT_WORKSPACE" \
+      "$HERDR_PROJECTION_ABORT_TASK_TAB" \
+      "$HERDR_PROJECTION_ABORT_SEEDED_TAB" \
+      "$W"; then
       SPAWN_ENDPOINT_CLOSED=1
     fi
   fi

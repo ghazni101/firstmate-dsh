@@ -1043,6 +1043,19 @@ test_projection_cleanup_exact_succeeds_only_when_the_task_pane_closed() {
     fm_backend_herdr_projection_close_pane_focus_preserving() { [ "$2" != w1:p2 ] || return 2; printf "CLOSED %s;" "$2"; }
     fm_backend_herdr_cli() { [ "$2 $3 $4" = "pane get w1:p2" ] && printf "{\"result\":{\"pane\":{\"pane_id\":\"w1:p2\"}}}"; }
     fm_backend_herdr_projection_cleanup_exact fmtest w1:p2 w1:p1; printf "rc=%s" "$?"' "$ROOT" 2>&1)
+  cleanup_exact_sweeps=$(bash -c '. "$0/bin/backends/herdr.sh"
+    fm_backend_herdr_projection_close_pane_focus_preserving() { printf "CLOSED %s;" "$2"; }
+    fm_backend_herdr_cli() {
+      case "$2 $3" in
+        "tab list") printf "{\"result\":{\"tabs\":[{\"tab_id\":\"w1:t1\",\"label\":\"1\"},{\"tab_id\":\"w1:t2\",\"label\":\"fm-task-x\"}]}}" ;;
+        "pane list") printf "{\"result\":{\"panes\":[{\"pane_id\":\"w1:pD\",\"tab_id\":\"w1:t1\"}]}}" ;;
+        "pane get") printf "{\"result\":{\"pane\":{\"pane_id\":\"w1:pD\"}}}" ;;
+        "agent get") printf "{\"error\":{\"code\":\"agent_not_found\"}}" ;;
+      esac
+    }
+    fm_backend_herdr_projection_cleanup_exact fmtest w1:p2 w1:p1 w1 w1:t2 w1:t1 fm-task-x; printf "rc=%s" "$?"' "$ROOT" 2>&1)
+  [ "$cleanup_exact_sweeps" = "CLOSED w1:p2;CLOSED w1:p1;CLOSED w1:pD;rc=0" ] \
+    || fail "an aborted projection must sweep the recorded tabs' residual companions, got '$cleanup_exact_sweeps'"
   [ "$closed" = "CLOSED w1:p2;CLOSED w1:p1;rc=0" ] \
     || fail "a closed task pane must report success after closing both panes, got '$closed'"
   [ "$refused" = "CLOSED w1:p1;rc=1" ] \
@@ -2421,8 +2434,12 @@ test_projection_create_uses_exact_response_ids_and_leaves_one_task_pane() {
   # workspace-emptying (the task tab remains), so the close stays plain.
   printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/7.out"
   printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/9.out"
+  # The companion sweep re-lists the workspace's tabs: the seeded prune closed
+  # the exact seeded root pane, so the seeded tab is already gone and the
+  # sweep must stop without another close.
   printf '{"result":{"tabs":[{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/10.out"
-  printf '{"result":{"panes":[{"pane_id":"w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/11.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/11.out"
+  printf '{"result":{"panes":[{"pane_id":"w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/12.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
     bash -c '
@@ -2466,20 +2483,177 @@ test_projection_create_never_closes_a_concurrent_same_label_tab() {
   printf '{"result":{"pane":{"pane_id":"w9:p1","tab_id":"w9:t1","workspace_id":"w9"}}}\n' > "$resp/6.out"
   printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"},{"tab_id":"w9:t3","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/7.out"
   printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/9.out"
-  printf '{"result":{"tabs":[{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"},{"tab_id":"w9:t3","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/10.out"
+  # The companion sweep lists the still-seeded tab (its root pane close was
+  # confirmed gone) and finds no residual pane of the exact seeded tab, so it
+  # never touches the concurrent same-label tab or its pane.
+  printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"},{"tab_id":"w9:t3","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/10.out"
   printf '{"result":{"panes":[{"pane_id":"w9:p2","tab_id":"w9:t2"},{"pane_id":"w9:p3","tab_id":"w9:t3"}]}}\n' > "$resp/11.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"},{"tab_id":"w9:t3","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/12.out"
+  printf '{"result":{"panes":[{"pane_id":"w9:p2","tab_id":"w9:t2"},{"pane_id":"w9:p3","tab_id":"w9:t3"}]}}\n' > "$resp/13.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_focus_snapshot() { printf "captain-ws\tcaptain-tab"; }; fm_backend_herdr_projection_focus_restore() { return 0; }; fm_backend_herdr_projection_create_task /tmp/proj label fm-task-p2' "$ROOT" 2>&1)
   status=$?
-  [ "$status" -ne 0 ] || fail "a concurrent tab should prevent exact one-pane projection convergence"
-  assert_contains "$out" "did not converge to exactly one task pane" \
+  [ "$status" -ne 0 ] || fail "a concurrent tab should prevent exact task-tab projection convergence"
+  assert_contains "$out" "did not converge to one exact task tab" \
     "projection did not report the concurrent shape"
   assert_not_contains "$(cat "$log")" $'tab\x1fclose\x1fw9:t3' \
     "projection closed a concurrent same-label tab"
   assert_not_contains "$(cat "$log")" $'pane\x1fclose\x1fw9:p3' \
     "projection closed a concurrent same-label pane"
   pass "herdr presentation create: concurrent same-label tabs are never prune targets"
+}
+
+test_projection_create_tolerates_known_companion_panes() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/projection-companions"; mkdir -p "$dir/responses"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"workspace":{"workspace_id":"w9"},"tab":{"tab_id":"w9:t1"},"root_pane":{"pane_id":"w9:p1"}}}\n' > "$resp/1.out"
+  printf '{"result":{"tab":{"tab_id":"w9:t2"},"root_pane":{"pane_id":"w9:p2"}}}\n' > "$resp/2.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/3.out"
+  printf '{"result":{"panes":[{"pane_id":"w9:p1","tab_id":"w9:t1"},{"pane_id":"w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/4.out"
+  printf '{"error":{"code":"agent_not_found"}}\n' > "$resp/5.out"
+  printf '{"result":{"pane":{"pane_id":"w9:p1","tab_id":"w9:t1","workspace_id":"w9"}}}\n' > "$resp/6.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/7.out"
+  printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/9.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/10.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/11.out"
+  # The exact task pane plus the docked herdr:sidebar and monitor-strip
+  # htop/nvtop panes is the converged shape this host's Herdr builds.
+  printf '{"result":{"panes":[{"pane_id":"w9:p2","tab_id":"w9:t2"},{"pane_id":"w9:pS","tab_id":"w9:t2","label":"herdr:sidebar"},{"pane_id":"w9:pH","tab_id":"w9:t2","label":"htop"},{"pane_id":"w9:pV","tab_id":"w9:t2","label":"nvtop"}]}}\n' > "$resp/12.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
+    bash -c '
+      . "$0/bin/backends/herdr.sh"
+      fm_backend_herdr_projection_focus_snapshot() { printf "captain-ws\tcaptain-tab"; }
+      fm_backend_herdr_projection_focus_restore() { return 0; }
+      fm_backend_herdr_projection_create_task /tmp/proj label fm-task-p2 || exit 1
+      printf "%s %s %s %s %s\n" \
+        "$FM_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" \
+        "$FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID" \
+        "$FM_BACKEND_HERDR_PROJECTION_SEEDED_PANE_ID" \
+        "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
+        "$FM_BACKEND_HERDR_PROJECTION_PANE_ID"
+    ' "$ROOT") || fail "companion panes should not refuse the projection: $out"
+  [ "$out" = "w9 w9:t1 w9:p1 w9:t2 w9:p2" ] || fail "companion-tolerant create did not retain exact IDs: $out"
+  assert_not_contains "$(cat "$log")" $'workspace\x1fclose' \
+    "companion-tolerant projection create must never call workspace close"
+  pass "herdr presentation create: known companion panes beside the exact task pane still converge"
+}
+
+test_projection_create_sweeps_residual_seeded_companions() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/projection-seeded-sweep"; mkdir -p "$dir/responses"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"workspace":{"workspace_id":"w9"},"tab":{"tab_id":"w9:t1"},"root_pane":{"pane_id":"w9:p1"}}}\n' > "$resp/1.out"
+  printf '{"result":{"tab":{"tab_id":"w9:t2"},"root_pane":{"pane_id":"w9:p2"}}}\n' > "$resp/2.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/3.out"
+  printf '{"result":{"panes":[{"pane_id":"w9:p1","tab_id":"w9:t1"},{"pane_id":"w9:pD","tab_id":"w9:t1","label":"herdr:sidebar"},{"pane_id":"w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/4.out"
+  printf '{"error":{"code":"agent_not_found"}}\n' > "$resp/5.out"
+  printf '{"result":{"pane":{"pane_id":"w9:p1","tab_id":"w9:t1","workspace_id":"w9"}}}\n' > "$resp/6.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/7.out"
+  printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/9.out"
+  # The seeded tab survives its root-pane close because the docked sidebar
+  # pane is still attached to it.
+  printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/10.out"
+  printf '{"result":{"panes":[{"pane_id":"w9:p1","tab_id":"w9:t1"},{"pane_id":"w9:pD","tab_id":"w9:t1","label":"herdr:sidebar"},{"pane_id":"w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/11.out"
+  # Agent gate: the dead seeded root pane is confirmed gone, the dock pane is
+  # agent-free.
+  printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/12.out"
+  printf '{"result":{"pane":{"pane_id":"w9:pD","tab_id":"w9:t1","workspace_id":"w9"}}}\n' > "$resp/13.out"
+  printf '{"error":{"code":"agent_not_found"}}\n' > "$resp/14.out"
+  # Close loop: the dead root pane is re-confirmed gone, then the dock pane
+  # closes through the plain focus-preserving path.
+  printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/15.out"
+  printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/16.out"
+  printf '{"result":{"pane":{"pane_id":"w9:pD","tab_id":"w9:t1","workspace_id":"w9"}}}\n' > "$resp/17.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/18.out"
+  # 19: the dock pane close succeeds silently; 20: its presence check
+  # confirms the dock pane gone (the title-clear probe is answered inline by
+  # the fake and consumes no response file).
+  printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/20.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/21.out"
+  printf '{"result":{"panes":[{"pane_id":"w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/22.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
+    bash -c '
+      . "$0/bin/backends/herdr.sh"
+      fm_backend_herdr_projection_focus_snapshot() { printf "captain-ws\tcaptain-tab"; }
+      fm_backend_herdr_projection_focus_restore() { return 0; }
+      fm_backend_herdr_projection_create_task /tmp/proj label fm-task-p2 || exit 1
+      printf "%s %s %s %s %s\n" \
+        "$FM_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" \
+        "$FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID" \
+        "$FM_BACKEND_HERDR_PROJECTION_SEEDED_PANE_ID" \
+        "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
+        "$FM_BACKEND_HERDR_PROJECTION_PANE_ID"
+    ' "$ROOT") || fail "a seeded tab with a residual companion pane should still converge: $out"
+  [ "$out" = "w9 w9:t1 w9:p1 w9:t2 w9:p2" ] || fail "seeded companion sweep did not retain exact IDs: $out"
+  assert_contains "$(cat "$log")" $'pane\x1fclose\x1fw9:pD' \
+    "the sweep did not close the exact seeded tab's residual companion pane"
+  assert_not_contains "$(cat "$log")" $'pane\x1fclose\x1fw9:p2' \
+    "the sweep closed the task pane"
+  assert_not_contains "$(cat "$log")" $'workspace\x1fclose' \
+    "the seeded companion sweep introduced workspace-close authority"
+  assert_not_contains "$(cat "$log")" $'tab\x1fclose' \
+    "the seeded companion sweep introduced tab-close authority"
+  pass "herdr presentation create: residual seeded companions are swept so the workspace converges to the task tab"
+}
+
+test_projection_create_refuses_a_foreign_task_tab_pane() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/projection-foreign-pane"; mkdir -p "$dir/responses"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"workspace":{"workspace_id":"w9"},"tab":{"tab_id":"w9:t1"},"root_pane":{"pane_id":"w9:p1"}}}\n' > "$resp/1.out"
+  printf '{"result":{"tab":{"tab_id":"w9:t2"},"root_pane":{"pane_id":"w9:p2"}}}\n' > "$resp/2.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/3.out"
+  printf '{"result":{"panes":[{"pane_id":"w9:p1","tab_id":"w9:t1"},{"pane_id":"w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/4.out"
+  printf '{"error":{"code":"agent_not_found"}}\n' > "$resp/5.out"
+  printf '{"result":{"pane":{"pane_id":"w9:p1","tab_id":"w9:t1","workspace_id":"w9"}}}\n' > "$resp/6.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/7.out"
+  printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/9.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/10.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/11.out"
+  printf '{"result":{"panes":[{"pane_id":"w9:p2","tab_id":"w9:t2"},{"pane_id":"w9:pX","tab_id":"w9:t2","label":"intruder"}]}}\n' > "$resp/12.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_focus_snapshot() { printf "captain-ws\tcaptain-tab"; }; fm_backend_herdr_projection_focus_restore() { return 0; }; fm_backend_herdr_projection_create_task /tmp/proj label fm-task-p2' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a foreign pane in the task tab should refuse the projection"
+  assert_contains "$out" "did not converge to one exact task tab" \
+    "projection did not report the foreign task-tab pane"
+  assert_not_contains "$(cat "$log")" $'pane\x1fclose\x1fw9:pX' \
+    "projection closed a foreign task-tab pane"
+  pass "herdr presentation create: a foreign pane beside the task pane refuses the projection"
+}
+
+test_projection_create_sweep_refuses_a_live_seeded_agent() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/projection-sweep-live-agent"; mkdir -p "$dir/responses"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"workspace":{"workspace_id":"w9"},"tab":{"tab_id":"w9:t1"},"root_pane":{"pane_id":"w9:p1"}}}\n' > "$resp/1.out"
+  printf '{"result":{"tab":{"tab_id":"w9:t2"},"root_pane":{"pane_id":"w9:p2"}}}\n' > "$resp/2.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/3.out"
+  printf '{"result":{"panes":[{"pane_id":"w9:p1","tab_id":"w9:t1"},{"pane_id":"w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/4.out"
+  printf '{"error":{"code":"agent_not_found"}}\n' > "$resp/5.out"
+  printf '{"result":{"pane":{"pane_id":"w9:p1","tab_id":"w9:t1","workspace_id":"w9"}}}\n' > "$resp/6.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/7.out"
+  printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/9.out"
+  printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/10.out"
+  printf '{"result":{"panes":[{"pane_id":"w9:pA","tab_id":"w9:t1"},{"pane_id":"w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/11.out"
+  printf '{"result":{"pane":{"pane_id":"w9:pA","tab_id":"w9:t1","workspace_id":"w9"}}}\n' > "$resp/12.out"
+  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/13.out"
+  printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"w9:pA","shell_pid":4242,"foreground_process_group_id":4243,"foreground_processes":[{"pid":4243,"name":"node","argv0":"pi"}]}}}\n' > "$resp/14.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_focus_snapshot() { printf "captain-ws\tcaptain-tab"; }; fm_backend_herdr_projection_focus_restore() { return 0; }; fm_backend_herdr_projection_create_task /tmp/proj label fm-task-p2' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a live agent pane in the seeded tab should refuse the sweep"
+  assert_contains "$out" "seeded-tab companion sweep refused" \
+    "the live seeded agent refusal did not explain the sweep gate"
+  assert_not_contains "$(cat "$log")" $'pane\x1fclose\x1fw9:pA' \
+    "the sweep closed a live agent pane"
+  pass "herdr presentation create: a live agent in the seeded tab's panes refuses the sweep"
 }
 
 test_projection_focus_snapshot_requires_exact_workspace_and_tab() {

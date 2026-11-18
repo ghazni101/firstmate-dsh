@@ -705,14 +705,18 @@ PROJECTED_TABS=$(lab tab list --workspace "$PROJECTED_WSID")
 PROJECTED_PANES=$(lab pane list --workspace "$PROJECTED_WSID")
 [ "$(printf '%s' "$PROJECTED_TABS" | jq -r '.result.tabs | length')" = 1 ] \
   || fail "projected workspace retained a seeded or placeholder tab"
-[ "$(printf '%s' "$PROJECTED_PANES" | jq -r '.result.panes | length')" = 1 ] \
-  || fail "projected workspace did not contain exactly one task pane"
-printf '%s' "$PROJECTED_TABS" | jq -e --arg tab "$PROJECTED_TAB" \
-  '.result.tabs[0].tab_id == $tab and .result.tabs[0].label == "fm-shape"' >/dev/null 2>&1 \
-  || fail "projected workspace's only tab was not the normal fm-shape task tab"
-printf '%s' "$PROJECTED_PANES" | jq -e --arg pane "$PROJECTED_PANE" \
-  '.result.panes[0].pane_id == $pane' >/dev/null 2>&1 \
-  || fail "projected workspace's only pane was not the exact recorded task pane"
+# The task pane sits beside this host's companion presentation panes (docked
+# herdr:sidebar, monitor-strip htop/nvtop); any other pane refuses the shape.
+[ "$(printf '%s' "$PROJECTED_PANES" | jq -r --arg tab "$PROJECTED_TAB" \
+    '[.result.panes[]? | select(.tab_id != $tab)] | length')" = 0 ] \
+  || fail "projected workspace held a pane outside the fm-shape task tab"
+printf '%s' "$PROJECTED_PANES" | jq -e --arg tab "$PROJECTED_TAB" --arg pane "$PROJECTED_PANE" \
+  --arg sidebar herdr:sidebar --arg left htop --arg right nvtop '
+  ([.result.panes[]? | select(.tab_id == $tab and .pane_id == $pane)] | length) == 1
+  and ([.result.panes[]? | select(.tab_id == $tab and .pane_id != $pane
+        and .label != $sidebar and .label != $left and .label != $right)] | length) == 0
+' >/dev/null 2>&1 \
+  || fail "projected workspace's task tab did not hold the exact task pane beside only known companion panes"
 SECOND_TWO_INFO=$(lab workspace get "$SECOND_TWO_WSID") || fail "focused secondmate disappeared during projected create"
 [ "$(printf '%s' "$SECOND_TWO_INFO" | jq -r '.result.workspace.focused')" = true ] \
   || fail "projected create or workspace.move stole focus from the captain's current space"
@@ -880,10 +884,18 @@ FAIL_LIST=$(lab workspace list) || fail "could not inspect the move-failure fall
 lab pane get "$ORDER_FAIL_PANE" >/dev/null 2>&1 \
   || fail "workspace.move failure cleaned up the safely-created task pane"
 FAIL_CLOSED_PANES=$(sed -n "$((FAIL_START + 1)),\$p" "$HERDR_CALL_LOG" | awk -F '\t' '$1 == "pane" && $2 == "close" { print $3 }')
-[ "$(printf '%s\n' "$FAIL_CLOSED_PANES" | awk 'NF { n += 1 } END { print n + 0 }')" = 1 ] \
-  || fail "move-failure spawn performed a pane close beyond the normal seeded-pane prune"
-[ "$FAIL_CLOSED_PANES" != "$ORDER_FAIL_PANE" ] \
-  || fail "move-failure spawn closed its exact task pane"
+[ -n "$FAIL_CLOSED_PANES" ] || fail "move-failure spawn performed no seeded-pane prune"
+FAIL_STILL_ALIVE=
+while IFS= read -r closed_pane; do
+  [ -n "$closed_pane" ] || continue
+  [ "$closed_pane" != "$ORDER_FAIL_PANE" ] \
+    || fail "move-failure spawn closed its exact task pane"
+  lab pane get "$closed_pane" >/dev/null 2>&1 && FAIL_STILL_ALIVE="$FAIL_STILL_ALIVE $closed_pane"
+done <<EOF
+$FAIL_CLOSED_PANES
+EOF
+[ -z "$FAIL_STILL_ALIVE" ] \
+  || fail "move-failure spawn closed a pane that is still alive:$FAIL_STILL_ALIVE"
 assert_no_ordering_lifecycle_calls_since "$FAIL_START" "failed presentation ordering"
 pass "real Herdr lab: forced workspace.move failure leaves a successful worker in default order with a warning and no cleanup"
 
@@ -1545,6 +1557,11 @@ lab tab get "$FLAT_TAB_ID" >/dev/null 2>&1 \
   || fail "correction removed the seeded flat secondmate child tab"
 pass "real Herdr lab: legacy projection labels and flat secondmate tabs are left unmigrated"
 
+# Repeated stop/reprovision fixtures can leave this host's Herdr persisted
+# focus on its most recent projection, independent of teardown. Re-anchor the
+# captain tab so this loop measures only whether teardown moves focus.
+lab tab focus "$SECOND_TWO_TAB" >/dev/null || fail "could not re-anchor the captain tab before multi-home teardown"
+assert_focus_is "$CAPTAIN_FOCUS" "captain focus before multi-home teardown"
 # Teardown multi-home projected tasks by exact pane only.
 for META_HOME_PAIR in \
   "p1:$HOME_DIR" "p2:$HOME_DIR" "pcw:$HOME_DIR" "post-legacy:$HOME_DIR" \
