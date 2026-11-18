@@ -3,7 +3,7 @@
 # after Enter retries must return "empty" (message queued), not "pending".
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # shellcheck source=/dev/null

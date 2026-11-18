@@ -4,7 +4,7 @@
 # Command stubs inject filesystem failures, not expected inventory contents.
 set -eu
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-hc-lab-tests)
 LAB=${1:-$ROOT/bin/fm-hc-lab.sh}

@@ -67,7 +67,7 @@
 # explicit --account moves it. A local secondmate's agent never draws from the
 # list: it needs its own per-secondmate pin.
 
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
 
 FM_WORKER_ACCOUNT_CHECK_SECONDS=${FM_WORKER_ACCOUNT_CHECK_SECONDS:-30}

@@ -8,7 +8,7 @@
 # They also verify that a key send reports whether delivery actually succeeded.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SEND="$ROOT/bin/fm-send.sh"

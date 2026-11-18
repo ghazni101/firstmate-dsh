@@ -18,11 +18,11 @@
 # (bin/fm-supervise-daemon.sh); this adapter sources that file and re-exports
 # its submit core under the backend's naming convention rather than
 # duplicating it, so the two consumers cannot drift apart.
-# shellcheck source=bin/fm-tmux-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_LIB_DIR/fm-tmux-lib.sh"
-# shellcheck source=bin/fm-proc-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_LIB_DIR/fm-proc-lib.sh"
-# shellcheck source=bin/fm-agent-process-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_LIB_DIR/fm-agent-process-lib.sh"
 
 # fm_backend_tmux_resolve_bare_selector: the live-window-listing fallback for a

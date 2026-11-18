@@ -75,13 +75,13 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
-# shellcheck source=bin/fm-cursor-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-cursor-lib.sh"
-# shellcheck source=bin/fm-gemini-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-gemini-lib.sh"
-# shellcheck source=bin/fm-hermes-process-lib.sh
+# shellcheck source=/dev/null
 . "${SCRIPT_DIR:-/}/fm-hermes-process-lib.sh"
-# shellcheck source=bin/fm-omp-process-lib.sh
+# shellcheck source=/dev/null
 . "${SCRIPT_DIR:-/}/fm-omp-process-lib.sh"
 
 # Print the harness named by a verified environment marker, or nothing when no

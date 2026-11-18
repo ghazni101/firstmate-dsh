@@ -7,6 +7,6 @@
 # migration. No side effects on source. set -u / set -e safe.
 
 _FM_MARKER_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-operational-input.sh
+# shellcheck source=/dev/null
 . "$_FM_MARKER_LIB_DIR/fm-operational-input.sh"
 unset _FM_MARKER_LIB_DIR

@@ -4,16 +4,21 @@
 # GitHub/network calls), the --include-prs opt-in path, graceful degradation on a
 # partial PR-fetch failure, end-to-end unresolved-decision durability, and current
 # report pointers.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=bin/fm-secondmate-registry-lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-secondmate-registry-lib.sh"
-# shellcheck source=bin/fm-tasks-axi-lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-tasks-axi-lib.sh"
 
 BEARINGS="$ROOT/bin/fm-bearings-snapshot.sh"

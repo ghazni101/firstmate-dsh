@@ -3,7 +3,7 @@
 # from protocol facts in its own git config, and never records anything.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_git_identity fmtest fmtest@example.invalid

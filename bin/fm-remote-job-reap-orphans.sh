@@ -35,7 +35,7 @@ set -u
 
 SCRIPT_DIR=$(CDPATH='' cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 
-# shellcheck source=bin/fm-remote-job-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-remote-job-lib.sh"
 
 DRY_RUN=0

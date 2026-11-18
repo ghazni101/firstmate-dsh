@@ -94,13 +94,13 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 FM_ROOT_REAL=$(cd "$FM_ROOT" 2>/dev/null && pwd -P) || FM_ROOT_REAL=$FM_ROOT
 
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-procevent-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-procevent-lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
 WHEN_DIR="$STATE/when"
@@ -265,6 +265,7 @@ spec_load() {
   fm_pr_private_file_valid "$spec" 600 "$device" || { SPEC_ERROR="spec is missing or not private"; return 1; }
   fm_pr_private_file_valid "$trust" 600 "$device" || { SPEC_ERROR="trust record is missing or not private"; return 1; }
   {
+    # shellcheck disable=SC2034 # the extra line only proves the record ends there
     IFS= read -r version && IFS= read -r want && ! IFS= read -r extra
   } < "$trust" || { SPEC_ERROR="trust record is malformed"; return 1; }
   [ "$version" = fm-when-trust-v1 ] || { SPEC_ERROR="trust record has an unknown version"; return 1; }

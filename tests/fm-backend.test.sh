@@ -27,9 +27,11 @@
 # that now calls through fm_backend_capture instead of tmux directly.
 # The real tmux smoke test (create session, send text + Enter, capture, list,
 # kill) lives in tests/fm-backend-tmux-smoke.test.sh.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 fm_git_identity fmtest fmtest@example.invalid
 

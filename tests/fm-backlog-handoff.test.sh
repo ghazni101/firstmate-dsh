@@ -6,7 +6,7 @@
 # regressions: the multi-line body contract and registry home parsing edge cases.
 set -u
 
-# shellcheck source=tests/secondmate-helpers.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/secondmate-helpers.sh"
 
 # The move is delegated to `tasks-axi mv`, so this suite exercises the real

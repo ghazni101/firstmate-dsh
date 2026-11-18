@@ -7,8 +7,10 @@
 # The isolated home carries a user SessionStart hook, which must keep running
 # beside the per-process busy mod, and the worker's own commit must carry no
 # Command Code attribution.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 fm_live_gate opt-in FM_COMMANDCODE_SIGNALS_LIVE commandcode tmux jq
 COMMANDCODE_BIN=$(command -v commandcode)
@@ -37,11 +39,11 @@ cleanup() {
 }
 trap cleanup EXIT
 fail() { printf 'not ok - %s: %s\n' "$VERSION" "$1" >&2; exit 1; }
-# shellcheck source=bin/fm-busy-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-busy-lib.sh"
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-backend.sh"
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-composer-lib.sh"
 H="$LAB/home"
 WT="$LAB/wt"

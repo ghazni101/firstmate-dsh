@@ -6,16 +6,19 @@
 # each case's config/t3code-token is a credential for it, so no test ever
 # reads ~/.t3 or reaches a live server.
 # shellcheck disable=SC2016  # $1/$2 inside single quotes belong to the bash -c snippet t3_run forwards.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
 # A fleet pane already carries GIT_CONFIG core.hooksPath. These cases set the
 # Git config they assert on themselves, so drop the inherited one before any git command.
 unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_PARAMETERS
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=tests/t3-fake-lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/t3-fake-lib.sh"
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-watch-key-lib.sh"
 
 command -v node >/dev/null 2>&1 || { echo "skip: node absent"; exit 0; }

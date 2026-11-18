@@ -38,9 +38,9 @@
 # sourced libraries.
 
 _FM_MERGE_AUTHORITY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$_FM_MERGE_AUTHORITY_LIB_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-afk-contract.sh
+# shellcheck source=/dev/null
 . "$_FM_MERGE_AUTHORITY_LIB_DIR/fm-afk-contract.sh"
 
 # shellcheck disable=SC2034 # Public results consumed by sourcing callers.

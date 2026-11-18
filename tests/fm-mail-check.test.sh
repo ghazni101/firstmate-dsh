@@ -16,7 +16,7 @@
 # No case ever contacts a real IMAP or SMTP server.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 CHECK="$ROOT/bin/fm-mail-check.sh"

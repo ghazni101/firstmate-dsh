@@ -31,7 +31,7 @@
 # guard after any harness upgrade and before trusting refreshed evidence.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate default-on FM_HARNESS_LIVENESS_DRIFT tmux

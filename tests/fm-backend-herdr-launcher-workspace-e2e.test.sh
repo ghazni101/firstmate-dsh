@@ -39,7 +39,7 @@ command -v herdr >/dev/null 2>&1 || { echo "skip: herdr not found"; exit 0; }
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the herdr adapter)"; exit 0; }
 command -v treehouse >/dev/null 2>&1 || { echo "skip: treehouse not found (required by fm-spawn.sh)"; exit 0; }
 
-# shellcheck source=tests/herdr-test-safety.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/herdr-test-safety.sh"
 
 # Every spawn below states its own launcher identity, so a pane inherited from

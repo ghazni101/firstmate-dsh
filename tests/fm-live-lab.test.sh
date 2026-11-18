@@ -6,9 +6,11 @@
 # and real processes, with no harness: it passes on a lab in the shape up builds
 # and fails, by name, on the recorded lab miss it exists to catch. The live
 # end-to-end run on the real harnesses is the builder's own `up`.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-live-lab)

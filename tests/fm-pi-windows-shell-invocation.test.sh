@@ -3,6 +3,7 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck source=/dev/null
 . "$ROOT/tests/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-pi-windows-shell-invocation)

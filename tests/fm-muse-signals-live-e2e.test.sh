@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -135,9 +135,9 @@ chmod +x "$LAB/bin/tmux"
 PATH="$LAB/bin:$PATH"
 export PATH
 
-# shellcheck source=bin/fm-busy-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-busy-lib.sh"
-# shellcheck source=bin/fm-tmux-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-tmux-lib.sh"
 
 "$REAL_TMUX" -L "$SOCKET" new-session -d -s "$SESSION" -n control -c "$WORKSPACE" \

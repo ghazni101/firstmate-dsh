@@ -12,7 +12,7 @@
 # source text; it only observes filesystem state around the real helper.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 LIB="$ROOT/tests/lib.sh"
@@ -20,7 +20,7 @@ LIB="$ROOT/tests/lib.sh"
 test_fixture_root_gone_after_normal_exit() {
   local child_out child_dir
   child_out=$(bash -c '
-    # shellcheck source=tests/lib.sh
+    # shellcheck source=/dev/null
     . "'"$LIB"'"
     d=$(fm_test_tmproot fm-test-cleanup-exit)
     printf "%s\n" "$d"
@@ -39,7 +39,7 @@ test_fixture_root_gone_after_sigterm() {
   harness=$(fm_test_tmproot fm-test-cleanup-sigterm-harness)
   dirfile="$harness/child-dir"
   bash -c '
-    # shellcheck source=tests/lib.sh
+    # shellcheck source=/dev/null
     . "'"$LIB"'"
     d=$(fm_test_tmproot fm-test-cleanup-term)
     printf "%s\n" "$d" > "'"$dirfile"'"
@@ -102,7 +102,7 @@ test_orphan_sweep_respects_fixture_ownership() {
   harness=$(fm_test_tmproot fm-test-cleanup-orphan-harness)
   dirfile="$harness/active-dir"
   bash -c '
-    # shellcheck source=tests/lib.sh
+    # shellcheck source=/dev/null
     . "'"$LIB"'"
     d=$(fm_test_tmproot fm-test-cleanup-active)
     printf "%s\n" "$d" > "'"$dirfile"'"
@@ -126,7 +126,7 @@ test_orphan_sweep_respects_fixture_ownership() {
   : > "$fresh_dir/.fm-test-fixture"
 
   bash -c '
-    # shellcheck source=tests/lib.sh
+    # shellcheck source=/dev/null
     . "'"$LIB"'"
   '
 
@@ -155,7 +155,7 @@ test_orphan_sweep_reaps_read_only_package_tree() {
   touch -t 202001010000 "$stale_dir/.fm-test-fixture"
 
   bash -c '
-    # shellcheck source=tests/lib.sh
+    # shellcheck source=/dev/null
     . "$1"
   ' _ "$LIB"
 
@@ -172,7 +172,7 @@ test_cleanup_reaps_orphaned_poller_naming_its_root() {
   local harness out child_dir poller i survivors
   harness=$(fm_test_tmproot fm-test-cleanup-poller-harness)
   out=$(bash -c '
-    # shellcheck source=tests/lib.sh
+    # shellcheck source=/dev/null
     . "'"$LIB"'"
     d=$(fm_test_tmproot fm-test-cleanup-poller)
     printf "%s\n" "while [ ! -e \"\$1\" ]; do sleep 0.1; done" > "$d/poller.sh"
@@ -211,7 +211,7 @@ test_registries_avoid_git_worktree_root() {
   git -C "$repo" init -q
   bash -c '
     export TMPDIR="$1"
-    # shellcheck source=tests/lib.sh
+    # shellcheck source=/dev/null
     . "$2"
     d=$(fm_test_tmproot fm-test-cleanup-gitroot)
     printf "%s\n" "$d" > "$3"

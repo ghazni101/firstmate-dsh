@@ -85,9 +85,9 @@ FM_HOME="${FM_HOME:-$FM_ROOT}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-nm-run-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
 
 usage() {

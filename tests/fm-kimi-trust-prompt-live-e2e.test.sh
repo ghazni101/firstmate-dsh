@@ -26,7 +26,7 @@
 # credentials. Run it after every Kimi upgrade.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate default-on FM_KIMI_TRUST_PROMPT_LIVE tmux

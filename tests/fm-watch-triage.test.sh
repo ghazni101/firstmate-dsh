@@ -20,9 +20,11 @@
 # liveness in fm-watcher-lock.test.sh; the durable-queue safety matrix in
 # fm-wake-queue.test.sh.
 #
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/watch-triage-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/watch-triage-helpers.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-watch-triage-tests)

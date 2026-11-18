@@ -87,15 +87,15 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REG="$DATA/secondmates.md"
 MAIN_BACKLOG="$DATA/backlog.md"
-# shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-# shellcheck source=bin/fm-secondmate-registry-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-public-followup-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-public-followup-lib.sh"
-# shellcheck source=bin/fm-pending-reply-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
 
 RECEIVER_WAKE_MESSAGE='New routed work is in your backlog. Run bin/fm-session-start.sh now, then act on the routed task.'

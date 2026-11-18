@@ -45,7 +45,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
-# shellcheck source=bin/fm-primary-scope-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh" || exit 0
 
 usage() {

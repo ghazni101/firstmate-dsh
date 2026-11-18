@@ -131,17 +131,17 @@ SCAN_MARKER="$STATE/.inactive-outcome-reconcile"
 SCAN_LOCK="$STATE/.inactive-outcome-reconcile.lock"
 CREW_STATE_BIN="${FM_INACTIVE_CREW_STATE_BIN:-$SCRIPT_DIR/fm-crew-state.sh}"
 
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-classify-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-classify-lib.sh"
-# shellcheck source=bin/fm-parent-channel-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-parent-channel-lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
-# shellcheck source=bin/fm-dod-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-dod-lib.sh"
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-backend.sh"
 
 FM_INACTIVE_RECONCILE_SECS=${FM_INACTIVE_RECONCILE_SECS:-900}

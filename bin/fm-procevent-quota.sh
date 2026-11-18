@@ -40,17 +40,18 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
+# shellcheck disable=SC2034 # Input global for the libraries this script sources.
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-procevent-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-procevent-lib.sh"
-# shellcheck source=bin/fm-quota-axi-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
 DEFAULT_INTERVAL=60

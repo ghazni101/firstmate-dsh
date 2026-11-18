@@ -14,7 +14,7 @@
 # That helper's header owns the contract and the layers it leaves in force.
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-test-fixtures)
@@ -417,12 +417,14 @@ test_inherited_launcher_env_is_cleared() (
       [ -z "${!name+x}" ] || { echo "$name survived tests/lib.sh"; exit 1; }
     done
     (
+      # shellcheck source=/dev/null
       . "$ROOT/bin/fm-backend.sh"
       [ "$FM_BACKEND_CONFIG_DIR" = "$ROOT/config" ] \
         || { echo "cleared home still resolves config at $FM_BACKEND_CONFIG_DIR"; exit 1; }
     ) || exit 1
     (
       export FM_CONFIG_OVERRIDE="$2/empty-config" REX_BLOCK=block
+      # shellcheck source=/dev/null
       . "$ROOT/bin/fm-backend.sh"
       backend=$(fm_backend_name)
       case "$backend" in
@@ -431,18 +433,21 @@ test_inherited_launcher_env_is_cleared() (
     ) || exit 1
     (
       export FM_CONFIG_OVERRIDE="$2/empty-config" HERDR_ENV=1
+      # shellcheck source=/dev/null
       . "$ROOT/bin/fm-backend.sh"
       [ "$(fm_backend_name)" = herdr ] \
         || { echo "a launcher identity exported after sourcing was ignored"; exit 1; }
     ) || exit 1
     (
       export FM_CONFIG_OVERRIDE="$2/empty-config" FM_BACKEND=paseo
+      # shellcheck source=/dev/null
       . "$ROOT/bin/fm-backend.sh"
       [ "$(fm_backend_name)" = paseo ] \
         || { echo "a backend exported after sourcing was ignored"; exit 1; }
     ) || exit 1
     (
       export FM_HOME="$2/own-home"
+      # shellcheck source=/dev/null
       . "$ROOT/bin/fm-backend.sh"
       [ "$FM_BACKEND_CONFIG_DIR" = "$2/own-home/config" ] \
         || { echo "a home exported after sourcing was ignored"; exit 1; }

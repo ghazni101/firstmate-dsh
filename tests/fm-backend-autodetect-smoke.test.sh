@@ -49,7 +49,7 @@ command -v treehouse >/dev/null 2>&1 || { echo "skip: treehouse not found (requi
 
 export FM_GATE_REFUSE_BYPASS=1
 
-# shellcheck source=tests/herdr-test-safety.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/herdr-test-safety.sh"
 # This suite asserts that HERDR_ENV=1 alone selects the backend, and it runs
 # against its own isolated lab session. A Herdr pane inherited from the terminal

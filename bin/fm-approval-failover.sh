@@ -30,18 +30,18 @@ case "${1:-}" in
 esac
 ID=$2
 : "${FM_HOME:?FM_HOME must explicitly name the owning home}"
-# shellcheck source=bin/fm-gate-refuse-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
 fm_refuse_if_gate_agent
 STATE=${FM_STATE_OVERRIDE:-$FM_HOME/state}
 CONFIG=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-lease-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-lease-lib.sh"
 fm_task_id_creation_valid "$ID" || { echo 'error: invalid task id' >&2; exit 2; }
 TMP=

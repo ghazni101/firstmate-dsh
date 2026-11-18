@@ -11,7 +11,7 @@
 # verifies by capturing the exact quota-axi invocation.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 WARNER="$ROOT/bin/fm-usage-warner.sh"

@@ -227,7 +227,7 @@ esac
 
 refuse() { echo "error: refusing to pre-register Claude trust: $1" >&2; exit 1; }
 
-# shellcheck source=bin/fm-gate-refuse-lib.sh
+# shellcheck source=/dev/null
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/fm-gate-refuse-lib.sh"
 
 real_dir() { (cd -P -- "$1" 2>/dev/null && pwd -P); }

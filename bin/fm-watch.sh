@@ -227,6 +227,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 PR_DEGRADED_WATCH_ENABLED=0
 [ ! -e "$CONFIG/pr-degraded-watch" ] || PR_DEGRADED_WATCH_ENABLED=1
+# shellcheck disable=SC2034 # Input global for the libraries this script sources.
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 mkdir -p "$STATE"
 # Hold this state directory open for the main loop's teardown check: a
@@ -253,13 +254,13 @@ WATCH_HOME_EXISTED=0
 # runtime needlessly spends per-root CI lint memory while adding no uncovered file.
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-push-transition-lib.sh"
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-record-hygiene-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-record-hygiene-lib.sh"
 # Only for the arm-time check on FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS below;
 # the per-cycle reconcile itself runs as a separate process.
-# shellcheck source=bin/fm-procevent-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-procevent-lib.sh"
 # Single owner of durable merge-outcome publication, shared with
 # bin/fm-pr-merge.sh so self and poll origins use the same role-routed outcome.
@@ -276,28 +277,28 @@ WATCH_HOME_EXISTED=0
 # watcher consumes only its identity-bound record after a poll observes landing.
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-merge-authority-lib.sh"
-# shellcheck source=bin/fm-x-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-x-lib.sh"
-# shellcheck source=bin/fm-check-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-check-lib.sh"
 # Parent-owned secondmate missed-report guards: durable pending-reply
 # expectations created by fm-send on marked secondmate requests. The tick is
 # cheap when no records exist and never scrapes secondmate conversation.
-# shellcheck source=bin/fm-pending-reply-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
-# shellcheck source=bin/fm-busy-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # Steering-inbox loss detection: bin/fm-task-inbox-lib.sh owns the record,
 # doorbell, re-ring ladder, and unavailable-endpoint contracts; this watcher
 # supplies their live endpoint and busy checks plus wake emission
 # (inbox_steer_check below).
-# shellcheck source=bin/fm-task-inbox-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
 # The away-posture record (state/.afk-contract) is the posture in both the
 # attended and the afk session; bin/fm-afk-contract.sh owns its schema and its
 # away-or-quiet reading, which is all this watcher reads (away_record_present
 # below).
-# shellcheck source=bin/fm-afk-contract.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-afk-contract.sh"
 # Persistent-secondmate endpoint liveness: the shared probe/relaunch library is
 # the same one bin/fm-bootstrap.sh's session-start sweep drives, so ordinary
@@ -583,7 +584,7 @@ window_label() {
 }
 
 # All per-window marker identities come from this shared owner.
-# shellcheck source=bin/fm-watch-key-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-watch-key-lib.sh"
 
 inbox_steer_escalate_unavailable() {  # <window> <task> <record>
@@ -2435,6 +2436,7 @@ busy_stream_snapshot_current() {  # <task> <observed snapshot>
   harness=$(grep '^harness=' "$STATE/$1.meta" 2>/dev/null | cut -d= -f2- || true)
   current=$(fm_busy_stream_read "$STATE" "$1" "$harness") || return 1
   [ "$current" = "$2" ] || return 1
+  # shellcheck disable=SC2034 # gen and rev frame the fields this check reads
   read -r gen request rev ts <<< "$current"
   [ "$(( $(date +%s) - ts ))" -ge "$STREAM_SILENT_MAX_SECS" ]
 }

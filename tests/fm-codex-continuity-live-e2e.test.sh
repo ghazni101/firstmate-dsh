@@ -3,7 +3,7 @@
 # Codex's bounded foreground-checkpoint supervision path.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate opt-in FM_CODEX_LIVE_E2E codex

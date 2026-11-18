@@ -27,11 +27,11 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
-# shellcheck source=bin/fm-secondmate-registry-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
-# shellcheck source=bin/fm-config-inherit-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
-# shellcheck source=bin/fm-secondmate-nudge-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-secondmate-nudge-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }

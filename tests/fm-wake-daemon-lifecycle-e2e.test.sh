@@ -15,9 +15,11 @@
 # status-phrase matrix and the lock-primitive races stay as focused units
 # (fm-daemon.test.sh, fm-watcher-lock.test.sh) - an e2e cannot deterministically
 # cover a race, and the phrase list is a product contract worth a dedicated test.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/wake-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
 WATCH="$ROOT/bin/fm-watch.sh"

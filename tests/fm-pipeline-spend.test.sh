@@ -8,7 +8,7 @@
 # time, and a fake no-mistakes CLI that only names the resolved repository.
 set -eu
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_git_identity

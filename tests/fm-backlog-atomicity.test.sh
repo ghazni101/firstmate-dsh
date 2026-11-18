@@ -21,11 +21,13 @@
 # so a persistent secondmate keeps its own books through its own copies of these
 # scripts. A parent's view of a mate lagging is a freshness question and is
 # deliberately not asserted here.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-timeout-lib.sh"
 
 # An exported TASKS_AXI_BACKEND would outrank each case's .tasks.toml fixture
@@ -366,6 +368,7 @@ run_bounded_fm_tasks_axi() {  # <fallback-bin> <bound> [args...]
   # for the bounded call only. The library is sourced first under the ordinary
   # PATH, as every real caller does.
   out=$(
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-backlog-transition-lib.sh"
     PATH="$fb" FM_TASKS_AXI_TIMEOUT="$bound" fm_tasks_axi "$@" 2>&1
   ) || rc=$?
@@ -732,7 +735,9 @@ test_backlog_callers_refuse_unreadable_backend_config() (
   cp "$data/backlog.md" "$case_dir/configured-before"
   cp "$case_dir/data/backlog.md" "$case_dir/default-before"
   ln -s missing-config "$case_dir/.tasks.toml"
+  # shellcheck source=/dev/null
   . "$ROOT/bin/fm-tasks-axi-lib.sh"
+  # shellcheck source=/dev/null
   . "$ROOT/bin/fm-backlog-transition-lib.sh"
   unset TASKS_AXI_BACKEND
   for operation in fm_backlog_transition_applies fm_backlog_row_show fm_backlog_row_list fm_backlog_row_probe fm_backlog_mutate; do

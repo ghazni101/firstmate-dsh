@@ -23,9 +23,9 @@
 # bin/fm-on.sh for a remote one.
 
 _FM_SECONDMATE_RESTART_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-backend.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$_FM_SECONDMATE_RESTART_LIB_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-control-lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$_FM_SECONDMATE_RESTART_LIB_DIR/fm-control-lib.sh"
 
 # The persist request the primary sends before it restarts anything. It is the

@@ -15,7 +15,7 @@
 # no-mistakes banner. Override a single case with FM_FAKE_NO_MISTAKES_VERSION
 # rather than editing a stub body.
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 if [ -n "${FM_TEST_FIXTURES_SOURCED:-}" ]; then

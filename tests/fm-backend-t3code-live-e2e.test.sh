@@ -14,7 +14,7 @@ set -u
 
 LIVE_CONFIG=${FM_CONFIG_OVERRIDE:-}
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate default-on FM_T3CODE_LIVE_E2E node

@@ -36,7 +36,7 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-external-review-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-external-review-lib.sh"
 
 usage() {

@@ -30,18 +30,20 @@
 #      stands down when the payload already carries stop_hook_active.
 #   7. The watch extension arms through fm_watch_arm_omp and delivers an
 #      actionable close as one follow-up.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
-# shellcheck source=bin/fm-busy-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-busy-lib.sh"
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-composer-lib.sh"
-# shellcheck source=bin/fm-control-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-control-lib.sh"
-# shellcheck source=bin/fm-proc-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-proc-lib.sh"
 
 HARNESS="$ROOT/bin/fm-harness.sh"
@@ -110,7 +112,7 @@ test_harness_identity_and_liveness_classification() {
   fm_harness_process_matches /usr/local/bin/omp 'omp --cwd /x' || fail "harness identity must accept an omp path"
   ! fm_harness_process_matches ompd '' || fail "harness identity must not accept ompd"
   ! fm_harness_process_matches comp '' || fail "harness identity must not accept comp"
-  # shellcheck source=bin/fm-backend.sh
+  # shellcheck source=/dev/null
   . "$ROOT/bin/fm-backend.sh"
   fm_backend_source tmux || fail "fm_backend_source tmux failed"
   [ "$(fm_agent_process_classify_name omp)" = agent ] || fail "tmux liveness must classify omp as an agent"

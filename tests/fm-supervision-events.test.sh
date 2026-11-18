@@ -9,7 +9,7 @@
 # real herdr, watcher process, or blocking sleeps.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP=$(fm_test_tmproot fm-supervision-events)

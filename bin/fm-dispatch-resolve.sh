@@ -145,17 +145,17 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
-# shellcheck source=bin/fm-quota-axi-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
-# shellcheck source=bin/fm-control-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-control-lib.sh"
-# shellcheck source=bin/fm-env-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-env-lib.sh"
-# shellcheck source=bin/fm-timing-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timing-lib.sh"
-# shellcheck source=bin/fm-brief-heading-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-brief-heading-lib.sh"
-# shellcheck source=bin/fm-credential-source-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-credential-source-lib.sh"
 
 CONFIDENCE_FLOOR=0.6

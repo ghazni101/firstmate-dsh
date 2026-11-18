@@ -13,7 +13,7 @@
 # detected major.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 opencode_major() {  # <executable>

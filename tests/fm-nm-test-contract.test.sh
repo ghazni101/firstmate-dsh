@@ -2,7 +2,7 @@
 # Contract: parsed .no-mistakes.yaml must leave commands.test absent or empty.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 NM="$ROOT/.no-mistakes.yaml"

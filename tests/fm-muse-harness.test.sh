@@ -8,9 +8,11 @@
 # is NOT a run terminal. That decoy is the whole reason the fold matches an
 # anchored structural prefix instead of searching for "kind":"terminal", so a
 # fixture without it would let a naive implementation pass.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # bin/fm-harness.sh checks verified ENV markers before ancestry. Muse is
@@ -557,7 +559,7 @@ EOF
 
 classify_muse() {  # <state-dir> <id>
   (
-    # shellcheck source=bin/fm-busy-lib.sh
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-busy-lib.sh"
     fm_busy_classify tmux fake:0 muse "$2" "$1"
   )
@@ -565,7 +567,7 @@ classify_muse() {  # <state-dir> <id>
 
 run_state() {  # <log>
   (
-    # shellcheck source=bin/fm-busy-lib.sh
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-busy-lib.sh"
     fm_busy_muse_run_state "$1"
   )
@@ -928,7 +930,7 @@ EOF
 test_muse_trusts_no_record_sources() {
   local out
   out=$(
-    # shellcheck source=bin/fm-busy-lib.sh
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-busy-lib.sh"
     fm_busy_sources_for_harness muse
   )

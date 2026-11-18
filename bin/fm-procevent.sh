@@ -249,15 +249,15 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-procevent-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-procevent-lib.sh"
-# shellcheck source=bin/fm-task-inbox-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-backend.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
@@ -1185,6 +1185,8 @@ cmd_start() {
     reservation_dir=$(fm_procevent_capture_reservation_prepare "$STATE") \
       || die "cannot retain the external capture reservation boundary"
     exec 6<"$reservation_dir" || die "cannot retain the external capture reservation boundary"
+    # read by bin/fm-procevent-lib.sh, not by this file.
+    # shellcheck disable=SC2034
     FM_PROCEVENT_CAPTURE_PINNED_INBOX=1
     export FM_PROCEVENT_CAPTURE_INBOX_FD=8
     runner="$id.runner"

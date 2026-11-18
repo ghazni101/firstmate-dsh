@@ -22,9 +22,9 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DEST="$FM_HOME/data/backlog.md"
 LOCK_STALE_SECS=30
 
-# shellcheck source=bin/fm-tasks-axi-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # The claim sweep must preserve the former numeric-name eligibility rules.
 set -u
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 TMP_ROOT=$(fm_test_tmproot fm-remote-job-claim-retention)
 trap 'rm -rf -- "$TMP_ROOT"' EXIT
 export FM_REMOTE_JOB_STATE_ROOT="$TMP_ROOT/state"
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-remote-job-lib.sh"
 mkdir -p "$TMP_ROOT/account"
 fm_remote_job_prepare_state "$TMP_ROOT/account" || fail "$FM_REMOTE_JOB_ERROR"

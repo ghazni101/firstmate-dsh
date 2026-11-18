@@ -5,9 +5,11 @@
 # (bin/fm-branch-outcome.sh), the native lease seam and role-partition guards
 # wired into the mutating entrypoints (bin/fm-lease-lib.sh), and the proof that
 # a home which never runs the branch is untouched by all of it.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-branch-supervision)

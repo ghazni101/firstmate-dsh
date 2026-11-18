@@ -49,12 +49,12 @@
 # stays out of the default lanes. The portable counterpart runs everywhere.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # hash_text lives here, not in lib.sh, and reset_lab_state seeds the pane hash
 # from it to put each arm at a fresh first sight. Same source as the sibling
 # watcher suites fm-wake-queue.test.sh and fm-watch-triage.test.sh.
-# shellcheck source=tests/wake-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

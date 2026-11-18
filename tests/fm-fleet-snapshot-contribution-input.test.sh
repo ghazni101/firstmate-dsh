@@ -4,8 +4,9 @@
 # empty output (issue #5349).
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SNAPSHOT="$ROOT/bin/fm-fleet-snapshot.sh"

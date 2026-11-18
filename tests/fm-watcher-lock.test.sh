@@ -5,7 +5,7 @@
 # e2e), so they stay as focused real-process units.
 set -u
 
-# shellcheck source=tests/wake-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
 WATCH="$ROOT/bin/fm-watch.sh"
@@ -27,6 +27,7 @@ lab="$TMP_ROOT/marked-lab"
 foreign_state="$TMP_ROOT/foreign-state"
 checkout="$TMP_ROOT/.no-mistakes/worktrees/guard/bin"
 mkdir -p "$lab" "$foreign_state" "$checkout"
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-gate-refuse-lib.sh"
 fm_gate_lab_mark "$lab" || fail "could not mark the watcher lab"
 cp "$WATCH_ARM" "$ROOT/bin/fm-gate-refuse-lib.sh" "$checkout/"

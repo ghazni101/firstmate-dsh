@@ -16,7 +16,7 @@
 # shellcheck disable=SC2016 # single-quoted scripts expand inside their own shells
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate opt-in FM_SUPERVISION_HOST_LIVE_E2E claude node perl git

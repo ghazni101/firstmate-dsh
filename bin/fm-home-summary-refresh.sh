@@ -48,8 +48,9 @@ HOME_SUMMARY_TMP=
 HOME_SUMMARY_ERR_TMP=
 HOME_SUMMARY_LOCK_HELD=0
 
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
 usage() {
@@ -79,8 +80,9 @@ case "$HOME_SUMMARY_IF_IDLE" in
 esac
 
 if [ "$HOME_SUMMARY_MODE" != parent ]; then
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   # shellcheck disable=SC1091
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-wake-lib.sh"
 fi
 

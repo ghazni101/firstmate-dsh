@@ -3,7 +3,7 @@
 # against synthetic fixtures, without a model, SDK install or live home.
 set -eu
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # Keep fixture types readable using Node's built-in TypeScript stripping.

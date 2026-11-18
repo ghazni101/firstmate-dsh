@@ -41,7 +41,7 @@
 # its checked-out default branch under the same guard.
 
 SUB_HOME_MARKER="${SUB_HOME_MARKER:-.fm-secondmate-home}"
-# shellcheck source=bin/fm-secondmate-registry-lib.sh
+# shellcheck source=/dev/null
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-secondmate-registry-lib.sh"
 
 # --- helpers ---------------------------------------------------------------

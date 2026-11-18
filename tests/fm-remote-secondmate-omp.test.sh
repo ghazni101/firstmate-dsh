@@ -17,9 +17,9 @@
 # tests/fm-omp-harness.test.sh owns the omp launch contract itself.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=tests/remote-herdr-fixture.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/remote-herdr-fixture.sh"
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }

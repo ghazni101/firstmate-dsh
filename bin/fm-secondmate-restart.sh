@@ -69,6 +69,7 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC2034 # Input global for the libraries this script sources.
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 usage() {
@@ -88,11 +89,11 @@ fi
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 [ -d "$STATE" ] || { echo "error: state dir '$STATE' is missing; fm-secondmate-restart cannot resolve second mates for FM_HOME '$FM_HOME'" >&2; exit 1; }
 
-# shellcheck source=bin/fm-secondmate-restart-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-secondmate-restart-lib.sh"
-# shellcheck source=bin/fm-secondmate-nudge-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-secondmate-nudge-lib.sh"
-# shellcheck source=bin/fm-pending-reply-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
 
 PERSIST_WAIT=${FM_SECONDMATE_PERSIST_WAIT:-900}

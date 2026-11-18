@@ -14,7 +14,7 @@
 # silent for a link into the home, an absent copy, and the single-home layout.
 set -u
 
-# shellcheck source=tests/lib.sh disable=SC1091
+# shellcheck source=/dev/null disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 WRAPPER="$ROOT/bin/fm-tasks-axi.sh"

@@ -31,7 +31,7 @@ pass() { printf 'ok - %s\n' "$1"; }
 command -v tern >/dev/null 2>&1 || { echo "skip: tern not found"; exit 0; }
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the tern adapter)"; exit 0; }
 
-# shellcheck source=tests/tern-test-safety.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/tern-test-safety.sh"
 
 # Bounded probes: a wedged daemon must skip, not hang the lane.

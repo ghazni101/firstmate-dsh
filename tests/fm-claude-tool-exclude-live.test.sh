@@ -16,7 +16,7 @@
 # that sends no request a failure, and =0 skips.
 set -eu
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate default-on FM_CLAUDE_TOOL_EXCLUDE_LIVE claude python3
@@ -83,7 +83,7 @@ print("\n".join(best))
 PY
 }
 
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-timeout-lib.sh"
 
 capture_tools baseline

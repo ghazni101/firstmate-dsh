@@ -273,9 +273,9 @@ stage() {  # <stage-name>: breadcrumb for the parent's truncation banner
   printf '%s\n' "$1" > "$FM_SESSION_START_STAGE_FILE" 2>/dev/null || true
 }
 
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
-# shellcheck source=bin/fm-proc-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-proc-lib.sh"
 
 if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
@@ -350,19 +350,19 @@ fi
 
 PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-tasks-axi-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-# shellcheck source=bin/fm-public-followup-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-public-followup-lib.sh"
-# shellcheck source=bin/fm-trace-context-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-trace-context-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-line-cap-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-line-cap-lib.sh"
-# shellcheck source=bin/fm-hold-reason-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-hold-reason-lib.sh"
 
 # One tasks-axi compatibility verdict per session start. The probe costs three

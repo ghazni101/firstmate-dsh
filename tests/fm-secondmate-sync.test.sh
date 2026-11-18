@@ -26,14 +26,16 @@
 #     the same ff guards, skipping with an actionable reason when it cannot. The
 #     host's own copy is never moved, /updatefirstmate's code-root-relative sync
 #     is unchanged, and a launch never re-targets that copy.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=tests/remote-herdr-fixture.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/remote-herdr-fixture.sh"
 
-# shellcheck source=bin/fm-ff-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-ff-lib.sh"
 
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}

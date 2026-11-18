@@ -1767,7 +1767,7 @@ unit_flag_write_failure_aborts() {
 e2e_herdr() {
   command -v herdr >/dev/null 2>&1 || { echo "skip: herdr not found (herdr e2e)"; return 0; }
   command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (herdr e2e)"; return 0; }
-  # shellcheck source=tests/herdr-test-safety.sh
+  # shellcheck source=/dev/null
   . "$ROOT/tests/herdr-test-safety.sh"
   # shellcheck source=/dev/null
   . "$ROOT/bin/fm-backend.sh"
@@ -1867,7 +1867,7 @@ e2e_tmux() {
 # ---------------------------------------------------------------------------
 e2e_rex() {
   local home_tmp out cap_sid cap_bid cap_target before during after rec_backend rec_target rec_sid label rc
-  # shellcheck source=tests/rex-test-safety.sh
+  # shellcheck source=/dev/null
   . "$ROOT/tests/rex-test-safety.sh"
   rex_test_prepare || { rc=$?; [ "$rc" = 1 ] && { echo "skip: Rex CLI or jq unavailable (rex e2e)"; return 0; }; fail "rex e2e: private Rex server setup failed"; return 1; }
   rex_e2e() { (unset REX_SESSION REX_BLOCK; . "$ROOT/bin/fm-backend.sh"; fm_backend_source rex; "$@"); }

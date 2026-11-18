@@ -109,7 +109,7 @@ if [ "$CMD_SET" -eq 0 ]; then
   PAYLOAD=$(cat 2>/dev/null || true)
   [ -n "$PAYLOAD" ] || exit 0
   command -v jq >/dev/null 2>&1 || exit 0
-  # shellcheck source=bin/fm-hook-host-lib.sh
+  # shellcheck source=/dev/null
   . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fm-hook-host-lib.sh"
   # Cursor's own registration passes --cursor. Without it a Cursor-delivered
   # payload is the Claude-settings duplicate Cursor also loads, already

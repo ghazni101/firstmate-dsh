@@ -63,13 +63,13 @@ RECORD_SCHEMA_LINE=$'schema\tfm-startup-growth-check-v1'
 REGISTER_BIN="$SCRIPT_DIR/fm-check-register.sh"
 BUDGET_BIN="$SCRIPT_DIR/fm-startup-memory-budget.sh"
 
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-startup-memory-budget-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-startup-memory-budget-lib.sh"
-# shellcheck source=bin/fm-line-cap-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-line-cap-lib.sh"
-# shellcheck source=bin/fm-check-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-check-lib.sh"
 
 usage() {

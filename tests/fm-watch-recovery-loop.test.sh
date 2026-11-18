@@ -3,7 +3,7 @@
 # handling successor that keeps supervising instead of going blind.
 set -u
 
-# shellcheck source=tests/wake-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
 WATCH="$ROOT/bin/fm-watch.sh"

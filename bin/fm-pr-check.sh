@@ -79,15 +79,15 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DEGRADED_WATCH_ENABLED=0
 [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/pr-degraded-watch" ] || DEGRADED_WATCH_ENABLED=1
 
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-parent-channel-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-parent-channel-lib.sh"
-# shellcheck source=bin/fm-dod-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-dod-lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
 pr_check_reported_url() {  # <status-file>
@@ -335,6 +335,7 @@ case "$PROVIDER:$MODE" in
   *:no-mistakes|*:) DONE_LINE="done: PR $URL checks green" ;;
   *) DONE_LINE="done: PR $URL" ;;
 esac
+# shellcheck disable=SC2034 # Input global for bin/fm-dod-lib.sh.
 FM_DOD_REFRESH_REMOTES=1
 if { [ -z "$PR_HEAD" ] || ! fm_dod_forge_head_is_named_head "$MODE"; } \
   && ! GATE_REASON=$(fm_dod_accept_ship_done "${KIND:-ship}" "$MODE" "$WT" "$PROJECT" "$DONE_LINE" "$STATE" "$ID" "$META"); then

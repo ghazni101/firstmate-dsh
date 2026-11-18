@@ -22,14 +22,16 @@
 #   4. The transcript fold brackets a turn: a trailing turn_ended is idle, a
 #      later role:user is busy, and an unresolvable binding is unknown.
 #   5. Cursor is a crewmate/scout adapter only and refuses a secondmate launch.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# shellcheck source=bin/fm-cursor-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-cursor-lib.sh"
-# shellcheck source=bin/fm-busy-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-busy-lib.sh"
 
 HARNESS="$ROOT/bin/fm-harness.sh"
@@ -339,7 +341,7 @@ test_resolve_binary_prefers_stable_path() {
 test_tmux_classifies_cursor_pane_without_inferring_dead() {
   local tree bin
   tree="$TMP_ROOT/tree5"; bin=$(make_cursor_tree "$tree")
-  # shellcheck source=bin/backends/tmux.sh
+  # shellcheck source=/dev/null
   ( FM_BACKEND_LIB_DIR="$ROOT/bin"; . "$ROOT/bin/backends/tmux.sh"
     [ "$(fm_agent_process_classify_name node "$bin/cursor-agent")" = agent ] \
       || fail "a cursor pane reported as node must classify agent"

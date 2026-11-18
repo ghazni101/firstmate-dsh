@@ -19,7 +19,7 @@
 #   6. The marker is the label plus terminal-safe U+2063 INVISIBLE SEPARATOR.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-marker-lib.sh"

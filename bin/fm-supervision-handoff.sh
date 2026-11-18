@@ -31,13 +31,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_HOME="${FM_HOME:?}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-operational-input.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-operational-input.sh"
-# shellcheck source=bin/fm-proc-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-proc-lib.sh"
 fm_backend_source tmux || exit 1
 # Delivery transport: only the pane identity the pane runtime injected is

@@ -121,7 +121,7 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
 FM_OSC7501_MSG_MAX=${FM_OSC7501_MSG_MAX:-120}
@@ -273,11 +273,11 @@ osc_native() {
 LIBS_LOADED=0
 osc_load_libs() {
   [ "$LIBS_LOADED" = 1 ] && return 0
-  # shellcheck source=bin/fm-classify-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-classify-lib.sh" || return 1
-  # shellcheck source=bin/fm-busy-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-busy-lib.sh" || return 1
-  # shellcheck source=bin/fm-backend.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-backend.sh" || return 1
   LIBS_LOADED=1
 }

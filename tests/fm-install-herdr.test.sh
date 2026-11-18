@@ -3,7 +3,7 @@
 # current repository. A PATH curl stub records the requested URL and refuses
 # the download, so nothing is fetched or installed.
 set -eu
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP=$(fm_test_tmproot fm-install-herdr)

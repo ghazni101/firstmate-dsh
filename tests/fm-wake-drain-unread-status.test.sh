@@ -9,7 +9,7 @@
 # DECISIONS.
 set -u
 
-# shellcheck source=tests/wake-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
 DRAIN="$ROOT/bin/fm-wake-drain.sh"

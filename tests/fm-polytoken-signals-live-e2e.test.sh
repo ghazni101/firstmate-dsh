@@ -9,20 +9,22 @@
 # models` discovery, detection from a real tool subprocess, and the hook-driven
 # busy open/close on real turns. Runs the cheap zai/glm-5.3-flash model at low
 # effort, per the adapter's verification plan.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 fm_live_gate opt-in FM_POLYTOKEN_SIGNALS_LIVE polytoken tmux jq curl git
 
-# shellcheck source=bin/fm-polytoken-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-polytoken-lib.sh"
-# shellcheck source=bin/fm-busy-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-busy-lib.sh"
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-backend.sh"
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-composer-lib.sh"
 
 POLYTOKEN_BIN=$(fm_polytoken_binary 2>/dev/null) || POLYTOKEN_BIN=

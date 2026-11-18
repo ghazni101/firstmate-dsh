@@ -43,8 +43,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-# shellcheck source=bin/fm-public-followup-lib.sh
+# shellcheck source=/dev/null
 # Also brings in bin/fm-x-lib.sh, which this script's relay client uses.
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-public-followup-lib.sh"
 
 fmx_load_config

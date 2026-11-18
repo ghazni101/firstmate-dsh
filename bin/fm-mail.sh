@@ -372,7 +372,7 @@ wake_for() {
     echo "fm-mail: $lib missing; cannot wake" >&2
     return 1
   fi
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   # shellcheck disable=SC1091
   . "$lib"
   fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
@@ -490,8 +490,9 @@ mail_poll() {
     echo "fm-mail: $SCRIPT_DIR/fm-wake-lib.sh missing; cannot poll" >&2
     return 1
   fi
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   # shellcheck disable=SC1091
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   fm_lock_acquire_wait "$STATE_DIR/.mail-seen.lock"
   if ! list="$(run_py poll_list)"; then

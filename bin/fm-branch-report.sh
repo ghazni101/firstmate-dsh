@@ -50,7 +50,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 TURN_FILE="$STATE/.supervision-host-turn"
 RECEIPTS="$STATE/.supervision-host-receipts"
-# shellcheck source=bin/fm-afk-contract.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-afk-contract.sh"
 
 usage() {
@@ -140,7 +140,7 @@ if [ "$(turn_field posture)" = attended ]; then
   exit 0
 fi
 if ! fm_afk_contract_away_present "$STATE"; then
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   if ! fm_wake_append check "supervision-host-return:$SEQ" \
     "check: supervision-host outcome $SEQ for $TASK [$VERDICT] was recorded after the captain returned, so the return brief may not show it; relay it to the captain: $SUMMARY"; then

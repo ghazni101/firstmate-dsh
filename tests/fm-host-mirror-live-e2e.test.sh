@@ -16,11 +16,13 @@
 # rewake, which it submits as a prompt) is not mirrored as the captain's
 # words, so every harness runs in a private tmux server.
 # shellcheck disable=SC2016 # single-quoted scripts expand inside their own shells
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=bin/fm-tmux-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-tmux-lib.sh"
 
 fm_live_gate opt-in FM_HOST_MIRROR_LIVE_E2E jq tmux

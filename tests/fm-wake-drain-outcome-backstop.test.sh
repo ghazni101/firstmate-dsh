@@ -4,7 +4,7 @@
 # its queue row disappeared without a newer supervision-branch outcome.
 set -u
 
-# shellcheck source=tests/wake-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
 DRAIN="$ROOT/bin/fm-wake-drain.sh"
@@ -416,7 +416,7 @@ test_held_lock_mode_accepts_a_lock_owner_descendant() {
     > "$state/branch-outcomes.jsonl"
 
   FM_STATE_OVERRIDE="$state" bash -c '
-    # shellcheck source=bin/fm-wake-lib.sh
+    # shellcheck source=/dev/null
     . "$1"
     fm_lock_acquire_wait "$STATE/.branch-outcomes.lock" || exit 1
     trap "fm_lock_release \"$STATE/.branch-outcomes.lock\"" EXIT
@@ -440,7 +440,7 @@ test_index_self_heal_runs_under_the_outcome_lock() {
     > "$state/branch-outcomes.jsonl"
 
   FM_STATE_OVERRIDE="$state" bash -c '
-    # shellcheck source=bin/fm-wake-lib.sh
+    # shellcheck source=/dev/null
     . "$1"
     fm_lock_try_acquire "$STATE/.branch-outcomes.lock" || exit 1
     trap "fm_lock_release \"$STATE/.branch-outcomes.lock\"" EXIT

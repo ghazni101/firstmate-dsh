@@ -11,9 +11,9 @@
 # agents, login session, or herdr server.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=tests/rex-fake-fixture.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/rex-fake-fixture.sh"
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (the herdr adapter parses its JSON)"; exit 0; }
 command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found (plistlib parses the owned launch-agent contract)"; exit 0; }

@@ -23,7 +23,7 @@ pass() { printf 'ok - %s\n' "$1"; }
 command -v zellij >/dev/null 2>&1 || { echo "skip: zellij not found"; exit 0; }
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the zellij adapter)"; exit 0; }
 
-# shellcheck source=tests/zellij-test-safety.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/zellij-test-safety.sh"
 
 SESSION="fm-backend-smoke-$$"

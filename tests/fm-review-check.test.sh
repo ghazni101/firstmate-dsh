@@ -5,7 +5,7 @@
 # fixtures use an invented review host under an RFC 6761 reserved name.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 CHECK="$ROOT/bin/fm-review-check.sh"

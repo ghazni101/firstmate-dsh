@@ -3,7 +3,7 @@
 # including partial records that still identify a terminal but lack a target.
 set -eu
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-watch-inbox-meta)

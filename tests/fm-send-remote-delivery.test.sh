@@ -31,13 +31,13 @@
 #      armed.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=bin/fm-pending-reply-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-pending-reply-lib.sh"
-# shellcheck source=bin/fm-marker-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-marker-lib.sh"
-# shellcheck source=bin/fm-task-inbox-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-task-inbox-lib.sh"
 
 SEND="$ROOT/bin/fm-send.sh"

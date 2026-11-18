@@ -7,7 +7,7 @@
 # unconfigured native harness loaded the references itself.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate opt-in FM_HARNESS_ADAPTER_INSTRUCTION_EVAL curl jq
@@ -96,6 +96,7 @@ pass "local model $MODEL selected every operation scenario and all nine harness 
 
 CHECKED=0
 MISSING=
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-cursor-lib.sh"
 resolve_native_binary() {
   local harness=$1 candidate

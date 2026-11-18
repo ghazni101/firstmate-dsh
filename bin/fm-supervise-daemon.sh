@@ -174,39 +174,39 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # + verify-retry submit). Sourced at top level so BOTH the executed daemon and
 # the unit tests (which source this file for its pure functions) get the
 # corrected composer detection. Stale task rechecks use fm-backend.sh below.
-# shellcheck source=bin/fm-tmux-lib.sh
+# shellcheck source=/dev/null
 . "$FM_DAEMON_DIR/fm-tmux-lib.sh"
 
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$FM_DAEMON_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-watch-key-lib.sh
+# shellcheck source=/dev/null
 . "$FM_DAEMON_DIR/fm-watch-key-lib.sh"
 
 # Canonical construction and parsing for every Firstmate operational input.
-# shellcheck source=bin/fm-operational-input.sh
+# shellcheck source=/dev/null
 . "$FM_DAEMON_DIR/fm-operational-input.sh"
 
 # Shared wake classifier (last_status_line, status_is_captain_relevant,
 # window_to_task, and the status-span reader). The SAME library backs the
 # always-on watcher's triage, so the captain-relevant verb set and the
 # classification predicates have exactly one definition.
-# shellcheck source=bin/fm-classify-lib.sh
+# shellcheck source=/dev/null
 . "$FM_DAEMON_DIR/fm-classify-lib.sh"
 # The away-posture record owner: while state/.afk-contract exists an item held
 # for the captain is never rechecked (the watcher applies the same rule).
-# shellcheck source=bin/fm-afk-contract.sh
+# shellcheck source=/dev/null
 . "$FM_DAEMON_DIR/fm-afk-contract.sh"
 
 # Supervisor-pane discovery (FM_SUPERVISOR_TARGET_DEFAULT,
 # FM_SUPERVISOR_BACKEND_DEFAULT, discover_supervisor_target,
 # discover_supervisor_backend). Shared with the script-owned away launcher
 # (bin/fm-afk-launch.sh) so the captain-pane resolution has exactly one owner.
-# shellcheck source=bin/fm-supervisor-target-lib.sh
+# shellcheck source=/dev/null
 . "$FM_DAEMON_DIR/fm-supervisor-target-lib.sh"
 
 # The single owner of semantic busy state for recorded tasks
 # (fm_busy_classify).
-# shellcheck source=bin/fm-busy-lib.sh
+# shellcheck source=/dev/null
 . "$FM_DAEMON_DIR/fm-busy-lib.sh"
 
 # --- tunables ---------------------------------------------------------------
@@ -2072,7 +2072,7 @@ fm_super_main() {
 
   # Source the portable lock helpers (works on macOS where flock is absent).
   # Export FM_STATE_OVERRIDE so the lib resolves the same state dir.
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   FM_STATE_OVERRIDE="$STATE" . "$FM_DAEMON_DIR/fm-wake-lib.sh"
 
   local WATCH="$FM_DAEMON_DIR/fm-watch.sh"

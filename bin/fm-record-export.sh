@@ -56,7 +56,7 @@ run_archive() {  # <task-id>
     python3 "$SCRIPT_DIR/fm-record-export.py" archive-task "$task"
     return $?
   fi
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   ARCHIVE_META_LOCK=$(fm_meta_lock_path "$STATE/$task.meta") \
     || die "invalid task id for record export archive: $task"

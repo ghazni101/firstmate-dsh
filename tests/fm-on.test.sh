@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Behavior tests for the generic SSH transport and fixed remote entrypoint.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -17,7 +19,7 @@ cleanup() {
     pid=$(cat "$TMP_ROOT/remote-jobs/worker.pid")
     # Stop the detached Linux supervisor's whole process group and wait for its
     # cleanup before removing the fixture tree.
-    # shellcheck source=bin/fm-remote-job-lib.sh
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-remote-job-lib.sh"
     FM_REMOTE_JOB_STATE="$TMP_ROOT/remote-jobs"
     fm_remote_job_stop_worker_tree "$pid" 2>/dev/null || true

@@ -3,10 +3,13 @@
 # layered, armed Lavish snapshot; project URL enhancer selection; domain-to-
 # project route resolution; and the notification-to-routing path from a real
 # process-event capture of Lavish feedback to exactly one queued backlog item.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 LU="$ROOT/bin/fm-lavish-url.sh"

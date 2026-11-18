@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Behavior tests for the opt-in Claude Stop hook that asks a primary to /stow.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 GUARD="$ROOT/bin/fm-stow-guard.sh"

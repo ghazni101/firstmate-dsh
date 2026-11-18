@@ -17,7 +17,7 @@
 # directory, and a private tmux socket; nothing global is touched.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate default-on FM_CALM_PI_QUEUE_RETENTION_LIVE pi tmux node

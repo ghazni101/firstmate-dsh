@@ -97,11 +97,13 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FLEET="$SCRIPT_DIR/fm-fleet-snapshot.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
-# shellcheck source=bin/fm-landed-lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-landed-lib.sh"  # FM_LANDED_JQ_DEFS: the shared landed selector
 
 # Bounds (overridable for tests / large fleets).

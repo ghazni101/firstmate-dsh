@@ -8,9 +8,11 @@
 # property, not the fold's own source text. tests/fm-wake-drain-open-decisions.test.sh
 # already covers the fold's single-drain correctness; this file covers the
 # cursor's cross-drain persistence and cost bound.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/wake-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
 DRAIN="$ROOT/bin/fm-wake-drain.sh"

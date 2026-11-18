@@ -3,9 +3,11 @@
 #
 # The narrow shared surface is exactly data/captain-shared.md.
 # data/captain.md and data/learnings.md remain domain-local in every home.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # shellcheck source=/dev/null

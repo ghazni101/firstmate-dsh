@@ -16,7 +16,7 @@
 # fm-wake-drain.sh end to end.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-parent-channel-scan-exclusion)
@@ -92,7 +92,7 @@ LOCAL_STATE="$LOCAL_MATE/state"
 test_predicate_resolves_only_the_remote_channel() {
   local out rc
   out=$(FM_TEST_LIB_SOURCED=1 bash -c '
-    # shellcheck source=bin/fm-classify-lib.sh
+    # shellcheck source=/dev/null
     . "$1/bin/fm-classify-lib.sh"
     status_scan_parent_channel_exclude "$2"
   ' _ "$ROOT" "$REMOTE_STATE") \
@@ -100,13 +100,13 @@ test_predicate_resolves_only_the_remote_channel() {
   [ "$out" = "$REMOTE_STATE/parent-replies.status" ] \
     || fail "the exclusion must be the resolved channel path, got: $out"
   out=$(FM_TEST_LIB_SOURCED=1 bash -c '
-    # shellcheck source=bin/fm-classify-lib.sh
+    # shellcheck source=/dev/null
     . "$1/bin/fm-classify-lib.sh"
     status_scan_parent_channel_exclude "$2"
   ' _ "$ROOT" "$PLAIN_STATE")
   [ -z "$out" ] || fail "a main home must exclude nothing, got: $out"
   out=$(FM_TEST_LIB_SOURCED=1 bash -c '
-    # shellcheck source=bin/fm-classify-lib.sh
+    # shellcheck source=/dev/null
     . "$1/bin/fm-classify-lib.sh"
     status_scan_parent_channel_exclude "$2"
   ' _ "$ROOT" "$LOCAL_STATE")
@@ -117,7 +117,7 @@ test_predicate_resolves_only_the_remote_channel() {
 test_resolver_predicates_on_home_shape_not_name() {
   local out
   out=$(FM_TEST_LIB_SOURCED=1 bash -c '
-    # shellcheck source=bin/fm-parent-channel-lib.sh
+    # shellcheck source=/dev/null
     . "$1/bin/fm-parent-channel-lib.sh"
     fm_parent_channel_outbound_status "$2" "$3"
   ' _ "$ROOT" "$REMOTE" "$REMOTE_STATE") \
@@ -125,13 +125,13 @@ test_resolver_predicates_on_home_shape_not_name() {
   [ "$out" = "$REMOTE_STATE/parent-replies.status" ] \
     || fail "the remote route must resolve into the mate's own state dir, got: $out"
   FM_TEST_LIB_SOURCED=1 bash -c '
-    # shellcheck source=bin/fm-parent-channel-lib.sh
+    # shellcheck source=/dev/null
     . "$1/bin/fm-parent-channel-lib.sh"
     fm_parent_channel_outbound_status "$2" "$3"
   ' _ "$ROOT" "$PLAIN" "$PLAIN_STATE" \
     && fail "a main home has no outbound parent-channel status"
   FM_TEST_LIB_SOURCED=1 bash -c '
-    # shellcheck source=bin/fm-parent-channel-lib.sh
+    # shellcheck source=/dev/null
     . "$1/bin/fm-parent-channel-lib.sh"
     fm_parent_channel_outbound_status "$2" "$3"
   ' _ "$ROOT" "$LOCAL_MATE" "$LOCAL_STATE" \
@@ -146,7 +146,7 @@ test_remote_folds_omit_channel_and_keep_genuine_task() {
   dir="$TMP_ROOT/folds"
   seed_remote_mate "$dir/home"
   out=$(FM_TEST_LIB_SOURCED=1 bash -c '
-    # shellcheck source=bin/fm-classify-lib.sh
+    # shellcheck source=/dev/null
     . "$1/bin/fm-classify-lib.sh"
     echo "WHOLE:"; scan_open_decisions "$2"
     echo "SNAPSHOT:"; status_presentation_snapshot "$2"
@@ -169,7 +169,7 @@ test_incremental_fold_omits_channel_and_keeps_genuine_task() {
   dir="$TMP_ROOT/folds-incremental"
   seed_remote_mate "$dir/home"
   out=$(FM_TEST_LIB_SOURCED=1 bash -c '
-    # shellcheck source=bin/fm-classify-lib.sh
+    # shellcheck source=/dev/null
     . "$1/bin/fm-classify-lib.sh"
     scan_open_decisions_incremental "$2"
   ' _ "$ROOT" "$dir/home/state") || fail "the incremental fold failed"
@@ -186,7 +186,7 @@ test_channel_lines_never_reach_the_remote_unread_surface() {
   dir="$TMP_ROOT/unread"
   seed_remote_mate "$dir/home"
   out=$(FM_TEST_LIB_SOURCED=1 bash -c '
-    # shellcheck source=bin/fm-classify-lib.sh
+    # shellcheck source=/dev/null
     . "$1/bin/fm-classify-lib.sh"
     scan_unread_surface_lines "$2"
   ' _ "$ROOT" "$dir/home/state") || fail "the unread-surface scan failed"
@@ -199,7 +199,7 @@ test_channel_lines_never_reach_the_remote_unread_surface() {
 test_name_shared_file_folds_in_a_main_home() {
   local out
   out=$(FM_TEST_LIB_SOURCED=1 bash -c '
-    # shellcheck source=bin/fm-classify-lib.sh
+    # shellcheck source=/dev/null
     . "$1/bin/fm-classify-lib.sh"
     scan_open_decisions "$2"
   ' _ "$ROOT" "$PLAIN_STATE") || fail "the main-home fold failed"
@@ -213,7 +213,7 @@ test_name_shared_file_folds_in_a_main_home() {
 test_name_shared_file_folds_in_a_local_mate() {
   local out
   out=$(FM_TEST_LIB_SOURCED=1 bash -c '
-    # shellcheck source=bin/fm-classify-lib.sh
+    # shellcheck source=/dev/null
     . "$1/bin/fm-classify-lib.sh"
     scan_open_decisions "$2"
   ' _ "$ROOT" "$LOCAL_STATE") || fail "the local-mate fold failed"
@@ -296,17 +296,17 @@ record_hygiene_run() {  # <home> <detect-only>
   FM_TEST_LIB_SOURCED=1 FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" \
     FM_BOOTSTRAP_DETECT_ONLY="$2" bash -c '
       SCRIPT_DIR="$1/bin"; STATE="$2/state"; DATA="$2/data"
-      # shellcheck source=bin/fm-classify-lib.sh
+      # shellcheck source=/dev/null
       . "$SCRIPT_DIR/fm-classify-lib.sh"
-      # shellcheck source=bin/fm-tasks-axi-lib.sh
+      # shellcheck source=/dev/null
       . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-      # shellcheck source=bin/fm-backlog-transition-lib.sh
+      # shellcheck source=/dev/null
       . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
-      # shellcheck source=bin/fm-backend.sh
+      # shellcheck source=/dev/null
       . "$SCRIPT_DIR/fm-backend.sh"
-      # shellcheck source=bin/fm-timeout-lib.sh
+      # shellcheck source=/dev/null
       . "$SCRIPT_DIR/fm-timeout-lib.sh"
-      # shellcheck source=bin/fm-record-hygiene-lib.sh
+      # shellcheck source=/dev/null
       . "$SCRIPT_DIR/fm-record-hygiene-lib.sh"
       record_hygiene_report
     ' _ "$ROOT" "$1"

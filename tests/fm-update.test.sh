@@ -32,7 +32,7 @@
 #     anything moves rather than falling back to origin.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 UPDATE="$ROOT/bin/fm-update.sh"

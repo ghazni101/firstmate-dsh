@@ -4,7 +4,7 @@
 # (bin/fm-transition-lib.sh). Pure functions, no backend required.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # shellcheck source=/dev/null

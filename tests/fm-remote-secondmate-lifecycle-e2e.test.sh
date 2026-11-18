@@ -2,13 +2,13 @@
 # Full remote secondmate lifecycle over the deterministic generic SSH boundary.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=tests/remote-herdr-fixture.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/remote-herdr-fixture.sh"
-# shellcheck source=tests/herdr-client-pair-fixture.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/herdr-client-pair-fixture.sh"
-# shellcheck source=tests/rex-fake-fixture.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/rex-fake-fixture.sh"
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
@@ -48,6 +48,7 @@ cleanup() {
     worker_pid=$(cat "$TMP_ROOT/remote-jobs/worker.pid")
     # The published pid is the serving child; killing it alone lets its
     # detached supervisor restart it while the fixture root is being removed.
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-remote-job-lib.sh"
     fm_remote_job_stop_worker_tree "$worker_pid" || true
   fi
@@ -1911,7 +1912,7 @@ mkdir -p "$PARENT/state/.status-presentation-lock"
 printf '%s\n' "$$" > "$PARENT/state/.status-presentation-lock/pid"
 printf 'neighbor\tidentity\t0\t0\n' > "$PARENT/state/.status-presentation-cursor"
 cp "$PARENT/state/.status-presentation-cursor" "$TMP_ROOT/remote-cursor.expected"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-timeout-lib.sh"
 remote_noop_rc=0
 remote_env fm_run_timed 60 "$ROOT/bin/fm-teardown.sh" ios \

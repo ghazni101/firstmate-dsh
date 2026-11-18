@@ -7,8 +7,10 @@
 # The run uses the caller's own Cortex connection and spends a few small prompts
 # of its Snowflake credits: no SQL is asked for, and the brief never names a
 # database object. Cortex's global project-trust record must stay untouched.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 fm_live_gate opt-in FM_CORTEX_SIGNALS_LIVE cortex tmux jq
 CORTEX_BIN=$(command -v cortex)
@@ -29,11 +31,11 @@ cleanup() {
 }
 trap cleanup EXIT
 fail() { printf 'not ok - %s: %s\n' "$VERSION" "$1" >&2; exit 1; }
-# shellcheck source=bin/fm-busy-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-busy-lib.sh"
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-backend.sh"
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-composer-lib.sh"
 H="$LAB/home"
 WT="$LAB/wt"

@@ -23,7 +23,7 @@
 # shellcheck disable=SC2016 # single quotes are deliberate: $FM_HOME and $PPID expand inside the fake codex's driver
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 unset CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT CURSOR_AGENT CURSOR_INVOKED_AS \

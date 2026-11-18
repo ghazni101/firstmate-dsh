@@ -24,7 +24,7 @@
 # that case that fails if the blinding ever leaks a real ancestor through.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # This suite states the markers it means to test in every case. Drop the ambient

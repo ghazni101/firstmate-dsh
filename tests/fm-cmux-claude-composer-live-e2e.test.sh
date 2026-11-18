@@ -4,7 +4,7 @@
 # only one exact fm-test- workspace through the normal scout lifecycle.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -70,9 +70,10 @@ FM_HOME="$LAB" "$ROOT/bin/fm-spawn.sh" "$TASK" "$LAB/projects/comms" --scout --h
   || fail "could not launch the real Claude cmux probe"
 SPAWNED=1
 
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 FM_HOME="$LAB"
 export FM_HOME
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-backend.sh"
 fm_backend_source cmux || fail "could not source the cmux adapter"
 TARGET=$(awk -F= '/^window=/{print $2}' "$LAB/state/$TASK.meta")

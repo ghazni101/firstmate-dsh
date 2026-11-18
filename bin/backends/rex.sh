@@ -63,13 +63,13 @@ FM_BACKEND_REX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-${FM_ROOT:-$FM_BACKEND_REX_ROOT}}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
-# shellcheck source=bin/fm-backend-hometag-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_REX_ROOT/bin/fm-backend-hometag-lib.sh"
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_REX_ROOT/bin/fm-composer-lib.sh"
-# shellcheck source=bin/fm-agent-process-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_REX_ROOT/bin/fm-agent-process-lib.sh"
-# shellcheck source=bin/fm-transition-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_REX_ROOT/bin/fm-transition-lib.sh"
 
 # Verified floor: the API revision the live verification ran against.
@@ -329,7 +329,7 @@ fm_backend_rex_session_lock_path() {
 fm_backend_rex_session_lock() {
   local attempt=0 lock
   if ! declare -F fm_lock_try_acquire >/dev/null 2>&1; then
-    # shellcheck source=bin/fm-wake-lib.sh
+    # shellcheck source=/dev/null
     . "$FM_BACKEND_REX_ROOT/bin/fm-wake-lib.sh"
   fi
   lock=$(fm_backend_rex_session_lock_path)

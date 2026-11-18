@@ -21,7 +21,7 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/lib.sh"
 
 # Binary resolution identical to the adapter, installer, and lab: FM_HC_BIN
@@ -39,7 +39,7 @@ fi
 fm_live_gate default-on FM_HC_LIVENESS_DRIFT "$HC_TOOL" jq
 export FM_HC_BIN=${FM_HC_BIN:-$HC_BIN}
 
-# shellcheck source=tests/hc-test-safety.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/hc-test-safety.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-backend-hc-liveness)

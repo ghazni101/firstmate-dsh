@@ -11,7 +11,7 @@
 # shellcheck disable=SC2016 # single-quoted scripts expand inside their own shells
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 MIRROR="$ROOT/bin/fm-host-mirror.sh"

@@ -145,11 +145,11 @@ record_parent_stop_state() {
 }
 trap record_parent_stop_state EXIT
 
-# shellcheck source=bin/fm-supervision-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
-# shellcheck source=bin/fm-primary-scope-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-# shellcheck source=bin/fm-hook-host-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-hook-host-lib.sh"
 
 # Read the whole turn-end hook payload once; never block on unreadable/absent
@@ -199,10 +199,10 @@ fi
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || allow_exit
 
 # --- the actual predicate ----------------------------------------------------
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 if [ "$CLAUDE_MODE" -eq 1 ]; then
-  # shellcheck source=bin/fm-proc-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-proc-lib.sh"
 fi
 

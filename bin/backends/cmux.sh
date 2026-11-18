@@ -111,13 +111,13 @@ FM_BACKEND_CMUX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-${FM_ROOT:-$FM_BACKEND_CMUX_ROOT}}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
-# shellcheck source=bin/fm-backend-hometag-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_CMUX_ROOT/bin/fm-backend-hometag-lib.sh"
 
 # Shared composer-content classifier (empty|pending|unknown, and the fleet-wide
 # dead-shell-vs-agent-composer rule). Owned by bin/fm-composer-lib.sh, reused by
 # every backend so the decision cannot drift.
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_CMUX_ROOT/bin/fm-composer-lib.sh"
 
 # Verified minimum: the version the live pass ran against (docs/cmux-backend.md).
@@ -258,7 +258,7 @@ fm_backend_cmux_refuse_unauth() {
 # the app has been running), since that is indistinguishable from a slow
 # launch on the wire.
 fm_backend_cmux_ensure_running() {
-  local state i
+  local state
   state=$(fm_backend_cmux_ping_state)
   case "$state" in
     ok) return 0 ;;
@@ -272,7 +272,7 @@ fm_backend_cmux_ensure_running() {
       ;;
   esac
   open -a cmux >/dev/null 2>&1 || { echo "error: failed to launch cmux ('open -a cmux' failed)" >&2; return 1; }
-  for i in $(seq 1 20); do
+  for _ in $(seq 1 20); do
     state=$(fm_backend_cmux_ping_state)
     case "$state" in
       ok) return 0 ;;

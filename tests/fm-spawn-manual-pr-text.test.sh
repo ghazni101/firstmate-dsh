@@ -6,7 +6,7 @@
 # spawn launches only when the brief and the registry agree on the token.
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 BRIEF="$ROOT/bin/fm-brief.sh"

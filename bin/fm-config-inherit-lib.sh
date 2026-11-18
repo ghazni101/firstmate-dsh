@@ -79,9 +79,9 @@
 # not declare it refuses its absent record, and the sender counts that refusal
 # as unchanged, since that code root cannot read the item anyway.
 #
-# shellcheck source=bin/fm-startup-memory-budget-lib.sh
+# shellcheck source=/dev/null
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-startup-memory-budget-lib.sh"
-# shellcheck source=bin/fm-role-lib.sh
+# shellcheck source=/dev/null
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-role-lib.sh"
 
 # The one shared data file in this inheritance contract. There is deliberately

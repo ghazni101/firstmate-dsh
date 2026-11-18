@@ -11,9 +11,11 @@
 # bin/fm-watch.sh holds the singleton, a real bin/fm-watch-arm.sh attaches to it,
 # and a real status change drives a real wake through the watcher-bound delivery
 # record and durable queue.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/wake-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
 WATCH="$ROOT/bin/fm-watch.sh"

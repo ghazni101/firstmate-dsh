@@ -23,7 +23,7 @@ FM_REVIEW_URL=
 FM_REVIEW_BACKUP_REMOTE=
 FM_REVIEW_BACKUP_PREFIX=
 
-# shellcheck source=bin/fm-pr-lib.sh
+# shellcheck source=/dev/null
 . "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-pr-lib.sh"
 
 # The config directory the renderers and spawn read, resolved the same way

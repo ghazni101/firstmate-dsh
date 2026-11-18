@@ -18,7 +18,7 @@
 # shellcheck disable=SC2016 # Backticks are literal historical prompt markup in the corpus.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 MOD="$ROOT/.claude/mods/firstmate-calm"

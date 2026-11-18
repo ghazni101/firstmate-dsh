@@ -2,7 +2,7 @@
 # Behavior tests for Grok-harness hook authentication, teardown cleanup, and harness identity detection.
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 TEARDOWN="$ROOT/bin/fm-teardown.sh"

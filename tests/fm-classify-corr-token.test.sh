@@ -17,9 +17,11 @@
 # library's own sourced entry points (as tests/fm-watch-triage.test.sh does), and
 # the token grammar itself is pinned against the REAL writers so this library's
 # second statement of the shape cannot drift from the one that owns it.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/wake-helpers.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-classify-lib.sh"
@@ -590,6 +592,7 @@ test_optional_event_time() {
   dir=$(make_case event-time)
   # The real parent publisher deduplicates a retry against both timed and
   # legacy records without rewriting the first event's time.
+  # shellcheck source=/dev/null
   . "$ROOT/bin/fm-parent-channel-lib.sh"
   line="done [corr=$CORR]: path: C:\\notes"
   printf '%s\n' "$(status_stamp_line "$line")" > "$dir/state/retry.status"

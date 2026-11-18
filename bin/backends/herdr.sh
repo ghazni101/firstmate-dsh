@@ -75,7 +75,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # Shared composer-content classifier (empty|pending|unknown, and the fleet-wide
 # dead-shell-vs-agent-composer rule). Owned by bin/fm-composer-lib.sh, reused by
 # every backend so the decision cannot drift.
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_HERDR_ROOT/bin/fm-composer-lib.sh"
 
 # Shared, backend-neutral normalized-transition shape and the single-owner
@@ -83,14 +83,14 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # subscriber (fm_backend_herdr_wait_transition) normalizes every
 # pane.agent_status_changed edge through fm_transition_record and routes it
 # through fm_transition_policy - it never re-encodes the mapping.
-# shellcheck source=bin/fm-transition-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_HERDR_ROOT/bin/fm-transition-lib.sh"
 
 # Shared, backend-neutral harness-process identity (bin/fm-agent-process-lib.sh):
 # the same agent|shell|other vocabulary the tmux adapter proves liveness with,
 # so a Herdr registration is verified against the pane's real processes by the
 # same rule (fm_backend_herdr_pane_process_state).
-# shellcheck source=bin/fm-agent-process-lib.sh
+# shellcheck source=/dev/null
 . "$FM_BACKEND_HERDR_ROOT/bin/fm-agent-process-lib.sh"
 
 FM_BACKEND_HERDR_MIN_PROTOCOL=14
@@ -3813,7 +3813,7 @@ fm_backend_herdr_kill() {  # <target>
   local session=$FM_BACKEND_HERDR_SESSION pane=$FM_BACKEND_HERDR_PANE
   local lock_path attempt=0 lock_held=0
   if ! declare -F fm_lock_try_acquire >/dev/null 2>&1; then
-    # shellcheck source=bin/fm-wake-lib.sh
+    # shellcheck source=/dev/null
     . "$FM_BACKEND_HERDR_ROOT/bin/fm-wake-lib.sh"
   fi
   if lock_path=$(fm_backend_herdr_presentation_session_lock_path "$session"); then

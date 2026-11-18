@@ -33,11 +33,13 @@
 # model. Claude keeps its existing managed authentication; the lab path gets a
 # workspace-trust entry and a project transcript directory in Claude's own store.
 # shellcheck disable=SC2016 # single-quoted scripts expand inside their own shells
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=bin/fm-tmux-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-tmux-lib.sh"
 
 fm_live_gate opt-in FM_SUPERVISION_HOST_ATTENDED_LIVE_E2E claude tmux jq node perl git

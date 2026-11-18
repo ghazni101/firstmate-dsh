@@ -12,7 +12,7 @@
 # test's own processes only and never written into any settings file.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate default-on FM_CLAUDE_CALM_PLUGIN_TEST claude

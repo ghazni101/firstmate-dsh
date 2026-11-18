@@ -11,7 +11,7 @@ set -u
 # override themselves, so drop the inherited one before any git command.
 unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_PARAMETERS
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 STRIP="$ROOT/bin/fm-git-strip-ai-trailers.sh"

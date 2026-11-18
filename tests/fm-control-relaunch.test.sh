@@ -17,9 +17,11 @@
 #   6. fm-spawn --relaunch refuses on its own: a live agent, a contradicting
 #      flag, an extra positional, or a backend that cannot prove the previous
 #      agent exited.
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-control-lib.sh"
@@ -2429,6 +2431,7 @@ test_direct_spawn_relaunch_participates_in_the_lifecycle_lock() {
   printf 'zsh' > "$dir/fake/command"
   lock="$dir/home/state/.control-rl26.lock"
   (
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-wake-lib.sh"
     fm_lock_try_acquire "$lock" || exit 1
     sleep 30
@@ -2456,6 +2459,7 @@ test_promotion_participates_in_the_lifecycle_lock_before_metadata_resolution() {
   add_ship_task "$dir" rl29 claude
   lock="$dir/home/state/.control-rl29.lock"
   (
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-wake-lib.sh"
     fm_lock_try_acquire "$lock" || exit 1
     sleep 30

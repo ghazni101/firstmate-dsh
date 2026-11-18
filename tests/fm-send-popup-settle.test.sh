@@ -35,7 +35,7 @@
 # shellcheck disable=SC2016
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SEND="$ROOT/bin/fm-send.sh"

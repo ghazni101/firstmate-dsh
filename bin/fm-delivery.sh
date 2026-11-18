@@ -41,7 +41,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
 FM_DATA_OVERRIDE="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 export FM_ROOT FM_HOME FM_DATA_OVERRIDE
-# shellcheck source=bin/fm-delivery-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-delivery-lib.sh"
 
 usage() {

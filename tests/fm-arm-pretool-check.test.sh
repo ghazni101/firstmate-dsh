@@ -8,7 +8,7 @@
 # Empirical harness evidence lives in docs/arm-pretool-check.md.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 CHECK="$ROOT/bin/fm-arm-pretool-check.sh"
@@ -459,7 +459,9 @@ test_allow_is_silent_both_modes() {
 test_shellcheck_clean() {
   local out
   command -v shellcheck >/dev/null 2>&1 || { pass "shellcheck not installed, skipping"; return; }
-  out=$("$ROOT/bin/fm-lint.sh" "$CHECK" 2>&1)     || fail "bin/fm-arm-pretool-check.sh is not lint-clean under the pinned definition: $out"
+  # Bounded as CI bounds it, minus the run-level scope: this lints one file and
+  # stays hermetic instead of nesting a cgroup inside whatever runs the suite.
+  out=$(FM_LINT_MEMORY_SCOPE=0 "$ROOT/bin/fm-lint.sh" "$CHECK" 2>&1)     || fail "bin/fm-arm-pretool-check.sh is not lint-clean under the pinned definition: $out"
   pass "bin/fm-arm-pretool-check.sh is clean under bin/fm-lint.sh"
 }
 

@@ -28,7 +28,7 @@
 # which runs the same reconcile-and-deliver chain an arriving outcome runs.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fm_live_gate default-on FM_PI_BRANCH_RESPONSIVENESS_E2E pi tmux node

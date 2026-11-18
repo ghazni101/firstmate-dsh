@@ -19,12 +19,12 @@
 #      on it is refused.
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-control-lib.sh"
-# shellcheck source=bin/fm-gemini-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-gemini-lib.sh"
 
 HARNESS="$ROOT/bin/fm-harness.sh"

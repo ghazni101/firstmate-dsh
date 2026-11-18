@@ -53,13 +53,13 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 COMPLETION_FILE="$STATE/.session-start-complete"
 
-# shellcheck source=bin/fm-gate-refuse-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
-# shellcheck source=bin/fm-primary-scope-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-# shellcheck source=bin/fm-proc-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-proc-lib.sh"
-# shellcheck source=bin/fm-hook-host-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-hook-host-lib.sh"
 
 SOURCE=

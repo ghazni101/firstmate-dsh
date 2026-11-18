@@ -23,7 +23,7 @@
 # its tools are installed.
 set -u
 
-# shellcheck source=tests/fixtures.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 fm_live_gate default-on FM_CODEX_HOOK_LAYER_LIVE codex python3 jq

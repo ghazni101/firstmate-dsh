@@ -26,7 +26,7 @@
 # correctly fails that harness. Refresh docs/verification/runtime-backends.md
 # ("Rex") from this guard's output after any harness or Rex upgrade.
 set -u
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fm_live_gate opt-in FM_REX_COMPOSER_LIVE jq
@@ -40,7 +40,7 @@ fail() {
 pass() { printf 'ok - %s\n' "$1"; }
 note() { printf '# %s\n' "$1"; }
 
-# shellcheck source=tests/rex-test-safety.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/rex-test-safety.sh"
 trap rex_test_cleanup EXIT
 rex_test_prepare || { rc=$?; [ "$rc" = 1 ] && exit 0; exit "$rc"; }

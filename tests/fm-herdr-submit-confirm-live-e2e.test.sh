@@ -19,7 +19,7 @@
 # Every Herdr call, including adapter calls, is routed through bin/fm-herdr-lab.sh.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,7 +32,7 @@ fm_live_gate opt-in FM_HERDR_SUBMIT_CONFIRM_LIVE herdr jq claude
 
 [ -x "$LAB_HELPER" ] || fail "FM_HERDR_SUBMIT_CONFIRM_LIVE=1 but the Herdr lab helper is not executable at $LAB_HELPER"
 
-# shellcheck source=tests/herdr-test-safety.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/herdr-test-safety.sh"
 herdr_forget_inherited_pane
 
@@ -147,7 +147,7 @@ pass "live Herdr submit confirm: Claude Code ($VERSION) on $HERDR_VER reports em
 
 # Away-mode digests start with U+2063, which Claude's composer read-back drops.
 # The pre-Enter proof must still accept the rest of the payload.
-# shellcheck source=bin/fm-operational-input.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-operational-input.sh"
 i=0
 while [ "$i" -lt 45 ]; do

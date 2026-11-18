@@ -40,7 +40,7 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-public-followup-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-public-followup-lib.sh"
 
 FM_HOME="${FM_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}"

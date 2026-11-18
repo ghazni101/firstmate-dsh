@@ -29,7 +29,7 @@
 # T3 has no composer, but the shared submit dispatcher in bin/fm-backend.sh
 # prepares and reads the composer dialog sink around every adapter, so this
 # adapter loads the same library every other backend does.
-# shellcheck source=bin/fm-composer-lib.sh
+# shellcheck source=/dev/null
 . "$(dirname -- "${BASH_SOURCE[0]}")/../fm-composer-lib.sh"
 
 FM_BACKEND_T3CODE_HELPER="$(cd "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/fm-t3-mcp.mjs"

@@ -3,7 +3,7 @@
 # and remove only the two named custom-check files on the happy path.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 UNREGISTER="$ROOT/bin/fm-check-unregister.sh"

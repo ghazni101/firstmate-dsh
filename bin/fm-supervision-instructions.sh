@@ -118,7 +118,7 @@ HOST_SNIPPET=
 grok_arm='bin/fm-watch-arm.sh'
 case "$HARNESS" in
   claude|cursor|opencode|omp|grok|codex|agy)
-    # shellcheck source=bin/fm-supervision-engine-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
     if fm_supervision_host_enabled "$CONFIG" "$HARNESS"; then
       HOST_SNIPPET="$DOC_DIR/supervision-host.md"

@@ -19,11 +19,13 @@
 #     mutating request supersedes an in-flight probe-only worker
 #   - a publish lock a live process holds past the budget ends the worker with a
 #     failed-rerun record instead of an unbounded wait
+# shellcheck disable=SC2034,SC2153,SC2329 # lib globals and helpers arrive from tests/lib.sh across the source boundary
+
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-timeout-lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-startup-network-tests)
@@ -60,6 +62,7 @@ printf 'network=%s detect_only=%s\n' \
 # wrote - the part of the contract this suite owns. What the real sweeps measure
 # is owned by tests/fm-bootstrap.test.sh.
 if [ -n "${FM_TIMING_LOG:-}" ]; then
+  # shellcheck source=/dev/null
   . "$(dirname "$0")/fm-timing-lib.sh"
   fm_timing_record phase "${FM_FAKE_TIMING_PHASE:-gh-auth}" \
     "$(( $(fm_timing_now_ms) - 1500 ))" "${FM_FAKE_TIMING_DETAIL:-}"
@@ -626,7 +629,7 @@ test_records_share_one_origin_so_offsets_form_a_timeline() {
   log="$dir/timings.tsv"
 
   (
-    # shellcheck source=bin/fm-timing-lib.sh
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-timing-lib.sh"
     unset FM_TIMING_EPOCH_MS
     FM_TIMING_LOG=$log

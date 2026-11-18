@@ -220,7 +220,7 @@ if git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
   git -C "$WT" fetch origin "+refs/heads/$DEFAULT:refs/remotes/origin/$DEFAULT" --quiet
   BASE="origin/$DEFAULT"
   if [ -z "$RECORDED_BASE" ] && [ -e "$CONFIG/spawn-base-primary-checkout" ]; then
-    # shellcheck source=bin/fm-dod-lib.sh
+    # shellcheck source=/dev/null
     . "$SCRIPT_DIR/fm-dod-lib.sh"
     MODE=$(grep '^mode=' "$META" | tail -1 | cut -d= -f2- || true)
     BASE=$(resolve_review_base)

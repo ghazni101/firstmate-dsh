@@ -13,7 +13,7 @@
 # environment and ancestry, which are kernel facts rather than vendor output.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (the guard parses herdr's JSON, and jq is the holder process)"; exit 0; }
 command -v mkfifo >/dev/null 2>&1 || { echo "skip: mkfifo not found (holder processes block on a fifo)"; exit 0; }
@@ -174,7 +174,7 @@ guard() { # [extra env assignments...]
 herdr_calls() { cat "$CASE_LOG"; }
 TAKEOVER_MARKER="$TMP_ROOT/.firstmate/remote-herdr-takeover-$SESSION"
 # authorize [pid]: construct the doctor/guard two-line authorization protocol.
-# shellcheck source=bin/fm-remote-job-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-remote-job-lib.sh"
 authorize() {
   local pid=${1:-$$} start
@@ -202,7 +202,7 @@ assert_stop_before_start() {
 hold FM_PROBE_MARKER=1
 PROBE_PID=$HOLDER_PID
 sleep 0.2
-# shellcheck source=bin/fm-remote-herdr-owner-lib.sh
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-remote-herdr-owner-lib.sh"
 probe_env=$(fm_remote_herdr_process_env "$PROBE_PID")
 case "$probe_env" in

@@ -189,17 +189,17 @@ case "$AUTOARM_ATTEMPTS" in
   *) AUTOARM_ATTEMPTS=2 ;;
 esac
 
-# shellcheck source=bin/fm-primary-scope-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-# shellcheck source=bin/fm-supervision-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-proc-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-proc-lib.sh"
-# shellcheck source=bin/fm-hook-host-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-hook-host-lib.sh"
-# shellcheck source=bin/fm-supervision-engine-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
 
 # fm-watch.sh touches the liveness beacon once per cycle, immediately before

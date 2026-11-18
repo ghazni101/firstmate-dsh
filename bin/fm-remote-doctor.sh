@@ -91,13 +91,13 @@ SCRIPT_DIR=${SCRIPT_SELF%/*}
 [ "$SCRIPT_DIR" != "$SCRIPT_SELF" ] || SCRIPT_DIR=.
 SCRIPT_DIR=$(CDPATH='' cd -- "$SCRIPT_DIR" && pwd -P)
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(CDPATH='' cd "$SCRIPT_DIR/.." && pwd -P)}"
-# shellcheck source=bin/fm-remote-job-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-remote-job-lib.sh"
-# shellcheck source=bin/fm-tasks-axi-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-# shellcheck source=bin/fm-remote-herdr-owner-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-remote-herdr-owner-lib.sh"
-# shellcheck source=bin/fm-remote-herdr-identity-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-remote-herdr-identity-lib.sh"
 # The shared remote toolchain plus the selected backend's CLI; the backend slot
 # is filled once the backend is resolved below, keeping the probe's six-fact
@@ -236,7 +236,7 @@ herdr_adapter_load() {
   [ -z "${FM_REMOTE_DOCTOR_HERDR_LOADED:-}" ] || return 0
   herdr_cli_available || return 1
   [ -f "$SCRIPT_DIR/fm-backend.sh" ] && [ -f "$SCRIPT_DIR/backends/herdr.sh" ] || return 1
-  # shellcheck source=bin/fm-backend.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-backend.sh" || return 1
   fm_backend_source herdr || return 1
   FM_REMOTE_DOCTOR_HERDR_LOADED=1

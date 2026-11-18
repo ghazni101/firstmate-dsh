@@ -170,9 +170,9 @@ meta_value() { # <meta> <key>
 LIBS_LOADED=0
 load_status_libs() {
   [ "$LIBS_LOADED" = 1 ] && return 0
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-wake-lib.sh" || return 1
-  # shellcheck source=bin/fm-classify-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-classify-lib.sh" || return 1
   LIBS_LOADED=1
 }
@@ -180,7 +180,7 @@ load_status_libs() {
 NM_LOADED=0
 load_nm_lib() {
   [ "$NM_LOADED" = 1 ] && return 0
-  # shellcheck source=bin/fm-nm-run-lib.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-nm-run-lib.sh" || return 1
   NM_LOADED=1
 }
@@ -188,7 +188,7 @@ load_nm_lib() {
 BACKEND_LOADED=0
 load_backend() {
   [ "$BACKEND_LOADED" = 1 ] && return 0
-  # shellcheck source=bin/fm-backend.sh
+  # shellcheck source=/dev/null
   . "$SCRIPT_DIR/fm-backend.sh" || return 1
   fm_backend_source rex || return 1
   BACKEND_LOADED=1

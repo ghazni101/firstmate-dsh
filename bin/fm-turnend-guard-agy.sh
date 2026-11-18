@@ -62,15 +62,15 @@ continue_turn() {  # <reason>
   exit 0
 }
 
-# shellcheck source=bin/fm-primary-scope-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-# shellcheck source=bin/fm-supervision-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-proc-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-proc-lib.sh"
-# shellcheck source=bin/fm-supervision-engine-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
 
 PAYLOAD=$(cat 2>/dev/null || true)

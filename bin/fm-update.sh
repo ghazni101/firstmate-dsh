@@ -92,9 +92,9 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 SECONDMATES_MD="$FM_HOME/data/secondmates.md"
-# shellcheck source=bin/fm-ff-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-ff-lib.sh"
-# shellcheck source=bin/fm-secondmate-restart-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-secondmate-restart-lib.sh"
 
 "$SCRIPT_DIR/fm-guard.sh" || true
@@ -196,7 +196,9 @@ fi
 # FF_NUDGE_WINDOWS and FF_SEEN_HOMES are the sweep's own accumulators and are
 # reset here per its contract; the instruction-gated nudge set is the session-start
 # sweep's threshold, not this command's, so only the two sets below are read.
+# shellcheck disable=SC2034 # Accumulators bin/fm-ff-lib.sh reads after the sweep.
 FF_NUDGE_WINDOWS=""
+# shellcheck disable=SC2034 # Accumulators bin/fm-ff-lib.sh reads after the sweep.
 FF_SEEN_HOMES=""
 FF_RESTART_WINDOWS=""
 FF_STEER_WINDOWS=""
@@ -259,6 +261,7 @@ fm_ff_after_secondmate_settled() {  # <id> <home> <window> <status> <instr>
 secondmate_base=origin
 if [ -n "$SELF_UPDATE_REMOTE" ]; then
   if secondmate_base=$(primary_head_commit "$FM_ROOT"); then
+    # shellcheck disable=SC2034 # Input global bin/fm-ff-lib.sh reads for the import.
     FF_IMPORT_FROM="$FM_ROOT"
   else
     secondmate_base=""

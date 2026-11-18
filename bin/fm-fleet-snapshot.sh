@@ -215,22 +215,26 @@ case "$FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS" in
     ;;
 esac
 
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-backend.sh"
 # The classifier also loads fm_run_timed; reuse that bounded-execution owner.
-# shellcheck source=bin/fm-classify-lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-classify-lib.sh"
-# shellcheck source=bin/fm-ff-lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-ff-lib.sh"  # validate_secondmate_home: shared seeded-home boundary checks
-# shellcheck source=bin/fm-landed-lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-landed-lib.sh"  # FM_LANDED_JQ_DEFS: the shared landed selector
-# shellcheck source=bin/fm-merge-authority-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-merge-authority-lib.sh"
-# shellcheck source=bin/fm-hold-reason-lib.sh
+# shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-hold-reason-lib.sh"
 
 usage() {

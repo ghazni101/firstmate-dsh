@@ -131,7 +131,7 @@ esac
 # Bounded execution is owned by bin/fm-timeout-lib.sh, so a macOS host without
 # coreutils still gets a hard bound instead of an unbounded vendor CLI call.
 # Exit 124 means the bound was hit.
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
 

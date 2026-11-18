@@ -35,9 +35,9 @@
 # shellcheck disable=SC2016 # single-quoted scripts expand inside their own shells
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=tests/herdr-test-safety.sh
+# shellcheck source=/dev/null
 . "$ROOT/tests/herdr-test-safety.sh"
 
 FLEET_SESSION=${FM_HERDR_LAB_FLEET_SESSION:-${HERDR_SESSION:-}}

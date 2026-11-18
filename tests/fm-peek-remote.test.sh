@@ -13,7 +13,7 @@
 #      mate is dead.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 PEEK="$ROOT/bin/fm-peek.sh"

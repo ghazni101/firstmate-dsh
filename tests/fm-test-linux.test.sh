@@ -6,7 +6,7 @@
 # fixed form.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 LINUX_CHECK="$ROOT/bin/fm-test-linux.sh"
