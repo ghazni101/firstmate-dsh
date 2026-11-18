@@ -1607,9 +1607,28 @@ test_projection_reclaim_replaces_only_exact_husk_and_advances_binding() {
   cp "$resp/6.out" "$resp/23.out"
   cp "$resp/7.out" "$resp/24.out"
   printf '%s\n' '{"error":{"code":"pane_not_found"}}' > "$resp/25.out"
-  cp "$resp/1.out" "$resp/26.out"
-  printf '%s\n' '{"result":{"tabs":[{"tab_id":"w2:t3","label":"fm-fm-hibit-r1"}]}}' > "$resp/27.out"
-  printf '%s\n' '{"result":{"panes":[{"pane_id":"w2:p3","tab_id":"w2:t3"}]}}' > "$resp/28.out"
+  # The replaced old husk tab survives its pane close because a residual
+  # companion pane (the docked herdr:sidebar slot) is still attached to it.
+  printf '%s\n' '{"result":{"tabs":[{"tab_id":"w2:t2","label":"fm-fm-hibit-r1"},{"tab_id":"w2:t3","label":"fm-fm-hibit-r1"}]}}' > "$resp/26.out"
+  printf '%s\n' '{"result":{"panes":[{"pane_id":"w2:pD","tab_id":"w2:t2","label":"herdr:sidebar"},{"pane_id":"w2:p3","tab_id":"w2:t3"}]}}' > "$resp/27.out"
+  printf '%s\n' '{"result":{"pane":{"pane_id":"w2:pD","tab_id":"w2:t2","workspace_id":"w2"}}}' > "$resp/28.out"
+  printf '%s\n' '{"error":{"code":"agent_not_found"}}' > "$resp/29.out"
+  # The close of the swept companion pane takes its own focus snapshot pair
+  # (30, 31), verifies the exact pane (32), plans a plain close (33), closes
+  # silently (34), confirms the pane gone (35), and restores focus (36, 37);
+  # the title-clear probe is answered inline by the fake and consumes no
+  # response file.
+  cp "$resp/6.out" "$resp/30.out"
+  cp "$resp/7.out" "$resp/31.out"
+  printf '%s\n' '{"result":{"pane":{"pane_id":"w2:pD","tab_id":"w2:t2","workspace_id":"w2"}}}' > "$resp/32.out"
+  printf '%s\n' '{"result":{"tabs":[{"tab_id":"w2:t2","label":"fm-fm-hibit-r1"},{"tab_id":"w2:t3","label":"fm-fm-hibit-r1"}]}}' > "$resp/33.out"
+  : > "$resp/34.out"
+  printf '%s\n' '{"error":{"code":"pane_not_found"}}' > "$resp/35.out"
+  cp "$resp/6.out" "$resp/36.out"
+  cp "$resp/7.out" "$resp/37.out"
+  cp "$resp/1.out" "$resp/38.out"
+  printf '%s\n' '{"result":{"tabs":[{"tab_id":"w2:t3","label":"fm-fm-hibit-r1"}]}}' > "$resp/39.out"
+  printf '%s\n' '{"result":{"panes":[{"pane_id":"w2:p3","tab_id":"w2:t3"}]}}' > "$resp/40.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
     bash -c '
@@ -1627,6 +1646,9 @@ test_projection_reclaim_replaces_only_exact_husk_and_advances_binding() {
   close_line=$(grep -n $'pane\x1fclose\x1fw2:p2' "$log" | cut -d: -f1)
   [ -n "$create_line" ] && [ -n "$close_line" ] && [ "$create_line" -lt "$close_line" ] \
     || fail "reclaim did not create the exact replacement before closing the old husk"
+  sweep_line=$(grep -n $'pane\x1fclose\x1fw2:pD' "$log" | cut -d: -f1)
+  [ -n "$sweep_line" ] && [ "$sweep_line" -gt "$close_line" ] \
+    || fail "reclaim did not sweep the replaced tab's residual companion pane after the husk close"
   agent_line=$(grep -n $'agent\x1fget\x1fw2:p2' "$log" | tail -1 | cut -d: -f1)
   [ -n "$agent_line" ] && [ "$agent_line" -lt "$close_line" ] \
     || fail "reclaim did not recheck the old pane agent state before the close"

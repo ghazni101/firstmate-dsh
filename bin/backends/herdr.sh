@@ -18,8 +18,10 @@
 # per task inside its home's workspace. The default-on presentation projection
 # creates a disposable workspace for a clean fresh task instead unless the home
 # opts out. That
-# workspace is a non-authoritative visual projection containing only the normal
-# task pane. Its random token and mutable label never authorize lookup,
+# workspace is a non-authoritative visual projection containing the normal
+# task tab's exact task pane beside only the known companion presentation
+# panes (FM_BACKEND_HERDR_COMPANION_LABELS). Its random token and mutable
+# label never authorize lookup,
 # adoption, reuse, closure, deletion, task ownership, or endpoint selection.
 # A version 2 journal can participate in replacing only its exact same-identity
 # endpoint after metadata, home, session, workspace, tab, pane, parent, shape,
@@ -156,6 +158,14 @@ FM_BACKEND_HERDR_PRESENTATION_CONFIG="herdr-presentation-spaces"
 # secondmate's workspace into the primary's, so the marker-derived label always
 # wins there.
 FM_BACKEND_HERDR_WORKSPACE_LABEL_CONFIG="herdr-workspace"
+# Companion presentation panes that may share a projected task tab beside the
+# exact task pane: Herdr's own docked "herdr:sidebar" slot and the local
+# monitor-strip plugin's "htop" and "nvtop" strip panes, which this host's
+# Herdr builds into new tabs around the projection shape check
+# (docs/herdr-backend.md "Owning parent and tabs"). Any pane beside the exact
+# task pane with any other label still refuses the projection, and the exact
+# tab/pane ids stay the only endpoint authority.
+FM_BACKEND_HERDR_COMPANION_LABELS='herdr:sidebar htop nvtop'
 
 # fm_backend_herdr_presentation_preference <config-dir>: the single owner of
 # config/herdr-presentation-spaces parsing. Echoes exactly one of "off", "on"
@@ -2760,7 +2770,7 @@ EOF
 # A missing, failed, or malformed create response stays ambiguous and grants no
 # cleanup authority.
 fm_backend_herdr_projection_create_task() {  # <cwd> <workspace-label> <task-label>
-  local cwd=$1 workspace_label=$2 task_label=$3 session out tabs panes tab_count pane_count focus_before active_tab
+  local cwd=$1 workspace_label=$2 task_label=$3 session out tabs panes focus_before active_tab
   FM_BACKEND_HERDR_PROJECTION_SESSION=""
   FM_BACKEND_HERDR_PROJECTION_WORKSPACE_ID=""
   FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID=""
@@ -2836,6 +2846,13 @@ fm_backend_herdr_projection_create_task() {  # <cwd> <workspace-label> <task-lab
     echo "error: herdr presentation seeded-tab prune refused a focus-unsafe close; leaving its journal quarantined" >&2
     return 1
   fi
+  if ! fm_backend_herdr_projection_sweep_tab_companions \
+    "$session" \
+    "$FM_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" \
+    "$FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID" 1; then
+    echo "error: herdr presentation seeded-tab companion sweep refused a focus-unsafe or live-agent close; leaving its journal quarantined" >&2
+    return 1
+  fi
   active_tab=${focus_before#*$'\t'}
   if [ "$FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID" != "$active_tab" ]; then
     fm_backend_herdr_projection_focus_restore "$session" "$focus_before" "seeded-tab prune" || {
@@ -2857,29 +2874,75 @@ fm_backend_herdr_projection_create_task() {  # <cwd> <workspace-label> <task-lab
     echo "error: could not parse the disposable herdr presentation workspace shape" >&2
     return 1
   fi
-  tab_count=$(printf '%s' "$tabs" | jq -r '.result.tabs | length' 2>/dev/null)
-  pane_count=$(printf '%s' "$panes" | jq -r '.result.panes | length' 2>/dev/null)
-  if [ "$tab_count" != 1 ] || [ "$pane_count" != 1 ] \
-     || ! printf '%s' "$tabs" | jq -e --arg task "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
-       --arg seeded "$FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID" \
-       '.result.tabs[0].tab_id == $task and ([.result.tabs[] | select(.tab_id == $seeded)] | length) == 0' >/dev/null 2>&1 \
-     || ! printf '%s' "$panes" | jq -e --arg pane "$FM_BACKEND_HERDR_PROJECTION_PANE_ID" \
+  if ! printf '%s' "$tabs" | jq -e --arg task "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
+       '((.result.tabs | length) == 1) and .result.tabs[0].tab_id == $task' >/dev/null 2>&1 \
+     || ! printf '%s' "$panes" | jq -e \
        --arg tab "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
-       '.result.panes[0].pane_id == $pane and .result.panes[0].tab_id == $tab' >/dev/null 2>&1; then
-    echo "error: disposable herdr presentation workspace did not converge to exactly one task pane" >&2
+       --arg pane "$FM_BACKEND_HERDR_PROJECTION_PANE_ID" \
+       --arg companions "$FM_BACKEND_HERDR_COMPANION_LABELS" '
+       def companion: ((.label // "") as $l | ($companions | split(" ") | index($l)));
+       ([.result.panes[]? | select(.tab_id == $tab and .pane_id == $pane)] | length) == 1
+       and ([.result.panes[]? | select(.tab_id != $tab)] | length) == 0
+       and ([.result.panes[]? | select(.tab_id == $tab and .pane_id != $pane and ((companion) | not))] | length) == 0
+     ' >/dev/null 2>&1; then
+    echo "error: disposable herdr presentation workspace did not converge to one exact task tab with the exact task pane beside known companion panes" >&2
     return 1
   fi
   return 0
 }
 
+# fm_backend_herdr_projection_sweep_tab_companions: close every pane still
+# attached to ONE EXACT tab id, because companion presentation panes
+# (FM_BACKEND_HERDR_COMPANION_LABELS) keep a tab alive after its root or husk
+# pane closes. The tab id is always exact response- or journal-derived, never
+# re-derived from labels, and the expected label is re-verified because a
+# renamed or repurposed tab is left untouched exactly like
+# fm_backend_herdr_workspace_prune_seeded_default_tab's own gate. A pane with
+# a live, stale-registered, or unknown agent refuses the whole sweep, every
+# close goes through the focus-preserving exact-pane close helper, and a pane
+# that vanished mid-sweep is confirmed dead rather than failing it. Return 0
+# means the tab is gone or nothing was sweepable; the caller's convergence
+# check stays the arbiter.
+fm_backend_herdr_projection_sweep_tab_companions() {  # <session> <workspace-id> <tab-id> <expected-label>
+  local session=$1 wsid=$2 tab_id=$3 expected_label=$4 tabs label panes pane_ids pane
+  [ -n "$tab_id" ] || return 0
+  tabs=$(fm_backend_herdr_cli "$session" tab list --workspace "$wsid" 2>/dev/null) || return 0
+  [ "$(printf '%s' "$tabs" | jq -r --arg t "$tab_id" '[.result.tabs[]? | select(.tab_id == $t)] | length' 2>/dev/null)" = 1 ] || return 0
+  label=$(printf '%s' "$tabs" | jq -r --arg t "$tab_id" '.result.tabs[]? | select(.tab_id == $t) | .label' 2>/dev/null)
+  [ "$label" = "$expected_label" ] || return 0
+  panes=$(fm_backend_herdr_cli "$session" pane list --workspace "$wsid" 2>/dev/null) || return 0
+  pane_ids=$(printf '%s' "$panes" | jq -r --arg t "$tab_id" '.result.panes[]? | select(.tab_id == $t) | .pane_id' 2>/dev/null)
+  while IFS= read -r pane; do
+    [ -n "$pane" ] || continue
+    case "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" in
+      dead|no-agent) ;;
+      *) return 1 ;;
+    esac
+  done <<EOF
+$pane_ids
+EOF
+  while IFS= read -r pane; do
+    [ -n "$pane" ] || continue
+    fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$pane" \
+      || [ "$(fm_backend_herdr_pane_presence_state "$session" "$pane")" = dead ] \
+      || return 1
+  done <<EOF
+$pane_ids
+EOF
+  return 0
+}
+
 # fm_backend_herdr_projection_cleanup_exact: same-process abort cleanup for a
 # projection whose create calls returned complete exact IDs.
-# It performs no lookup and never calls workspace close. It succeeds only when
-# the task pane is confirmed gone, so a caller can tell nothing is left open
-# there. A failed close call is followed by an exact presence check, because
-# the close can confirm the pane gone and then fail only to restore focus.
-fm_backend_herdr_projection_cleanup_exact() {  # <session> <task-pane> <seeded-pane>
-  local session=$1 task_pane=$2 seeded_pane=$3 task_closed=1
+# It performs no lookup and never calls workspace close. It closes the exact
+# recorded panes, then sweeps the exact recorded tabs' residual companion
+# panes so an aborted projection does not strand its disposable workspace.
+# It succeeds only when the task pane is confirmed gone, so a caller can tell
+# nothing is left open there. A failed close call is followed by an exact
+# presence check, because the close can confirm the pane gone and then fail
+# only to restore focus.
+fm_backend_herdr_projection_cleanup_exact() {  # <session> <task-pane> <seeded-pane> <workspace-id> <task-tab> <seeded-tab> <task-label>
+  local session=$1 task_pane=$2 seeded_pane=$3 wsid=$4 task_tab=$5 seeded_tab=$6 task_label=$7 task_closed=1
   if [ -n "$task_pane" ]; then
     if fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$task_pane" ||
       [ "$(fm_backend_herdr_pane_presence_state "$session" "$task_pane")" = dead ]; then
@@ -2889,6 +2952,12 @@ fm_backend_herdr_projection_cleanup_exact() {  # <session> <task-pane> <seeded-p
   if [ -n "$seeded_pane" ] && [ "$seeded_pane" != "$task_pane" ]; then
     fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$seeded_pane" || true
   fi
+  if [ "$task_closed" -eq 0 ]; then
+    [ -z "$task_tab" ] || [ -z "$task_label" ] || fm_backend_herdr_projection_sweep_tab_companions \
+      "$session" "$wsid" "$task_tab" "$task_label" || true
+  fi
+  [ -z "$seeded_tab" ] || fm_backend_herdr_projection_sweep_tab_companions \
+    "$session" "$wsid" "$seeded_tab" 1 || true
   return "$task_closed"
 }
 
@@ -2911,7 +2980,8 @@ fm_backend_herdr_projection_parent_workspace_exact() {  # <session> <parent-labe
 }
 
 # fm_backend_herdr_projection_live_binding_matches: verify one exact projected
-# workspace, its single task tab/pane, its unique token label, and its current
+# workspace, its single task tab holding the exact task pane beside only known
+# companion presentation panes, its unique token label, and its current
 # position inside the exact parent workspace's contiguous child block.
 # This read-only predicate grants no mutation authority by itself.
 fm_backend_herdr_projection_live_binding_matches() {  # <session> <token> <workspace> <tab> <pane> <parent-workspace> <parent-label> <workspace-label> <task-label>
@@ -2956,11 +3026,13 @@ fm_backend_herdr_projection_live_binding_matches() {  # <session> <token> <works
     and .result.tabs[0].label == $task_label
   ' >/dev/null 2>&1 || return 1
   panes=$(fm_backend_herdr_cli "$session" pane list --workspace "$workspace" 2>/dev/null) || return 1
-  printf '%s' "$panes" | jq -e --arg tab "$tab" --arg pane "$pane" '
+  printf '%s' "$panes" | jq -e --arg tab "$tab" --arg pane "$pane" \
+    --arg companions "$FM_BACKEND_HERDR_COMPANION_LABELS" '
+    def companion: ((.label // "") as $l | ($companions | split(" ") | index($l)));
     (.result.panes | type) == "array"
-    and (.result.panes | length) == 1
-    and .result.panes[0].pane_id == $pane
-    and .result.panes[0].tab_id == $tab
+    and ([.result.panes[]? | select(.tab_id == $tab and .pane_id == $pane)] | length) == 1
+    and ([.result.panes[]? | select(.tab_id != $tab)] | length) == 0
+    and ([.result.panes[]? | select(.tab_id == $tab and .pane_id != $pane and ((companion) | not))] | length) == 0
   ' >/dev/null 2>&1
 }
 
@@ -3105,6 +3177,12 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
   if [ "$(fm_backend_herdr_pane_agent_state "$session" "$meta_pane")" != dead ]; then
     fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" || return 1
     return 1
+  fi
+  if ! fm_backend_herdr_projection_sweep_tab_companions \
+    "$session" "$meta_workspace" "$meta_tab" "$task_label"; then
+    fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" || return 1
+    echo "warning: herdr presentation reclaim for $id could not clear the replaced tab's companion panes; spawning flat" >&2
+    return 2
   fi
   if ! fm_backend_herdr_projection_live_binding_matches \
     "$session" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID" \

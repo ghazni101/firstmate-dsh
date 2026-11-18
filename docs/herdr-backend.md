@@ -297,6 +297,13 @@ Only the exact seeded default tab returned by the same workspace-create response
 Before and after create, prune, order, abort cleanup, and normal cleanup, Firstmate verifies exact workspace, tab, pane, and active-focus ids.
 An ambiguous response grants no mutation or cleanup authority.
 
+The projection converges to one exact task tab holding the exact task pane beside only known companion presentation panes.
+Herdr's own docked `herdr:sidebar` slot and the local monitor-strip plugin's `htop` and `nvtop` panes are those companions, and Firstmate recognizes them by their pane labels.
+Any other pane beside the exact task pane, or any second tab, refuses the projection.
+Companion panes can keep the seeded default tab or a replaced husk tab alive after its root or husk pane closes, so each such exact tab is swept pane by pane through the same focus-preserving close helper after that close.
+A live or unknown agent in a swept pane refuses the sweep, and a renamed or repurposed tab is left untouched.
+The exact task pane, captured by id from the create response, stays the only capture and send endpoint, so a companion pane never receives task input and capture never reads it.
+
 ### Ordering
 
 Protocol 16 exposes `workspace.move` over the named session socket but no CLI subcommand.
@@ -320,7 +327,7 @@ The worker remains on the ordinary flat or Herdr-current-order path.
 ### Cleanup and focus safety
 
 Normal task metadata remains the sole endpoint authority after creation.
-Cleanup closes only the exact recorded task pane and never calls `workspace close`.
+Cleanup closes only the exact recorded task pane - then the residual companion panes of that exact recorded tab per "Owning parent and tabs" - and never calls `workspace close`.
 For a leased task copy, cleanup confirms that exact pane is gone before it reaps worktree processes or returns the copy.
 If the pane remains or its absence is ambiguous, cleanup retains the task records and copy for a retry.
 
@@ -580,7 +587,7 @@ For each ship and scout task recorded in the home with Herdr endpoint metadata, 
 | `fm_sort` | pane | `<group order>.<group>.<status rank>.<task>`, at most 80 characters. |
 | `fm_group_order` | projected workspace | `<group order>.<group>`, the key that [placement](#placement-inside-the-group) compares. |
 
-Workspace tokens go only to the task's own projected workspace: an exact version 2 [presentation journal](#presentation-journal) binding the task's recorded session, workspace, and pane, whose live workspace holds that single pane.
+Workspace tokens go only to the task's own projected workspace: an exact version 2 [presentation journal](#presentation-journal) binding the task's recorded session, workspace, and pane, whose live workspace holds that exact pane beside only known companion panes.
 A flat-layout task tab shares its workspace with other tasks, so it gets pane tokens only.
 
 The display status comes from the task's status log through the shared classifier that `bin/fm-classify-lib.sh` owns, in this rank order:

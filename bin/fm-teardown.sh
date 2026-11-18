@@ -3882,12 +3882,14 @@ teardown_herdr_journal_orphaned() {
 }
 HERDR_PRESENTATION_RETIRE_CANDIDATE=0
 HERDR_PRESENTATION_SESSION=
+HERDR_PRESENTATION_TAB=
 HERDR_PRESENTATION_PANE=
 if [ "$BACKEND" = herdr ] \
    && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; }; then
   fm_backend_source herdr || true
   HERDR_PRESENTATION_SESSION=$(meta_value "$META" herdr_session)
   HERDR_PRESENTATION_WORKSPACE=$(meta_value "$META" herdr_workspace_id)
+  HERDR_PRESENTATION_TAB=$(meta_value "$META" herdr_tab_id)
   HERDR_PRESENTATION_PANE=$(meta_value "$META" herdr_pane_id)
   if [ -n "$HERDR_PRESENTATION_SESSION" ] \
      && [ -n "$HERDR_PRESENTATION_WORKSPACE" ] \
@@ -3928,6 +3930,16 @@ fi
 if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then
   if [ "$(fm_backend_herdr_pane_agent_state "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_PANE")" = dead ]; then
     rm -f "$HERDR_PRESENTATION_JOURNAL"
+    # Companion presentation panes keep the projected task tab alive after the
+    # exact task pane closes, which would strand the disposable workspace.
+    # Sweep them only after the exact pane is confirmed gone and the journal is
+    # retired, under the still-held session presentation lock.
+    if [ -n "$HERDR_PRESENTATION_TAB" ] \
+      && teardown_herdr_session_lock_held "$HERDR_PRESENTATION_SESSION"; then
+      fm_backend_herdr_projection_sweep_tab_companions \
+        "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_WORKSPACE" \
+        "$HERDR_PRESENTATION_TAB" "fm-$ID" || true
+    fi
   else
     echo "warning: exact herdr task-pane close could not be confirmed for $ID; retaining the presentation journal and attempting no workspace cleanup" >&2
   fi
