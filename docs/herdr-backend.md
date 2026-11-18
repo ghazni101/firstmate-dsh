@@ -106,10 +106,30 @@ When the launcher has no Herdr workspace to inherit, the adapter maintains one d
 
 | Home | Workspace label |
 | --- | --- |
-| Primary | `firstmate` |
+| Primary | `firstmate`, or the label named by the primary's local `config/herdr-workspace` |
 | Secondmate | `2ndmate-<secondmate-id>`, derived from its validated `.fm-secondmate-home` marker |
 
 A secondmate launched by the primary receives a narrowly scoped home override during container creation.
+
+### Naming the primary home workspace
+
+The local gitignored `config/herdr-workspace` file, or the same file under `FM_CONFIG_OVERRIDE`, replaces a primary home's `firstmate` label with one exact name.
+That keeps two primary homes on this machine in two Herdr workspaces instead of one shared sidebar entry with interleaved tabs.
+
+The file holds one label.
+Surrounding whitespace and line endings are trimmed, and an empty file keeps the `firstmate` default, so a home that never creates the file behaves exactly as before.
+An absent file changes nothing for any existing installation.
+
+An unusable value is refused with an error naming the file, instead of quietly falling back to `firstmate`:
+a label cannot contain whitespace, `:`, `/`, or control characters, and cannot look like the adapter's own `└ <task> · p:<token>` projection label.
+A refused value stops a spawn before any workspace or tab is created.
+
+The marker always wins over the file: a secondmate home keeps `2ndmate-<secondmate-id>` even when a `config/herdr-workspace` file is present, so a copied or inherited name can never merge a secondmate's workspace into its primary's.
+The file is deliberately not inherited by secondmate homes.
+
+The name is used everywhere the label participates: workspace creation, exact matching in the fallback lookup, launcher-block ordering, recovery listing, and presentation ordering.
+No path falls back to the hard-coded `firstmate` label once a home configures one.
+An existing workspace keeps its current label until an operator renames it in Herdr; the adapter never renames or closes a live workspace.
 
 ### Watching tasks
 
@@ -153,7 +173,7 @@ Firstmate running outside Herdr entirely has no launcher workspace to inherit, s
 That path needs the home label to identify exactly one workspace.
 Two workspaces sharing it are an unresolvable placement and refuse rather than adopting either.
 
-Avoid naming a personal workspace `firstmate` or `2ndmate-<id>` for that reason.
+Avoid naming a personal workspace `firstmate`, `2ndmate-<id>`, or the label a home configures in `config/herdr-workspace` for that reason.
 Also avoid it because the adapter cannot distinguish that label collision from its own container.
 
 An older secondmate workspace using `firstmate-<id>` is not migrated automatically.

@@ -52,6 +52,12 @@ fm_herdr_lab_prepare "$SESSION" || fail "could not prepare isolated Herdr lab se
 . "$ROOT/bin/fm-backend.sh"
 fm_backend_source herdr || fail "fm_backend_source herdr failed"
 
+# Pin the primary FM_HOME to a scratch home: the checkout this suite runs from
+# may carry a local config/herdr-workspace naming its own workspace label, and
+# this regression asserts the documented default 'firstmate' collision shape.
+mkdir -p "$SCRATCH/primary-home"
+export FM_HOME="$SCRATCH/primary-home"
+
 fm_backend_herdr_version_check || fail "version_check failed against the real installed herdr"
 
 # --- 1. reproduce the label-collision startup-workspace shape ---------------

@@ -35,8 +35,15 @@ herdr_forget_inherited_pane
 SESSION="fm-lab-backend-smoke-$$"
 export HERDR_SESSION="$SESSION"
 SM_SCRATCH=
+# Pin the primary FM_HOME to a scratch home: the checkout this suite runs from
+# may carry a local config/herdr-workspace naming its own workspace label, and
+# this suite asserts the documented default 'firstmate' shape.
+PRIMARY_SCRATCH=$(mktemp -d "${TMPDIR:-/tmp}/fm-herdr-smoke-primary.XXXXXX")
+export FM_HOME="$PRIMARY_SCRATCH/primary-home"
+mkdir -p "$FM_HOME"
 cleanup_all() {
   [ -n "$SM_SCRATCH" ] && rm -rf "$SM_SCRATCH"
+  [ -n "$PRIMARY_SCRATCH" ] && rm -rf "$PRIMARY_SCRATCH"
   herdr_safe_stop_and_delete "$SESSION"
 }
 trap cleanup_all EXIT

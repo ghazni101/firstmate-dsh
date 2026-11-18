@@ -69,7 +69,7 @@ Other transient consumers retain their existing shell-relative behavior.
 
 | Backend | Effect of the operational home |
 | --- | --- |
-| herdr | `FM_HOME` determines the adapter's workspace label. |
+| herdr | `FM_HOME` determines the adapter's workspace label, and the optional local `config/herdr-workspace` names a primary home's label instead. |
 | zellij | `FM_HOME` determines the readable home prefix in visible tab titles, but does not split containers; use `FM_ZELLIJ_SESSION` for a separate session; the full home label also includes a short hash of the resolved `FM_ROOT` path. |
 | cmux | `FM_HOME` determines the default config path and readable home prefix in workspace titles; `FM_CONFIG_OVERRIDE` overrides where `config/cmux-socket-password` is read; the full home label also includes a short hash of the resolved `FM_ROOT` path; there is no per-home container split. |
 | tern | `FM_HOME` determines the readable home prefix used with the shared home-tag session label (via `bin/fm-backend-hometag-lib.sh`); the full home label also includes a short hash of the resolved `FM_ROOT` path. |
@@ -660,7 +660,8 @@ Legacy tmux metadata remains cleanup-compatible when its exact window name is `f
 ### Herdr homes and presentation
 
 `FM_HOME` determines Herdr's home label: the primary home uses `firstmate`, and a secondmate home marked by `.fm-secondmate-home` uses `2ndmate-<secondmate-id>`.
-[`herdr-backend.md`](herdr-backend.md#watching-and-task-containers) owns launcher-bound workspace placement, the label-only fallback, collision handling, and recovery behavior.
+A primary home can name its own workspace with the local gitignored `config/herdr-workspace` file, which replaces the `firstmate` default with one validated label; an absent or empty file keeps the default, and a secondmate marker always wins over it.
+[`herdr-backend.md`](herdr-backend.md#watching-and-task-containers) owns the accepted values, refusal rule, launcher-bound workspace placement, the label-only fallback, collision handling, and recovery behavior.
 
 The local `config/herdr-presentation-spaces` file instead opts a home out of, or explicitly in to, Herdr's default-on disposable single-task visual projection; [Presentation spaces](herdr-backend.md#presentation-spaces) owns its accepted values, default, Herdr version floor, migration, behavior, safety limits, recovery contract, and narrow session-start cleanup of exact restored idle-shell children.
 The setting is inherited into secondmate homes under the primary-authoritative contract owned by [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md).
