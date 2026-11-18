@@ -6,6 +6,11 @@
 //   - omp auto-discovers this file from <cwd>/.omp/extensions with no trust
 //     gate, so an omp primary or secondmate started inside its home loads it
 //     without -e (naming it both ways loads it twice - verified, omp 18.1.11).
+//   - Each Firstmate-launched crewmate or scout carries FM_OMP_ROLE=worker from
+//     the spawn boundary. That structural role signal makes this file a silent
+//     no-op in a task worktree: no arm, no home wake drain, no encoded watcher
+//     injection. A primary (including a secondmate's own primary) carries no
+//     marker and keeps the bridge exactly as before.
 //   - pi.sendUserMessage returns synchronously (no promise) in omp, so "Pi
 //     accepted the follow-up" collapses to "the call returned"; consumption is
 //     still tracked at before_agent_start / message_start exactly as on Pi.
@@ -140,6 +145,11 @@ const fmHome = process.env.FM_HOME || process.env.FM_ROOT_OVERRIDE || root;
 const fmRoot = process.env.FM_ROOT_OVERRIDE || root;
 const state = process.env.FM_STATE_OVERRIDE || `${fmHome}/state`;
 const config = process.env.FM_CONFIG_OVERRIDE || `${fmHome}/config`;
+// The role is a launch-time fact, not a guess from the harness or the cwd:
+// bin/fm-spawn-harness.sh puts FM_OMP_ROLE=worker on every crewmate and scout launch
+// because omp's cwd-only extension discovery cannot distinguish a task
+// worktree from the home's own checkout. A primary has no such marker.
+const workerPane = process.env.FM_OMP_ROLE === "worker";
 const armScript = `${fmRoot}/bin/fm-watch-arm.sh`;
 const hostScript = `${fmRoot}/bin/fm-supervision-host.sh`;
 const marker = `${state}/.omp-watch-extension-loaded`;
@@ -563,6 +573,7 @@ const cleanupOnProcessExit = () => {
 process.once("exit", cleanupOnProcessExit);
 
 export default function (pi: ExtensionAPI) {
+  if (workerPane) return;
   let generation = createGeneration();
   activateGeneration(generation);
 
