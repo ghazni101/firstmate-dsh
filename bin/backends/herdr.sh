@@ -1520,7 +1520,9 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # returned by THIS projected create immediately after its owning parent's
 # contiguous child block and before the next parent.
 #
-# <parent-label> is the owning FM_HOME label (firstmate or 2ndmate-<id>).
+# <parent-label> is the owning home's resolved label
+# (fm_backend_herdr_workspace_label: a configured name, "firstmate", or
+# "2ndmate-<id>").
 # Optional <parent-workspace-id> is that parent's EXACT id, which the caller
 # already resolved from the launching agent's own herdr identity. When given it
 # anchors the owning parent by id, so two workspaces sharing the home label no
@@ -1528,7 +1530,7 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # label exactly as before. With a unique label the two select the same
 # workspace, so ordering behavior is unchanged in the ordinary case.
 # New-format └ ... · p:<token> children and, for compatibility only, already
-# adjacent old-format firstmate/... or 2ndmate-<id>/... projections may extend
+# adjacent old-format <owner-label>/... projections may extend
 # the block read-only; they are never renamed or moved.
 #
 # Optional <group-order-key> is the opt-in project-group key that
@@ -1831,7 +1833,7 @@ fm_backend_herdr_workspace_find_all() {  # <session>
   # NOTE: the jq variable is $want, NOT $label - `label` is a jq reserved
   # keyword (label/break), so declaring a jq variable named "label" is a
   # compile error that `2>/dev/null` would silently swallow, making this find
-  # ALWAYS return empty and every spawn mint a fresh "firstmate" workspace
+  # ALWAYS return empty and every spawn mint a fresh home workspace
   # (the workspace leak).
   printf '%s' "$list" | jq -r --arg want "$label" \
     '.result.workspaces[]? | select(.label == $want) | .workspace_id' 2>/dev/null
@@ -1859,7 +1861,7 @@ fm_backend_herdr_workspace_find() {  # <session>
 # or secondmate agent's own tool calls inherit them. Older injection shapes are
 # unverified and cannot establish launcher ancestry without both pane and
 # socket identity. Workspace LABELS are mutable and herdr enforces no
-# uniqueness on them, so a label search cannot tell one `firstmate` workspace
+# uniqueness on them, so a label search cannot tell one home workspace
 # from another, and herdr's globally focused workspace is whatever the captain
 # happens to be looking at, not the launcher's.
 #
@@ -1997,8 +1999,9 @@ fm_backend_herdr_launcher_identity() {  # <session>
 # had just resolved. Herdr enforces no label uniqueness (docs/herdr-backend.md
 # "Label collisions") and derives an unlabeled workspace's DISPLAYED label from
 # its pane cwd's basename, so a captain launching herdr directly inside a
-# directory named "firstmate" produces a workspace that looks byte-identical,
-# by label alone, to firstmate's own auto-created container - one tab, label
+# directory whose basename equals this home's label produces a workspace that
+# looks byte-identical, by label alone, to the home's own auto-created
+# container - one tab, label
 # "1". workspace_find adopted that pre-existing (captain-owned, LIVE) workspace
 # by the label match, the heuristic matched too, and the very next spawn
 # closed the captain's own live pane 27ms after creating its task tab. The
