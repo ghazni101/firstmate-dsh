@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # fm-test-run.sh - single owner of Firstmate's behavior-test runner, lane
-# composition for portable CI shards, local --jobs for proven-concurrent work,
+# composition for portable shards, local --jobs for proven-concurrent work,
 # timing markers, and the complete-regression coverage guard.
 #
 # Selection modes (exactly one of: --all, --family, --changed, --lane,
@@ -9,7 +9,7 @@
 #   fm-test-run.sh --family <name>
 #   fm-test-run.sh --changed [--base <git-ref>]
 #   fm-test-run.sh --lane portable-parallel-1|portable-parallel-2|portable-serial
-#   fm-test-run.sh --lane portable-serial-<k>of<n>   (one CI serial shard)
+#   fm-test-run.sh --lane portable-serial-<k>of<n>   (one portable serial shard)
 #   fm-test-run.sh --proven-isolated
 #   fm-test-run.sh tests/<name>.test.sh [more scripts...]
 #
@@ -44,12 +44,12 @@
 #   --base <ref>    with --changed, compare against this ref (default: origin/main)
 #   --exclude-family <name>
 #                   drop scripts whose primary family matches <name> after selection
-#                   (repeatable; portable CI lanes exclude real-herdr-gated so the
-#                   dedicated required Herdr lane owns that coverage)
+#                   (repeatable; portable lanes exclude real-herdr-gated so the
+#                   dedicated real-Herdr lane owns that coverage)
 #   --fail-on-gate-skip <token>
 #                   after each script, fail the run if any output line contains
 #                   "skip: <token>" (e.g. --fail-on-gate-skip 'herdr not found').
-#                   The required Herdr CI lane uses this so a missing pin cannot
+#                   The real-Herdr lane uses this so a missing pin cannot
 #                   silently pass as a gate skip.
 #   --jobs N        run the selected scripts with up to N concurrent workers.
 #                   Plain --changed and a plain list of script paths use
@@ -131,10 +131,11 @@
 # These sums exclude unhinted members and are estimates, not measured job wall
 # times. Missing parallel hints are reported without failing this guard.
 #
-# portable-serial stays strictly serial. Its CI shards (portable-serial-<k>of<n>)
+# portable-serial stays strictly serial. Its portable shards (portable-serial-<k>of<n>)
 # split it across separate runners, so two of its stateful scripts still never
 # share a machine. This script owns <n>: a lane whose <n> disagrees with the
-# configured shard count is refused, so a CI matrix cannot silently drop a shard.
+# configured shard count is refused, so a split runner matrix cannot silently
+# drop a shard.
 # --check-coverage also reports serial_max_ms (largest packed hint sum, including
 # default weights) and serial_budget_ms (the 20-minute packing target), refusing
 # a split above that target. Neither figure is an execution timeout or proof of
@@ -199,22 +200,22 @@ PER_SCRIPT_TIMEOUT_SECS=0
 CHANGED_DEFAULT_TIMEOUT_SECS=1500
 
 # How many separate-runner shards the portable serial remainder splits into.
-# One owner: CI lane names carry this count and are refused when they disagree.
+# One owner: portable shard lane names carry this count and are refused when they disagree.
 PORTABLE_SERIAL_SHARDS=11
 
 # Conservative balance hint for a portable-serial script with no measurement.
-# Rounded above the current CI mean, including the capability-skipped scripts.
+# Rounded above the measured lane mean, including the capability-skipped scripts.
 PORTABLE_SERIAL_DEFAULT_WEIGHT_MS=45000
 
 # Packing target, not an execution timeout: leave at least ten minutes of the
-# normal CI tier for setup and runtime variance. --check-coverage refuses a
+# modeled lane budget for setup and runtime variance. --check-coverage refuses a
 # modeled serial shard above this target; refresh hints or rebalance instead.
 PORTABLE_SERIAL_MAX_WEIGHT_MS=1200000
 
 # Largest share of the serial lane allowed to run on the default weight above.
 # Hints are what keep the shards balanced, so once too much of the lane is
-# unmeasured the balance is guesswork and one shard can reach its CI job cap
-# while another sits idle. The coverage guard refuses past this share, which
+# unmeasured the balance is guesswork and one shard can outlast a practical run
+# budget while another sits idle. The coverage guard refuses past this share, which
 # leaves room for newly added tests while making a stale hint table fail loudly
 # instead of silently. docs/fm-test-portable-shards.md owns the refresh.
 PORTABLE_SERIAL_MAX_UNHINTED_PERCENT=15
@@ -644,8 +645,8 @@ EOF
 
 # Families whose scripts are proven safe to run concurrently WITH EACH OTHER
 # under the bounded local scheduler. Deliberately separate from the
-# proven-isolated set, which must stay exactly equal to the portable CI shard
-# union (see the coverage guard); these families keep their serial CI lane and
+# proven-isolated set, which must stay exactly equal to the portable shard
+# union (see the coverage guard); these families keep their serial lane and
 # only gain concurrency for a local run.
 #
 # Membership is empirical, never assumed:
@@ -1062,7 +1063,7 @@ portable_serial_assignments() {
 }
 
 # Parse "<k>of<n>" from a portable-serial shard lane and echo <k>, refusing when
-# <n> disagrees with this script's configured count so a CI matrix built for a
+# <n> disagrees with this script's configured count so a runner matrix built for a
 # different shard count fails loudly instead of dropping tests.
 portable_serial_shard_index() {
   local lane=$1 spec index count
@@ -1171,7 +1172,7 @@ run_coverage_guard() {
     return 1
   fi
 
-  # Serial (whole lane and each CI shard) + Herdr lane listings without
+  # Serial (whole lane and each portable shard) + Herdr lane listings without
   # disturbing a caller's selection.
   saved_scripts=("${SCRIPTS[@]+"${SCRIPTS[@]}"}")
   SCRIPTS=()
@@ -1198,8 +1199,8 @@ run_coverage_guard() {
   printf '%s\n' "${SCRIPTS[@]+"${SCRIPTS[@]}"}" | LC_ALL=C sort -u >"$tmp/herdr"
   SCRIPTS=("${saved_scripts[@]+"${saved_scripts[@]}"}")
 
-  # Every serial script runs in exactly one CI shard: no duplicate work across
-  # runners, and no script silently left out of the required lane.
+  # Every serial script runs in exactly one portable shard: no duplicate work
+  # across runners, and no script silently left out of the portable lane.
   LC_ALL=C sort "$tmp/serial_shards_raw" | uniq -d >"$tmp/serial_shard_dups"
   if [ -s "$tmp/serial_shard_dups" ]; then
     log "coverage guard: portable serial shards share scripts:"
@@ -1251,9 +1252,9 @@ run_coverage_guard() {
 
   # Hint drift is what makes a balanced-looking partition run unbalanced: the
   # shards are packed from hints, so every unmeasured script is balanced on a
-  # guess and enough of them let one shard reach its CI job cap while another
-  # runner sits idle. Bound the unmeasured share here rather than waiting for a
-  # shard to time out.
+  # guess and enough of them let one shard outlast a practical run budget while
+  # another runner sits idle. Bound the unmeasured share here rather than waiting
+  # for a shard to time out.
   portable_serial_unhinted >"$tmp/unhinted"
   unhinted=$(wc -l <"$tmp/unhinted" | tr -d ' ')
   serial_total=$(wc -l <"$tmp/serial" | tr -d ' ')
@@ -1864,9 +1865,6 @@ families_for_changed_path() {
     .agents/skills/*/SKILL.md)
       printf '%s\n' pure-contract-unit
       ;;
-    .forgejo/workflows/ci.yml)
-      printf '%s\n' pure-contract-unit
-      ;;
     .no-mistakes.yaml)
       printf '%s\n' pure-contract-unit
       printf '%s\n' real-herdr-gated
@@ -2468,8 +2466,8 @@ done
 # admission rule below. Naming scripts is how a local verification round asks
 # for exactly those subjects, so it gets bounded concurrency rather than a
 # serial chain of separate runs.
-# The curated selections stay untouched: --lane composes CI shards whose serial
-# lane must stay strictly serial, --family is what the required Herdr lane runs,
+# The curated selections stay untouched: --lane composes portable shards whose serial
+# lane must stay strictly serial, --family is what the real-Herdr lane runs,
 # and --all is a deliberate complete regression.
 AUTO_CONCURRENCY=0
 if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq 0 ]; then

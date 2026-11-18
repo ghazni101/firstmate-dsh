@@ -9,8 +9,8 @@ We require this to reduce the maintainer's burden of reviewing and merging contr
 `no-mistakes` puts a local git proxy in front of your real remote.
 Pushing through it runs an AI-driven review/test/lint pipeline in an isolated worktree, forwards the push upstream only after every check passes, and opens a clean PR automatically.
 
-CI does not enforce that rule.
-The repository's only CI check proves a branch lints and its DSH plugin tests pass, so a maintainer checks the no-mistakes signature and attestation while reviewing the pull request.
+Nothing automated enforces that rule.
+The repository runs no CI, so a maintainer checks the no-mistakes signature and attestation while reviewing the pull request.
 
 ## Workflow
 
@@ -38,7 +38,7 @@ Before dispatching an agent-driven contribution, follow the [Firstmate role and 
 
 - This repo is a template for running a firstmate orchestrator agent.
   [`AGENTS.md`](AGENTS.md) owns the supervisor contract, role boundary, and bundled firstmate skill triggers; `CLAUDE.md` is a real `@AGENTS.md` pointer to it, and `.claude/skills` is a symlink to `.agents/skills`.
-- Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.forgejo/workflows/`, `bin/`, `.agents/skills/`, and `skills/`.
+- Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `bin/`, `.agents/skills/`, and `skills/`.
   `.agents/skills/` holds agent-loaded skills that assume a live firstmate home and carry `metadata.internal: true` so installers such as [skills.sh](https://skills.sh) hide them from discovery; `skills/` holds standalone, installer-facing public skills with no firstmate dependency (see the README's "Two-tier skill layout").
   `.claude/mods/` holds Claude Code mods, plugins whose behavior lives in one function-hooks module; each is reached through an `.agents/skills/<mod>` symlink because Claude Code adopts project plugins only from `.claude/skills`, carries no `SKILL.md` so every other harness's skill loader ignores that entry, and imports only files physically inside its own folder because Claude Code refuses anything else.
   A module may load through `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` or Claude Code's `tengu_plugin_hooks_modules` rollout flag, but the Calm mod activates only when `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` is exactly `1` and is otherwise a complete no-op; Firstmate never sets that variable in any settings file, and [`docs/calm.md`](docs/calm.md) owns the contract.
@@ -51,7 +51,7 @@ Before dispatching an agent-driven contribution, follow the [Firstmate role and 
   Each starts with a usage header comment; keep it accurate when you change behavior.
   Test scripts and helpers in `tests/` are plain bash too.
   `bin/fm-lint.sh` must pass: it is the single owner of the lint definition (the shellcheck file set, config, pinned shellcheck version, pinned actionlint workflow lint, and the backend-purity check rejecting direct Beads CLI calls in core `bin/` scripts).
-  CI runs the full canonical set in one job; the no-mistakes pre-push gate uses its context-selected default.
+  A full canonical lint run checks the complete set in one pass; the no-mistakes pre-push gate uses its context-selected default.
   `docs/fm-test-portable-shards.md` owns lane packing evidence.
   Its header and `--help` output own the exact local lint modes, file-set selection, and analysis flags.
   A malformed workflow under `.github/workflows/` or `.forgejo/workflows/`, including a self-broken `ci.yml`, fails that local lint path before merge because a broken workflow cannot report its own breakage.
@@ -68,7 +68,7 @@ Before dispatching an agent-driven contribution, follow the [Firstmate role and 
 
 ## Development
 
-Tracked changes to firstmate itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.forgejo/workflows/`, `bin/`, `.agents/skills/`, and `skills/` - ship through the `no-mistakes` pipeline on a feature branch and require an explicit merge approval.
+Tracked changes to firstmate itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `bin/`, `.agents/skills/`, and `skills/` - ship through the `no-mistakes` pipeline on a feature branch and require an explicit merge approval.
 Before making any such change, load the agent-only `firstmate-coding-guidelines` skill (`.agents/skills/firstmate-coding-guidelines/SKILL.md`).
 It has the knowledge-placement rules that keep `AGENTS.md` from regrowing after each diet pass.
 Firstmate adds this skill's load line to firstmate-repo briefs by hand; the [coding-guidelines skill](.agents/skills/firstmate-coding-guidelines/SKILL.md#trigger-hygiene) owns the scaffold's detection limits.
@@ -79,13 +79,13 @@ Firstmate's wrapper still matters: crewmates route every `ask-user` finding to f
 [`docs/configuration.md`](docs/configuration.md#gate-defaults-no-mistakesyaml) owns the tracked `.no-mistakes.yaml` gate defaults.
 The `firstmate-coding-guidelines` skill owns the rule that local no-mistakes Test stays intent-targeted rather than configuring `commands.test`.
 Verify the same way the gate does: reach for `bin/fm-test-run.sh` with the subjects you care about rather than chaining `bash tests/a.test.sh && bash tests/b.test.sh`, because a list of script paths gets the same bounded concurrency as `--changed`.
-The pipeline publishes that evidence itself, so never hand-commit `.no-mistakes/` paths onto a feature branch; CI rejects them as tracked personal fleet paths.
+The pipeline publishes that evidence itself, so never hand-commit `.no-mistakes/` paths onto a feature branch; nothing rejects them now that CI is gone.
 
 Check and test the toolbelt before pushing:
 
 ```sh
-while IFS= read -r script; do /bin/bash -n "$script" || exit; done < <(bin/fm-lint.sh --list-files)   # syntax-check the shell surface fm-lint.sh will cover (changed files locally, full set in CI/on main)
-bin/fm-lint.sh   # lint that shell surface plus .github/.forgejo workflows via pinned actionlint; the single owner CI and the no-mistakes gate both run
+while IFS= read -r script; do /bin/bash -n "$script" || exit; done < <(bin/fm-lint.sh --list-files)   # syntax-check the shell surface fm-lint.sh will cover (changed files locally, full set on main)
+bin/fm-lint.sh   # lint that shell surface plus any .github/.forgejo workflows via pinned actionlint; the same owner the no-mistakes gate runs
 bin/fm-test-run.sh tests/<subject>.test.sh   # one script (primary local focus path, timed)
 bin/fm-test-run.sh tests/<a>.test.sh tests/<b>.test.sh   # several subjects at once: bounded automatic concurrency
 bin/fm-test-run.sh --family pure-contract-unit   # ordinary family-scoped local path (serial, timed)
@@ -94,7 +94,7 @@ bin/fm-test-run.sh --changed --jobs 1   # explicit serial override
 bin/fm-test-run.sh --changed --max-wall-ms 300000   # same automatic path with a post-run five-minute result check
 bin/fm-test-run.sh --proven-isolated --jobs 4   # explicit local parallel of the individually proven set
 bin/fm-test-run.sh --lane portable-serial   # portable serial remainder (watcher/AFK/tmux/stateful)
-bin/fm-test-run.sh --list-lanes   # discover exact lane names, including the current CI serial shards
+bin/fm-test-run.sh --list-lanes   # discover exact lane names, including the portable serial shards
 bin/fm-test-run.sh --check-coverage   # prove portable shards + serial + serial shards + Herdr equal the full inventory
 bin/fm-test-run.sh --all   # deliberate complete regression (optional local full walk; not no-mistakes Test)
 bin/fm-test-linux.sh   # opt-in: run the tests changed on this branch in a Debian container with GNU userland (needs docker or podman)
@@ -109,16 +109,15 @@ EOF
 tmp=$(mktemp -d) && printf 'done: smoke\n' > "$tmp/smoke.status" && FM_STATE_OVERRIDE="$tmp" FM_SIGNAL_GRACE=1 FM_POLL=1 FM_HEARTBEAT=999999 bin/fm-watch-arm.sh  # watcher re-arm smoke test (prints arm status, then an actionable signal)
 ```
 
-`bin/fm-test-run.sh` is the single owner of behavior-suite selection, portable CI lane composition, bounded concurrency admission, per-script timing markers, family totals, the coverage guard, and the optional JSON timing artifact.
+`bin/fm-test-run.sh` is the single owner of behavior-suite selection, portable lane composition, bounded concurrency admission, per-script timing markers, family totals, the coverage guard, and the optional JSON timing artifact.
 Its header and `--help` own the flags, family labels, lanes, and changed-file map; this section only documents the entry points.
 `bin/fm-test-isolation-proof.sh` remains the single owner of the portable candidate proof and reusable family proof harness; see `docs/fm-test-isolation-proof.md`.
 Portable shard balance evidence lives in `docs/fm-test-portable-shards.md`.
-`bin/fm-test-linux.sh` is optional and never part of CI: on macOS, run it before publishing a branch whose tests depend on `stat`, `date`, or process behavior, because BSD and GNU tools differ.
+`bin/fm-test-linux.sh` is optional and never part of the default suite: on macOS, run it before publishing a branch whose tests depend on `stat`, `date`, or process behavior, because BSD and GNU tools differ.
 Its header owns selection, runtime detection, and exit codes.
 Family selection is the ordinary local path; `--all` is deliberate full regression only.
-CI is [`.forgejo/workflows/ci.yml`](.forgejo/workflows/ci.yml), a Gitea Actions workflow that runs on pull requests and on pushes to `main`.
-It installs the pinned ShellCheck and actionlint builds, then runs `bin/fm-lint.sh` and the DSH plugin tests (`cd dsh-plugin && node --test test/*.test.mjs`).
-It runs no live, network, harness-token, Herdr, or fleet suite, because those need a firstmate home and machine-local state a fresh checkout does not have.
+This repository has no CI.
+A pull request here therefore produces no commit status, so the guarded merge path that requires a green check cannot be used and a maintainer reviews and merges by hand.
 Broad behavior regression stays a local flow: `bin/fm-test-run.sh` owns lane selection, bounded concurrency, family totals, and the coverage guard, and `--all` is the deliberate complete walk.
 Use `bin/fm-test-run.sh --list-lanes` for exact lane names and `--help` for `--jobs` rules and required gate-skip flags when reproducing a lane locally.
 Leave the `sleep 0.1` cadence in the suites' bounded condition waits alone.

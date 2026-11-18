@@ -168,14 +168,14 @@ EOF
 YAML
 }
 
-test_current_workflows_pass() {
+test_repo_without_workflows_passes() {
   local out rc
   rc=0
   out=$("$LINT_WF" 2>&1) || rc=$?
-  [ "$rc" -eq 0 ] || fail "current workflows must parse, got $rc"$'\n'"$out"
-  assert_contains "$out" "workflow files valid" \
-    "current-workflow lint did not report a valid count"
-  pass "current .github/.forgejo workflow YAML files parse"
+  [ "$rc" -eq 0 ] || fail "this repo without workflows must pass, got $rc"$'\n'"$out"
+  assert_contains "$out" "nothing to lint" \
+    "workflow lint did not report the absent workflow directories"
+  pass "a repository with no workflow directory passes workflow lint"
 }
 
 test_col0_heredoc_fails_with_clear_error() {
@@ -542,7 +542,7 @@ SH
 }
 
 test_pins_an_explicit_version
-test_current_workflows_pass
+test_repo_without_workflows_passes
 test_col0_heredoc_fails_with_clear_error
 test_valid_fixture_passes
 test_empty_workflows_dir_passes

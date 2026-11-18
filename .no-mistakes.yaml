@@ -22,15 +22,15 @@ document:
     evidence destination, and unique safety facts, then review the complete
     branch diff again after every documentation or lint fix.
 
-# Pin lint to the same owner CI invokes instead of leaving it to no-mistakes'
-# default handling, which does not invoke the repository's canonical lint gate.
-# `bin/fm-lint.sh` owns the context-sensitive ShellCheck modes and CI
-# workflow lint via pinned actionlint in `bin/fm-lint-workflows.sh`.
+# Pin lint to the repository's canonical lint owner instead of leaving it to
+# no-mistakes' default handling, which does not invoke it.
+# `bin/fm-lint.sh` owns the context-sensitive ShellCheck modes and workflow
+# lint via pinned actionlint in `bin/fm-lint-workflows.sh`.
 # Invocation wiring is asserted by `tests/fm-lint.test.sh` and
 # `tests/fm-lint-workflows.test.sh`.
 #
 # Strict dual-SDK compilation belongs to this compiler-owning phase, not Test.
-# The existing type-regression owner also runs in the required portable CI lane.
+# The existing type-regression owner runs in the commands.lint gate above.
 # Keep commands.test absent; the firstmate-coding-guidelines skill owns this policy.
 commands:
   lint: 'bin/fm-lint.sh && bash tests/fm-pi-primary-types.test.sh'

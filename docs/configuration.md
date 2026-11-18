@@ -554,15 +554,15 @@ For spawn-capable adapters, the runtime session-provider backend controls where 
 | Runtime backend | Verification status | Reference |
 | --- | --- | --- |
 | `tmux` | Verified reference backend | [`docs/tmux-backend.md`](tmux-backend.md) |
-| `herdr` | Has its own required CI lane | [`docs/herdr-backend.md`](herdr-backend.md) |
-| `zellij` | Experimental; no dedicated real-backend CI lane | [`docs/zellij-backend.md`](zellij-backend.md) |
-| `orca` | Experimental; no dedicated real-backend CI lane | [`docs/orca-backend.md`](orca-backend.md) |
-| `cmux` | Experimental; no dedicated real-backend CI lane | [`docs/cmux-backend.md`](cmux-backend.md) |
-| `paseo` | Experimental; no dedicated real-backend CI lane | [`docs/paseo-backend.md`](paseo-backend.md) |
-| `rex` | Experimental; no dedicated real-backend CI lane | [`docs/rex-backend.md`](rex-backend.md) |
-| `t3code` | Experimental; no dedicated real-backend CI lane | [`docs/t3code-backend.md`](t3code-backend.md) |
-| `tern` | Experimental; no dedicated real-backend CI lane | [`docs/tern-backend.md`](tern-backend.md) |
-| `hc` | Experimental; the `tests-hc` lane runs the hc family against the pinned build | [`docs/hc-backend.md`](hc-backend.md) |
+| `herdr` | Has its own real-Herdr test lane | [`docs/herdr-backend.md`](herdr-backend.md) |
+| `zellij` | Experimental; no dedicated real-backend test lane | [`docs/zellij-backend.md`](zellij-backend.md) |
+| `orca` | Experimental; no dedicated real-backend test lane | [`docs/orca-backend.md`](orca-backend.md) |
+| `cmux` | Experimental; no dedicated real-backend test lane | [`docs/cmux-backend.md`](cmux-backend.md) |
+| `paseo` | Experimental; no dedicated real-backend test lane | [`docs/paseo-backend.md`](paseo-backend.md) |
+| `rex` | Experimental; no dedicated real-backend test lane | [`docs/rex-backend.md`](rex-backend.md) |
+| `t3code` | Experimental; no dedicated real-backend test lane | [`docs/t3code-backend.md`](t3code-backend.md) |
+| `tern` | Experimental; no dedicated real-backend test lane | [`docs/tern-backend.md`](tern-backend.md) |
+| `hc` | Experimental; the `hc` family runs against the pinned build | [`docs/hc-backend.md`](hc-backend.md) |
 
 Treehouse remains the worktree provider for tmux, herdr, zellij, cmux, paseo, rex, t3code, tern, and hc, since herdr, zellij, cmux, paseo, rex, t3code, tern, and hc are session providers only; Orca provides both the task worktree and terminal endpoint.
 

@@ -11,7 +11,7 @@ set -u
 # Run the whole suite beneath one long-lived fixture harness, matching the real
 # lifecycle in which startup and later clear/compact hooks share one harness
 # ancestor. This also prevents a developer's ambient harness from making the
-# portable regression pass locally while failing on a harness-free CI runner.
+# portable regression pass locally while failing on a harness-free runner.
 if [ "${FM_SESSIONSTART_TEST_HARNESS:-0}" != 1 ]; then
   HARNESS_FIXTURE=$(mktemp -d "${TMPDIR:-/tmp}/fm-sessionstart-harness.XXXXXX") || exit 1
   ln -s /bin/bash "$HARNESS_FIXTURE/codex" || exit 1

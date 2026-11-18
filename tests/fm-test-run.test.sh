@@ -1203,7 +1203,7 @@ test_portable_serial_hint_coverage_is_reported_and_bounded() {
   # Shards are packed from measured duration hints, so an unmeasured script is
   # placed on a guess. Enough of them and the partition still looks balanced by
   # script count while one shard carries far more real work than another and
-  # reaches its CI job cap. The coverage guard therefore reports the unmeasured
+  # reaches a practical run budget. The coverage guard therefore reports the unmeasured
   # share and refuses past its bound; assert that contract is live rather than
   # trusting the hint table to stay fresh on its own.
   out=$("$RUNNER" --check-coverage)
@@ -1220,7 +1220,7 @@ test_portable_serial_hint_coverage_is_reported_and_bounded() {
   # this trips (docs/fm-test-portable-shards.md).
   [ "$((unhinted * 100))" -le "$((serial * 15))" ] \
     || fail "$unhinted of $serial portable serial scripts lack a measured hint; refresh them"
-  # A complete partition can still overflow a CI job. Assert the runner's
+  # A complete partition can still overflow a practical run budget. Assert the runner's
   # modeled packing target through its executable interface, not source hints.
   max=$(printf '%s\n' "$out" | sed -n 's/.*serial_max_ms=\([0-9][0-9]*\).*/\1/p')
   budget=$(printf '%s\n' "$out" | sed -n 's/.*serial_budget_ms=\([0-9][0-9]*\).*/\1/p')

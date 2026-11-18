@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fm-install-shellcheck.sh - install CI's pinned, verified ShellCheck build.
+# fm-install-shellcheck.sh - install the pinned, verified ShellCheck build.
 #
 # Downloads the official GitHub release archive for the host OS/arch, verifies
 # its per-archive SHA-256 pin, and installs the binary into the destination

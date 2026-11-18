@@ -6,8 +6,9 @@
 # fails in the local and no-mistakes lint lane before merge. A broken ci.yml
 # cannot report its own breakage, so this check must not live only as a step
 # inside that workflow. bin/fm-lint.sh invokes this owner on its default
-# (no explicit-path) path, which CI and commands.lint both use. A checkout with
-# no workflow directory at all is a pass: a CI-less repository is a deliberate
+# (no explicit-path) path, which local runs and commands.lint both use. This
+# repository currently has no workflow directory, so that default invocation
+# reports nothing to lint and passes: a CI-less repository is a deliberate
 # choice, not a lint failure.
 #
 # Usage:
@@ -118,7 +119,7 @@ ACTIONLINT_BIN=$(command -v actionlint)
 resolved=$("$ACTIONLINT_BIN" -version | awk 'NR==1 {print; exit}')
 printf 'fm-lint-workflows.sh: actionlint %s (pinned %s)\n' "$resolved" "$REQUIRED_ACTIONLINT" >&2
 if [ "$resolved" != "$REQUIRED_ACTIONLINT" ]; then
-  printf 'fm-lint-workflows.sh: actionlint %s required for CI parity, found %s. Install %s with bin/fm-install-actionlint.sh <destination-directory>.\n' \
+  printf 'fm-lint-workflows.sh: actionlint %s required (pinned version), found %s. Install %s with bin/fm-install-actionlint.sh <destination-directory>.\n' \
     "$REQUIRED_ACTIONLINT" "$resolved" "$REQUIRED_ACTIONLINT" >&2
   exit 1
 fi

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Parity guard for firstmate's shell-lint definition.
 #
-# bin/fm-lint.sh is the single owner invoked by CI
-# (.forgejo/workflows/ci.yml) and by the pre-push gate (.no-mistakes.yaml
-# commands.lint). CI and the local gate deliberately select different roots;
-# bin/fm-lint.sh owns their analysis modes, memory fallback, configuration,
-# and tool versions.
+# bin/fm-lint.sh is the single owner invoked by full canonical runs and by the
+# pre-push gate (.no-mistakes.yaml commands.lint). The gate and a full run
+# deliberately select different roots; bin/fm-lint.sh owns their analysis
+# modes, memory fallback, configuration, and tool versions.
 # Regression origin: with no commands.lint configured, the local no-mistakes
 # lint step never ran the deterministic shell lint, so PRs passed local
-# validation yet failed CI on info/warning findings such as SC2015, SC1007, and
-# SC2034. A second axis was tool-version skew: CI's ShellCheck floated with the
-# runner image and still emitted SC2015, which ShellCheck retired in 0.11.0.
+# validation yet failed a full run on info/warning findings such as SC2015,
+# SC1007, and SC2034. A second axis was tool-version skew: a hosted runner's
+# ShellCheck floated with the runner image and still emitted SC2015, which
+# ShellCheck retired in 0.11.0.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -588,8 +588,8 @@ test_zero_changed_files_exits_clean() {
   [ "$rc" -eq 0 ] || fail "zero changed lint targets must exit 0, got $rc"$'\n'"$out"
   assert_contains "$out" "ShellCheck 0.11.0" "zero-changed run did not print the ShellCheck version line"
   assert_contains "$out" "no changed lint targets" "zero-changed run did not note the empty target set"
-  assert_contains "$out" "workflow files valid" \
-    "zero-changed run skipped workflow YAML validation"
+  assert_contains "$out" "nothing to lint" \
+    "zero-changed run skipped workflow validation"
   pass "fm-lint.sh exits 0 with a note when the local branch has no changed lint targets"
 }
 
@@ -796,11 +796,10 @@ test_changed_mode_hides_cross_file_codes_that_ci_still_sees() {
   local tmp fakebin diff_file fixture out rc test_root lint
   tmp=$(fm_test_tmproot fm-lint-local-exclude-behavior)
   test_root="$tmp/repo"
-  mkdir -p "$test_root/bin/backends" "$test_root/tests" "$test_root/.forgejo/workflows"
+  mkdir -p "$test_root/bin/backends" "$test_root/tests"
   lint="$test_root/bin/fm-lint.sh"
   cp "$LINT" "$lint"
   cp "$ROOT/bin/fm-lint-workflows.sh" "$test_root/bin/"
-  cp "$ROOT"/.forgejo/workflows/* "$test_root/.forgejo/workflows/"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$test_root/bin/backends/noop.sh"
   fixture="$test_root/tests/fm-lint-local-exclude-fixture.test.sh"
   cat > "$fixture" <<'SH'
@@ -1887,7 +1886,7 @@ test_sidecar_result_exit_reflects_final_status() {
   log="$tmp/shellcheck.log"
   telemetry="$tmp/lint.tsv"
   roots_log="$tmp/lint.roots.tsv"
-  mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests" "$tmp/repo/.forgejo/workflows"
+  mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests"
   cp "$LINT" "$tmp/repo/bin/fm-lint.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$tmp/repo/bin/fm-timeout-lib.sh"
   cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'

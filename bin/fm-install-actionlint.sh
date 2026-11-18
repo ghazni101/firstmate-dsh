@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fm-install-actionlint.sh - install CI's pinned, verified actionlint build.
+# fm-install-actionlint.sh - install the pinned, verified actionlint build.
 #
 # Downloads the official GitHub release archive for the host OS/arch, verifies
 # its per-archive SHA-256 pin, and installs the binary into the destination
