@@ -93,13 +93,13 @@ Where a surface signal is unavoidable, back it with a guard that fails loudly na
 
 Every such check needs two tests, because they fail for different reasons:
 
-- A portable regression in `tests/` that pins the logic with real processes and no harness, so CI enforces the classifier everywhere it runs tmux.
+- A portable regression in `tests/` that pins the logic with real processes and no harness, so the portable regression enforces the classifier everywhere the suite runs tmux.
   Drive the signals apart deliberately and assert the verdict survives losing one; assert the divergence itself so the case cannot go quietly vacuous.
   Confirm which signal a given construction actually blinds on each supported platform rather than assuming, because the same trick can break different sources on macOS and Linux.
 - A live guard in the `live-harness-optin` family (`bin/fm-test-run.sh`) that exercises every INSTALLED harness for real and fails naming the harness and version.
   Report an absent harness explicitly rather than passing silently over it, and refuse a pass that checked nothing.
   Open it with `fm_live_gate` from `tests/lib.sh`, which is the single owner of that decision: a guard that spends no model tokens runs by default wherever its tools are installed, a guard that submits prompts stays opt-in, and its own variable or `FM_LIVE` forces it on (an absent tool then fails rather than skips) or off.
-  The portable serial CI lane has no credentials and installs the public Pi package, so token-free guards exercise the available Pi surfaces while unavailable tools capability-skip; run a prompt-submitting guard after every harness upgrade and before trusting refreshed per-harness evidence.
+  The portable serial lane has no credentials and installs the public Pi package, so token-free guards exercise the available Pi surfaces while unavailable tools capability-skip; run a prompt-submitting guard after every harness upgrade and before trusting refreshed per-harness evidence.
 
 Record the dated per-harness result in `docs/verification/runtime-backends.md`, and point at the live guard as the command that refreshes it, rather than leaving a version-scoped observation to rot into a false claim.
 
@@ -113,7 +113,7 @@ Run `bin/fm-doc-audience-check.sh`; it enforces classification, README setup rou
 ## No-mistakes test configuration
 
 Never configure a deterministic suite-walk `commands.test` in any repository's no-mistakes config, whether it selects the full suite, changed tests, a family, or a fixed script list.
-Targeted validation belongs to the no-mistakes evidence path, while CI owns broad deterministic regression coverage.
+Targeted validation belongs to the no-mistakes evidence path, while broad deterministic regression coverage stays a deliberate local full run.
 Firstmate PR #3644 demonstrated the cost: pinning a 75-162-script walk took 32.7 minutes per validation, while removing it restored the 3.6-minute targeted-validation posture.
 
 ## Repo style rules
@@ -124,7 +124,7 @@ Firstmate PR #3644 demonstrated the cost: pinning a 75-162-script walk took 32.7
 - Never add an agent name as a commit co-author.
 - `bin/*.sh` and `bin/backends/*.sh` must pass `shellcheck`.
 - Run Firstmate production-library tests and commands that source `bin/` scripts under `bash` explicitly, never through the tool shell's default interpreter.
-- Run `bin/fm-lint.sh` before treating a script change as done; it is the single owner of the lint definition that CI and the no-mistakes pre-push gate both invoke, its own header owns what that definition covers, and it refuses to run under any other version of either linter.
+- Run `bin/fm-lint.sh` before treating a script change as done; it is the single owner of the lint definition that full canonical runs and the no-mistakes pre-push gate both invoke, its own header owns what that definition covers, and it refuses to run under any other version of either linter.
 - When a task names a specific tool, implement the work with that tool, or explicitly flag the substitution and its new dependency footprint for review before shipping.
 - Colocate tests with the existing pattern in `tests/`, name them `<subject>.test.sh`, and extend an existing script rather than inventing a new runner.
 - Tests must exercise behavior through an executable or public interface and must never assert implementation-source bytes, including through parsers, regexes, snapshots, or indirect wrappers.

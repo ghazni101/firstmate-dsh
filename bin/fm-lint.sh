@@ -2,33 +2,35 @@
 # fm-lint.sh - the single owner of firstmate's lint definition.
 #
 # Runs its file set with ShellCheck's default severity, extended analysis,
-# ambient configuration disabled, and one exact ShellCheck version. CI selects
-# canonical partitions; no-mistakes invokes the context-selected default, so
-# both use this owner without duplicating lint configuration.
+# ambient configuration disabled, and one exact ShellCheck version. Partition
+# mode exists for splitting the canonical set across hosted runners;
+# no-mistakes invokes the context-selected default, so both use this owner
+# without duplicating lint configuration.
 # The explicit --fast mode is local-only and disables ShellCheck's extended
 # dataflow analysis while preserving ordinary shell lint checks and source
-# following. CI, main, and merge-base-less runs attempt --norc
+# following. A full run, main, and merge-base-less runs attempt --norc
 # --external-sources with full dataflow for each canonical root. An ordinary
 # local branch (changed-file mode, including the no-mistakes lint step) drops
 # --external-sources, keeps dataflow, and excludes SC1091, SC2034, SC2153,
-# and SC2329, the codes that need library context. CI checks those codes
-# on source-following attempts (see the memory fallback below). Explicit
+# and SC2329, the codes that need library context. Full source-following
+# attempts check those codes (see the memory fallback below). Explicit
 # paths attempt --external-sources with the selected dataflow mode.
-# Tests stop source analysis at imported production modules because CI analyzes
-# every production shell separately as a canonical, source-aware root.
+# Tests stop source analysis at imported production modules because a full
+# run analyzes every production shell separately as a canonical, source-aware
+# root.
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
 # malformed workflow under .github/workflows or .forgejo/workflows, including a
-# self-broken ci.yml, fails locally before merge instead of only failing to run
-# as CI. A checkout with neither directory is a pass, so a CI-less repository
-# still lints.
+# self-broken ci.yml, fails locally before merge. A checkout with neither
+# directory is a pass, so a CI-less repository still lints.
 #
 # With no explicit paths, the file set and source-following posture depend
 # on context:
-#   - In CI (GITHUB_ACTIONS=true or CI=true), on the main branch, or when no
-#     merge-base against origin/main (or local main) can be found, it lints
-#     the full canonical set: bin/*.sh bin/backends/*.sh tests/*.sh, with
-#     --external-sources and full dataflow first. CI coverage never depends
-#     on a local diff; memory failures may take the narrower retry below.
+#   - With a hosted CI signal (GITHUB_ACTIONS=true or CI=true), on the main
+#     branch, or when no merge-base against origin/main (or local main) can be
+#     found, it lints the full canonical set: bin/*.sh bin/backends/*.sh
+#     tests/*.sh, with --external-sources and full dataflow first. The full
+#     set never depends on a local diff; memory failures may take the narrower
+#     retry below.
 #   - Otherwise (an ordinary local branch with a real merge-base) it lints
 #     only the canonical-set files changed since that merge-base, including
 #     uncommitted local edits, via plain local `git diff` (no network, no
@@ -49,7 +51,7 @@
 # in stable shard/root order. FM_LINT_JOBS=1 changes concurrency, not diagnostics
 # or exit selection.
 # --partition 1of2/2of2 splits the entire canonical inventory across
-# two CI runners, each with those same concurrency-limited workers.
+# two hosted runners, each with those same concurrency-limited workers.
 # Partitions are complete, disjoint, and byte-weight balanced; --list-files
 # exposes their actual roots.
 # Partition mode starts with full source-aware analysis, never changed-only
@@ -57,14 +59,14 @@
 # workflow lint and backend-purity checks, keeping either invocation
 # independently useful.
 #
-# With FM_LINT_REQUIRE_BOUNDS=1, which CI sets, every per-root ShellCheck
-# process runs under an enforced envelope: a wall deadline
+# With FM_LINT_REQUIRE_BOUNDS=1, which a hosted CI runner can set, every
+# per-root ShellCheck process runs under an enforced envelope: a wall deadline
 # (FM_LINT_ROOT_SECONDS, default 1200), a terminate-then-kill cleanup grace
 # (FM_LINT_ROOT_GRACE, default 5), and a per-process address-space limit
 # (FM_LINT_ROOT_MEMORY_KIB, default 12582912 = 12 GiB of virtual address
 # space per analysis process). The sizing rationale and RSS reduction threshold
 # live beside ROOT_MEMORY_KIB below. This is not a resident-memory ceiling;
-# check aggregate runner RSS in CI. The watchdog uses the shared
+# check aggregate runner RSS on the runner itself. The watchdog uses the shared
 # bin/fm-timeout-lib.sh group-kill pattern, so a deadline or an interrupt
 # removes the owned process group. Bounds mode proves the watchdog can
 # actually bound a probe command and that the host accepts the memory limit
@@ -109,7 +111,7 @@
 #   fm-lint.sh --fast [path]...       local lint with extended analysis disabled
 #   fm-lint.sh <path>...               lint explicit roots with the same config
 #   fm-lint.sh --jobs <1|2> [path]...  override concurrent worker count
-#   fm-lint.sh --partition <1of2|2of2> lint one canonical CI partition (see fallback above)
+#   fm-lint.sh --partition <1of2|2of2> lint one canonical partition (see fallback above)
 #   fm-lint.sh --telemetry <path> ...  write a quiet metrics snapshot
 #   fm-lint.sh --required-version      print the ShellCheck pin
 #   fm-lint.sh --list-files            print the file set that would be linted
@@ -297,8 +299,8 @@ fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
   initial_rc=$invocation_rc
   initial_reason=$reason
   # The retry spends what is left of this root's one deadline rather than a
-  # fresh one, so both attempts together still fit the budget CI sized its job
-  # timeout around.
+  # fresh one, so both attempts together still fit the budget a hosted lint job
+  # sized its timeout around.
   fallback_secs=$(( (start_ms + FM_LINT_INTERNAL_ROOT_SECS * 1000 - $(fm_lint_now_ms)) / 1000 ))
   if [ "$reason" = memory ] \
     && [ "${FM_LINT_INTERNAL_FOLLOW_SOURCES:-1}" -eq 1 ] \
@@ -924,7 +926,7 @@ fi
 resolved=$("$SHELLCHECK_BIN" --version | awk '/^version:/ {print $2; exit}')
 printf 'fm-lint.sh: ShellCheck %s (pinned %s)\n' "$resolved" "$REQUIRED_SHELLCHECK" >&2
 if [ "$resolved" != "$REQUIRED_SHELLCHECK" ]; then
-  printf 'fm-lint.sh: ShellCheck %s required for CI parity, found %s. Install %s with bin/fm-install-shellcheck.sh <destination-directory>.\n' \
+  printf 'fm-lint.sh: ShellCheck %s required (pinned version), found %s. Install %s with bin/fm-install-shellcheck.sh <destination-directory>.\n' \
     "$REQUIRED_SHELLCHECK" "$resolved" "$REQUIRED_SHELLCHECK" >&2
   exit 1
 fi
@@ -965,8 +967,8 @@ ROOT_GRACE=${FM_LINT_ROOT_GRACE:-5}
 # demand for the heaviest roots is near 5.5-6 GiB: the 8 GiB address-space
 # cap's ~5.33 GiB wall caught bin/fm-spawn.sh, bin/fm-teardown.sh,
 # tests/fm-pending-reply.test.sh, and
-# tests/fm-launch-prompt-signals-live-e2e.test.sh. CI runs one root per
-# lint job, so worst-case resident demand is ~8 GiB plus runner overhead,
+# tests/fm-launch-prompt-signals-live-e2e.test.sh. The retired CI ran one root
+# per lint job, so worst-case resident demand was ~8 GiB plus runner overhead,
 # inside the 16 GiB runner. Local lint defaults to two workers; two such
 # caps allow ~16 GiB resident plus host overhead, so use FM_LINT_JOBS=1 on
 # smaller local machines. A root that exceeds its cap fails by name.
