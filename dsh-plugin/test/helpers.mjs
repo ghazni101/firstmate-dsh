@@ -108,13 +108,18 @@ export function makeAgent({ id = 'agent-a', cwd, header = {} } = {}) {
 
 /**
  * Build a fake Host plugin context that records registrations.
+ * @param options - service bindings.
+ * @param options.services - service name to value, reachable through `ctx.get`.
  * @returns `{ ctx, listeners, tools, cleanups }`.
  */
-export function makeContext() {
+export function makeContext({ services = {} } = {}) {
   const listeners = new Map()
   const tools = []
   const cleanups = []
   const ctx = {
+    get(name) {
+      return services[name]
+    },
     tools: {
       register(tool) {
         tools.push(tool)

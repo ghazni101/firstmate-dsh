@@ -21,6 +21,12 @@
  *    script run requires a task and executes under that task's lease, with the
  *    lease identity exported to the script; read-only scripts run directly and
  *    the session-lifecycle scripts are refused.
+ * 5. Supervision engine (optional, `config/dsh-engine`) — one forked headless
+ *    child per interactive session absorbs routine fleet traffic. A model-free
+ *    tick diffs the existing classified snapshot and steers batches to the
+ *    engine; the engine decides and escalates captain-relevant outcomes back
+ *    with `firstmate_native_escalate`. No engine ever steers its parent except
+ *    through that escalation record.
  *
  * It does not inject a session-start digest, arm supervision, host a watcher or
  * daemon, enter a posture, gate on `state/.lock`, or mutate anything outside a
@@ -35,8 +41,24 @@ import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { deliveryAction, resolveDelivery } from './src/delivery.js'
+import { EngineHost } from './src/engine.js'
+import {
+  ackEngineInbox,
+  buildEscalationMessage,
+  ENGINE_DEFAULT_TICK_MS,
+  ENGINE_MAX_OUTCOME_CHARS,
+  findEscalation,
+  isEngineHome,
+  markEscalationAttempt,
+  markEscalationDelivered,
+  ownerIsLive,
+  pendingEngineInbox,
+  readEngineRecord,
+  recordEscalation,
+  updateEngineRecord,
+} from './src/engine-records.js'
 import { LeaseError } from './src/errors.js'
-import { identifySession, identityNote } from './src/identity.js'
+import { engineNote, identifyEngineSession, identifySession, identityNote } from './src/identity.js'
 import { isNativeHome } from './src/home.js'
 import {
   acquireLease,
@@ -111,6 +133,9 @@ const IDENTITY_CONTEXT_ORDER = 130
 /** Context section name contributed for one session. */
 const IDENTITY_CONTEXT_NAME = 'firstmate:native-identity'
 
+/** Context section name contributed for one supervision engine. */
+const ENGINE_CONTEXT_NAME = 'firstmate:native-engine'
+
 /**
  * Build a registry-ready tool definition from a compact description.
  * @param spec - name, description, parameters, execute, and optional timeout.
@@ -149,30 +174,56 @@ export function apply(ctx, config = {}) {
   const defaultTimeout = Number.isFinite(config.timeoutMs) && config.timeoutMs > 0
     ? config.timeoutMs
     : DEFAULT_TIMEOUT_MS
+  const engineTickMs = Number.isFinite(config.engineTickMs) && config.engineTickMs >= 0
+    ? config.engineTickMs
+    : ENGINE_DEFAULT_TICK_MS
 
-  /** Per-agent identity, keyed by DSH agent id. */
+  /** Per-agent identity, keyed by DSH agent id. Root and engine identities differ by `kind`. */
   const identities = new Map()
 
   /** Per-agent runtime-context disposer, keyed by DSH agent id. */
   const contextDisposers = new Map()
 
+  /** Per-interactive-session engine hosts, keyed by the parent session id. */
+  const engineHosts = new Map()
+
   /** Latency-only follow-up channel for reconciliation hints. */
   const followups = createFollowupChannel()
 
   /**
-   * Resolve the identity for a tool call's agent, re-deriving it when the agent
+   * Read the subagent service when this profile provides it.
+   * @returns the service, or undefined.
+   */
+  const getSubagents = () => {
+    try {
+      return typeof ctx.get === 'function' ? ctx.get('subagents') : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * Resolve an agent's supervisor surface, re-deriving it when the agent
    * predates plugin activation.
    * @param exec - the tool run context.
-   * @returns the identity.
-   * @throws when this session is not a supervisor candidate or its home is not opted in.
+   * @param allowed - surfaces this tool accepts (`root`, `engine`).
+   * @returns the root or engine identity.
+   * @throws when the session has no surface, its home is not opted in, or the tool is not on its surface.
    */
-  const requireIdentity = (exec) => {
+  const requireSurface = (exec, allowed) => {
     const agent = exec?.agent
-    const cached = agent === undefined ? undefined : identities.get(agent.id)
-    const identity = cached ?? identifySession({ agent, configuredHome })
-    if (identity === undefined || identity === null) {
+    let identity = agent === undefined ? undefined : identities.get(agent.id)
+    if (identity === undefined) {
+      const root = identifySession({ agent, configuredHome })
+      if (root !== null) {
+        identity = { ...root, kind: 'root' }
+      } else {
+        identity = identifyEngineSession({ agent, configuredHome })
+      }
+    }
+    if (identity === undefined || identity === null || (identity.kind === 'engine' && !isEngineHome(identity.home))) {
       throw new Error(
-        'This session is not a Firstmate supervisor session: it is a subagent, or its working directory is not inside a Firstmate home. Run it from inside a home or pin the plugin row\'s `home` option.',
+        'This session is not a Firstmate supervisor session: it is an ordinary subagent, an unregistered child session, or its working directory is not inside a Firstmate home. Run it from inside a home or pin the plugin row\'s `home` option.',
       )
     }
     identities.set(agent?.id ?? identity.agentId, identity)
@@ -181,7 +232,129 @@ export function apply(ctx, config = {}) {
         `The native Firstmate surface is not enabled for ${identity.home}: create ${identity.home}/config/dsh-native to opt in. Nothing was read or changed.`,
       )
     }
+    if (!allowed.includes(identity.kind)) {
+      throw new Error(identity.kind === 'engine'
+        ? 'This tool is not part of the supervision engine surface; engines use only the fleet read tools, the lease, the guarded run channel, the reconcile tick, the inbox, and escalation.'
+        : 'This tool belongs to the supervision engine surface and is not available to the interactive session.')
+    }
     return identity
+  }
+
+  /** Root-session-only surface. */
+  const requireIdentity = (exec) => requireSurface(exec, ['root'])
+
+  /** Either a root session or its headless engine. */
+  const requireSupervisor = (exec) => requireSurface(exec, ['root', 'engine'])
+
+  /** Engine-child-only surface. */
+  const requireEngine = (exec) => requireSurface(exec, ['engine'])
+
+  /**
+   * Start the deterministic engine host for one root session.
+   *
+   * Lazy creation is owned by the host's first tick, not by this call, so a
+   * claim or dispatch inside a tool call is followed by a fork that includes
+   * that completed turn.
+   * @param agent - the interactive session's live agent.
+   * @param identity - the root identity.
+   * @returns the host, or undefined when the home has not opted in.
+   */
+  const startEngineHost = (agent, identity) => {
+    if (identity?.kind !== 'root') return undefined
+    if (!isNativeHome(identity.home) || !isEngineHome(identity.home)) return undefined
+    const sessionId = identity.sessionId
+    const existing = engineHosts.get(sessionId)
+    if (existing !== undefined && existing.parentAgent === agent && existing.closed !== true) return existing
+    if (existing !== undefined) {
+      void existing.close({ terminal: false, reason: 'replaced-by-new-agent' })
+      engineHosts.delete(sessionId)
+    }
+    const host = new EngineHost({
+      home: identity.home,
+      parentAgent: agent,
+      identity,
+      getSubagents,
+      tickMs: engineTickMs,
+    })
+    engineHosts.set(sessionId, host)
+    host.start()
+    return host
+  }
+
+  /**
+   * Record the first supervision need for one root session.
+   * @param agent - the interactive session's live agent.
+   * @param identity - the root identity.
+   */
+  const beginSupervision = (agent, identity) => {
+    if (identity?.kind !== 'root') return
+    if (!isEngineHome(identity.home) || !isNativeHome(identity.home)) return
+    startEngineHost(agent, identity)
+  }
+
+  /**
+   * Retire the previous engine before a resumed session gets a fresh fork.
+   * @param identity - the resumed root identity.
+   */
+  const supersedeEngine = (identity) => {
+    const existing = engineHosts.get(identity.sessionId)
+    if (existing !== undefined) {
+      void existing.close({ terminal: false, reason: 'session-resumed' })
+      engineHosts.delete(identity.sessionId)
+    }
+    const record = readEngineRecord({ home: identity.home, parentSession: identity.sessionId })
+    if (record === null) return
+    if (record.owner_pid !== process.pid && ownerIsLive(record)) return
+    updateEngineRecord({
+      home: identity.home,
+      parentSession: identity.sessionId,
+      mutate(next) {
+        next.status = 'superseded'
+        next.closed_reason = 'session-resumed'
+        return next
+      },
+    })
+  }
+
+  /**
+   * Deliver one escalation into this engine's parent session.
+   * @param options - delivery inputs.
+   * @param options.record - the escalation record.
+   * @param options.sender - the live engine agent.
+   * @param options.identity - the engine identity.
+   * @param options.signal - cancellation.
+   * @returns `{ delivered, error }`.
+   */
+  const deliverEscalation = async ({ record, sender, identity, signal }) => {
+    const subagents = getSubagents()
+    if (subagents === undefined || typeof subagents.sendMessage !== 'function') {
+      markEscalationAttempt({
+        home: identity.home,
+        parentSession: identity.parentSession,
+        id: record.id,
+        error: 'the subagent service is unavailable',
+      })
+      return { delivered: false, error: 'the subagent service is unavailable' }
+    }
+    try {
+      await subagents.sendMessage(
+        sender,
+        identity.parentSession,
+        [{ type: 'text', text: buildEscalationMessage(record) }],
+        { signal: signal ?? new AbortController().signal },
+      )
+      markEscalationDelivered({ home: identity.home, parentSession: identity.parentSession, id: record.id })
+      return { delivered: true, error: null }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      markEscalationAttempt({
+        home: identity.home,
+        parentSession: identity.parentSession,
+        id: record.id,
+        error: reason,
+      })
+      return { delivered: false, error: reason }
+    }
   }
 
   /**
@@ -323,7 +496,7 @@ export function apply(ctx, config = {}) {
     },
     timeoutMs: 180000,
     async execute(args, exec) {
-      const identity = requireIdentity(exec)
+      const identity = requireSupervisor(exec)
       const argv = ['--json']
       if (args?.include_prs === true) argv.push('--include-prs')
       const { output } = await runReadOnly(exec, identity, 'status', 'fm-bearings-snapshot.sh', argv, 'firstmate_native_status', 150000)
@@ -382,7 +555,7 @@ export function apply(ctx, config = {}) {
     },
     timeoutMs: 90000,
     async execute(args, exec) {
-      const identity = requireIdentity(exec)
+      const identity = requireSupervisor(exec)
       const argv = ['list']
       if (args?.state !== undefined) {
         if (!['queued', 'in_flight', 'done', 'held'].includes(args.state)) {
@@ -431,7 +604,7 @@ export function apply(ctx, config = {}) {
     },
     timeoutMs: 90000,
     async execute(args, exec) {
-      const identity = requireIdentity(exec)
+      const identity = requireSupervisor(exec)
       const view = args?.view ?? 'ready'
       if (!['ready', 'notes', 'receipts'].includes(view)) {
         throw new Error('view must be ready, notes, or receipts')
@@ -486,7 +659,7 @@ export function apply(ctx, config = {}) {
     },
     timeoutMs: 60000,
     async execute(args, exec) {
-      const identity = requireIdentity(exec)
+      const identity = requireSupervisor(exec)
       const action = args?.action
       try {
         if (action === 'reap') {
@@ -513,6 +686,7 @@ export function apply(ctx, config = {}) {
             purpose: typeof args?.purpose === 'string' ? args.purpose : '',
             ...(ttlMs === undefined ? {} : { ttlMs }),
           })
+          beginSupervision(exec?.agent, identity)
           return { ok: true, home: identity.home, action, task, token: record.token, record, text: JSON.stringify(record, null, 2) }
         }
         const token = requireToken(args?.token)
@@ -562,7 +736,7 @@ export function apply(ctx, config = {}) {
     },
     timeoutMs: 960000,
     async execute(args, exec) {
-      const identity = requireIdentity(exec)
+      const identity = requireSupervisor(exec)
       const script = typeof args?.script === 'string' ? args.script : ''
       if (!/^fm-[a-z0-9][a-z0-9-]*\.sh$/.test(script)) {
         throw new Error('script must be one bare bin/fm-*.sh file name')
@@ -579,6 +753,7 @@ export function apply(ctx, config = {}) {
         return channelOutcome({ home: identity.home, script, args: argv, readOnly: true, result })
       }
       const task = requireTaskId(args?.task, 'task (required for a mutating script)')
+      beginSupervision(exec?.agent, identity)
       const leaseEnv = {
         ...env,
         FM_LEASE_HOME: identity.home,
@@ -652,7 +827,7 @@ export function apply(ctx, config = {}) {
     },
     timeoutMs: 900000,
     async execute(args, exec) {
-      const identity = requireIdentity(exec)
+      const identity = requireSupervisor(exec)
       const report = await reconcileTick({
         home: identity.home,
         identity,
@@ -661,7 +836,7 @@ export function apply(ctx, config = {}) {
         signal: exec?.signal,
       })
       const hint = reconcileHint(report)
-      if (args?.hint === true && hint !== null && exec?.agent !== undefined) {
+      if (args?.hint === true && hint !== null && exec?.agent !== undefined && identity.kind !== 'engine') {
         followups.deliver(exec.agent, hint)
       }
       return {
@@ -831,17 +1006,161 @@ export function apply(ctx, config = {}) {
     },
   }))
 
-  ctx.on('agent/created', async ({ agent } = {}) => {
+  ctx.tools.register(defineTool({
+    name: 'firstmate_native_engine_inbox',
+    description:
+      'Read this supervision engine\'s durable notification batches for its parent session. Routine fleet events are batched here by the deterministic plugin tick, so the interactive session never sees them. Reading acknowledges the batches by default. Engine-only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['read', 'list'],
+          description: 'read returns and acknowledges pending batches (default); list returns them without acknowledging.',
+        },
+      },
+      additionalProperties: false,
+    },
+    timeoutMs: 60000,
+    async execute(args, exec) {
+      const identity = requireEngine(exec)
+      const action = args?.action ?? 'read'
+      if (!['read', 'list'].includes(action)) throw new Error('action must be read or list')
+      const pending = pendingEngineInbox({ home: identity.home, parentSession: identity.parentSession })
+      let acknowledged = 0
+      if (action === 'read') {
+        acknowledged = ackEngineInbox({
+          home: identity.home,
+          parentSession: identity.parentSession,
+          ids: pending.map((record) => record.id),
+        })
+      }
+      const text = pending.length === 0
+        ? 'No pending supervision notifications.'
+        : pending.map((record) => JSON.stringify(record, null, 2)).join('\n\n')
+      return {
+        ok: true,
+        tool: 'firstmate_native_engine_inbox',
+        home: identity.home,
+        parent_session: identity.parentSession,
+        action,
+        records: pending,
+        acknowledged,
+        text,
+      }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'firstmate_native_escalate',
+    description:
+      'Escalate one captain-relevant outcome from this supervision engine into its interactive parent session. The outcome is recorded durably first, then delivered as a same-tree steer; an undelivered escalation is retried by the next deterministic tick and identical outcomes are deduplicated. Use retry_id to retry an existing record. Never addresses the captain directly. Engine-only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        outcome: {
+          type: 'string',
+          description: 'Short captain-facing outcome: what finished, what failed, what decision is needed. No internal records or paths.',
+        },
+        task: { type: 'string', description: 'Task id the outcome is about, when it names one.' },
+        key: { type: 'string', description: 'Optional stable key identifying the decision, so repeats deduplicate.' },
+        retry_id: { type: 'string', description: 'Retry one existing undelivered escalation record instead of creating one.' },
+      },
+      additionalProperties: false,
+    },
+    timeoutMs: 120000,
+    async execute(args, exec) {
+      const identity = requireEngine(exec)
+      const home = identity.home
+      const parentSession = identity.parentSession
+      const retryId = typeof args?.retry_id === 'string' && args.retry_id.length > 0 ? args.retry_id : undefined
+      if (retryId !== undefined) {
+        const existing = findEscalation({ home, parentSession, id: retryId })
+        if (existing === null) throw new Error(`escalation ${retryId} is not recorded for this session's parent`)
+        if (existing.delivered_at !== null && existing.delivered_at !== undefined) {
+          return { ok: true, tool: 'firstmate_native_escalate', home, id: existing.id, duplicate: true, delivered: true, pending: false, text: `escalation ${existing.id} was already delivered` }
+        }
+        const retried = await deliverEscalation({ record: existing, sender: exec.agent, identity, signal: exec.signal })
+        return {
+          ok: true,
+          tool: 'firstmate_native_escalate',
+          home,
+          id: existing.id,
+          duplicate: true,
+          delivered: retried.delivered,
+          pending: !retried.delivered,
+          error: retried.error,
+          text: retried.delivered ? `escalation ${existing.id} delivered` : `escalation ${existing.id} is recorded and will be retried`,
+        }
+      }
+      const outcome = typeof args?.outcome === 'string' ? args.outcome.trim() : ''
+      if (outcome.length === 0) throw new Error('outcome is required')
+      if (outcome.length > ENGINE_MAX_OUTCOME_CHARS) {
+        throw new Error(`outcome must be at most ${ENGINE_MAX_OUTCOME_CHARS} characters`)
+      }
+      const task = typeof args?.task === 'string' && args.task.length > 0 ? args.task : undefined
+      const key = typeof args?.key === 'string' && args.key.length > 0 ? args.key : undefined
+      const { record, duplicate } = recordEscalation({
+        home,
+        parentSession,
+        engineSession: identity.sessionId,
+        task,
+        key,
+        outcome,
+      })
+      let delivery = { delivered: record.delivered_at !== null && record.delivered_at !== undefined, error: null }
+      if (!delivery.delivered) {
+        delivery = await deliverEscalation({ record, sender: exec.agent, identity, signal: exec.signal })
+      }
+      return {
+        ok: true,
+        tool: 'firstmate_native_escalate',
+        home,
+        id: record.id,
+        duplicate,
+        delivered: delivery.delivered,
+        pending: !delivery.delivered,
+        error: delivery.error,
+        text: delivery.delivered
+          ? (duplicate ? `escalation ${record.id} was already recorded and delivered` : `escalation ${record.id} delivered`)
+          : `escalation ${record.id} is recorded and will be retried by the next tick`,
+      }
+    },
+  }))
+
+  ctx.on('agent/created', async ({ agent, source } = {}) => {
     try {
-      const identity = identifySession({ agent, configuredHome })
-      if (identity === null) return
-      identities.set(agent.id, identity)
-      if (!isNativeHome(identity.home)) return
+      const root = identifySession({ agent, configuredHome })
+      if (root !== null) {
+        const identity = { ...root, kind: 'root' }
+        identities.set(agent.id, identity)
+        if (!isNativeHome(identity.home)) return
+        // A resumed session gets a fresh engine forked from its then-completed
+        // turns; the old engine is retired without touching the session.
+        if (source === 'resume' || source === 'clear' || source === 'compact') supersedeEngine(identity)
+        const engineEnabled = isEngineHome(identity.home)
+        const engineRecord = engineEnabled
+          ? readEngineRecord({ home: identity.home, parentSession: identity.sessionId })
+          : null
+        if (engineEnabled && engineRecord !== null) startEngineHost(agent, identity)
+        const dispose = agent?.ctx?.systemPrompt?.context?.({
+          name: IDENTITY_CONTEXT_NAME,
+          order: IDENTITY_CONTEXT_ORDER,
+          interpolate: false,
+          text: identityNote(identity, { engine: engineRecord !== null }),
+        })
+        if (typeof dispose === 'function') contextDisposers.set(agent.id, dispose)
+        return
+      }
+      const engine = identifyEngineSession({ agent, configuredHome })
+      if (engine === null) return
+      identities.set(agent.id, engine)
+      if (!isNativeHome(engine.home)) return
       const dispose = agent?.ctx?.systemPrompt?.context?.({
-        name: IDENTITY_CONTEXT_NAME,
+        name: ENGINE_CONTEXT_NAME,
         order: IDENTITY_CONTEXT_ORDER,
         interpolate: false,
-        text: identityNote(identity),
+        text: engineNote(engine),
       })
       if (typeof dispose === 'function') contextDisposers.set(agent.id, dispose)
     } catch {
@@ -849,7 +1168,7 @@ export function apply(ctx, config = {}) {
     }
   })
 
-  ctx.on('agent/disposed', ({ agent } = {}) => {
+  ctx.on('agent/disposed', async ({ agent } = {}) => {
     const id = agent?.id
     if (id === undefined) return
     identities.delete(id)
@@ -859,6 +1178,14 @@ export function apply(ctx, config = {}) {
       dispose?.()
     } catch {
       // The agent scope is already unwinding.
+    }
+    const host = engineHosts.get(id)
+    if (host === undefined) return
+    engineHosts.delete(id)
+    try {
+      await host.close({ terminal: true, reason: 'parent-session-ended' })
+    } catch {
+      // Engine cleanup never affects the parent.
     }
   })
 
@@ -872,6 +1199,10 @@ export function apply(ctx, config = {}) {
     }
     contextDisposers.clear()
     identities.clear()
+    for (const host of engineHosts.values()) {
+      void host.close({ terminal: false, reason: 'plugin-unloaded' })
+    }
+    engineHosts.clear()
   })
 }
 
@@ -887,7 +1218,21 @@ export {
   renewLease,
   withLease,
 } from './src/lease.js'
-export { identifySession, identityNote, isSubagentHeader } from './src/identity.js'
+export { identifyEngineSession, identifySession, engineNote, identityNote, isSubagentHeader } from './src/identity.js'
+export { EngineHost } from './src/engine.js'
+export {
+  completedTurnBoundary,
+  completedTurnPrefix,
+  diffFleetEvents,
+  ENGINE_DEFAULT_TICK_MS,
+  ENGINE_LABEL,
+  ENGINE_PROVIDER,
+  isEngineHome,
+  observeFleetEvents,
+  readCrewDispatchDefault,
+  readEngineRecord,
+  resolveEngineConfig,
+} from './src/engine-records.js'
 export { isFirstmateHome, isNativeHome, resolveHome } from './src/home.js'
 export { buildFollowup, createFollowupChannel } from './src/transport.js'
 export { loadLoopConfig, observeHome, reconcileHint, reconcileTick } from './src/reconcile.js'
