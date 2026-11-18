@@ -7,6 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import { apply } from '../index.js'
 import { acquireLease, inspectLease, listLeases } from '../src/lease.js'
@@ -247,6 +248,21 @@ const SEND_SCRIPT = `printf 'lease=%s token=%s owner=%s\\n' "\${FM_LEASE_TASK:-}
 [ -n "\${FM_LEASE_TOKEN:-}" ]
 `
 
+const PLUGIN_DIR = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]+$/, '')
+const ENGINE_LEASE_LIB = fileURLToPath(new URL('../../bin/fm-lease-lib.sh', import.meta.url))
+
+/**
+ * Mutating fixture script that goes through the REAL native guard seam, so it
+ * only succeeds when the channel exported a live token and its holding session.
+ */
+const GUARDED_SEND_SCRIPT = `#!/usr/bin/env bash
+set -u
+STATE="$FM_HOME/state"
+. "${ENGINE_LEASE_LIB}"
+fm_lease_guard "$1" "steer (channel)"
+printf 'session=%s token=%s\\n' "\${FM_LEASE_SESSION:-}" "\${FM_LEASE_TOKEN:-}"
+`
+
 test('firstmate_native_lease acquires, inspects, renews, and releases one task', async () => {
   const home = makeHome()
   try {
@@ -336,6 +352,51 @@ test('firstmate_native_run takes and releases the task lease around a mutating s
     assert.equal(result.leased, true)
     assert.equal(result.token, 1)
     assert.match(result.stdout, /lease=task-a token=1 owner=dsh:agent-a/)
+    assert.equal(inspectLease({ home, task: 'task-a' }).record.state, 'free')
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('firstmate_native_run exports the holding session to a guarded mutating script', async () => {
+  const home = makeHome({ scripts: { 'fm-send.sh': GUARDED_SEND_SCRIPT } })
+  writeFileSync(join(home, 'config', 'dsh-native-lease'), 'on\n')
+  writeFileSync(join(home, 'config', 'native-plugin-dir'), `${PLUGIN_DIR}\n`)
+  try {
+    const surface = await boot({ home })
+    const result = await toolNamed(surface.tools, 'firstmate_native_run').execute({
+      script: 'fm-send.sh',
+      args: ['task-a'],
+      task: 'task-a',
+    }, execFor(surface.agent))
+    assert.equal(result.ok, true, result.stderr)
+    assert.equal(result.exit_code, 0)
+    assert.match(result.stdout, /session=agent-a token=1/)
+    assert.equal(inspectLease({ home, task: 'task-a' }).record.state, 'free')
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('firstmate_native_run exports the holding session when the caller passes its token', async () => {
+  const home = makeHome({ scripts: { 'fm-send.sh': GUARDED_SEND_SCRIPT } })
+  writeFileSync(join(home, 'config', 'dsh-native-lease'), 'on\n')
+  writeFileSync(join(home, 'config', 'native-plugin-dir'), `${PLUGIN_DIR}\n`)
+  try {
+    const surface = await boot({ home })
+    const leaseTool = toolNamed(surface.tools, 'firstmate_native_lease')
+    const acquired = await leaseTool.execute({ action: 'acquire', task: 'task-a' }, execFor(surface.agent))
+    const result = await toolNamed(surface.tools, 'firstmate_native_run').execute({
+      script: 'fm-send.sh',
+      args: ['task-a'],
+      task: 'task-a',
+      token: acquired.token,
+    }, execFor(surface.agent))
+    assert.equal(result.ok, true, result.stderr)
+    assert.equal(result.exit_code, 0)
+    assert.match(result.stdout, /session=agent-a token=1/)
+    assert.equal(inspectLease({ home, task: 'task-a' }).record.state, 'held')
+    await leaseTool.execute({ action: 'release', task: 'task-a', token: acquired.token }, execFor(surface.agent))
     assert.equal(inspectLease({ home, task: 'task-a' }).record.state, 'free')
   } finally {
     cleanup(home)

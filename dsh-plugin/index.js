@@ -531,7 +531,7 @@ export function apply(ctx, config = {}) {
   ctx.tools.register(defineTool({
     name: 'firstmate_native_run',
     description:
-      'Run one allowlisted Firstmate home script (bin/fm-*.sh) as this session. Read-only scripts run directly. A mutating script requires a task and runs under that task\'s lease: the tool either takes the lease for the call and releases it afterwards, or uses the token you already hold and leaves your lease alone. The lease identity is exported to the script as FM_LEASE_HOME, FM_LEASE_TASK, FM_LEASE_TOKEN, and FM_LEASE_OWNER. Session-start, lock, watcher, daemon, and terminal-launcher scripts are refused.',
+      'Run one allowlisted Firstmate home script (bin/fm-*.sh) as this session. Read-only scripts run directly. A mutating script requires a task and runs under that task\'s lease: the tool either takes the lease for the call and releases it afterwards, or uses the token you already hold and leaves your lease alone. The lease identity is exported to the script as FM_LEASE_HOME, FM_LEASE_TASK, FM_LEASE_TOKEN, FM_LEASE_SESSION, and FM_LEASE_OWNER. Session-start, lock, watcher, daemon, and terminal-launcher scripts are refused.',
     parameters: {
       type: 'object',
       properties: {
@@ -583,6 +583,7 @@ export function apply(ctx, config = {}) {
         ...env,
         FM_LEASE_HOME: identity.home,
         FM_LEASE_TASK: task,
+        FM_LEASE_SESSION: identity.sessionId,
         FM_LEASE_OWNER: identity.ownerLabel,
       }
       try {
