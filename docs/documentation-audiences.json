@@ -393,6 +393,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "docs/verification/dsh-multisession-coordinator.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/verification/lint-option-a.md",
       "audience": "maintainer-verification"
     },

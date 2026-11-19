@@ -154,6 +154,9 @@ including concurrency, crash recovery, posture gating, and cross-home refusal. T
 covers fork-seed boundaries, engine tool gating, escalation delivery and its durable record,
 deduplication, two-engine contention, crash recreation, parent-end close, and quiet-tick cost.
 No live fleet, no network.
+The two-session end-to-end proof (real DSH sessions and fork provider) is in
+`test/e2e-multisession.test.mjs`; its opt-in live-Host guard and observed output
+are recorded in [`docs/verification/dsh-multisession-coordinator.md`](../docs/verification/dsh-multisession-coordinator.md).
 
 ## Engine compatibility
 
