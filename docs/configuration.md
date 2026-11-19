@@ -563,6 +563,13 @@ A backend spawn refusal from a missing dependency or version gate is terminal; f
 
 - Every new task records `endpoint_task_id=` as the cleanup binding between the metadata filename and its opaque runtime endpoint.
 - A herdr task additionally records `herdr_session=`, `herdr_workspace_id=`, `herdr_tab_id=`, and `herdr_pane_id=`.
+- A task dispatched through the native DSH command channel also records `dsh_session=` with the
+  owning interactive session. The session's coordinator supervises only tasks carrying its own
+  marker; routine traffic from another session never enters its inbox. See
+  [DSH-native supervisor architecture](dsh-native-architecture.md#613-parallel-session-invariants).
+- The same session's forked coordinator is watchable in the DSH web subagents menu under the
+  stable name `firstmate-coordinator`; routine turns stay there, and only captain-relevant
+  outcomes reach the interactive conversation.
 
 ### Task selectors
 

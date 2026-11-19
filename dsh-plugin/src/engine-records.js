@@ -41,6 +41,8 @@ export const ENGINE_MARKER_FILE = 'config/dsh-engine'
 
 /** Catalog label recorded on the engine child. Names are per-parent unique. */
 export const ENGINE_LABEL = 'firstmate-engine'
+/** Stable catalog name of the forked coordinator in the parent's DSH subagent menu. */
+export const ENGINE_AGENT_NAME = 'firstmate-coordinator'
 
 /** Registered in-process subagent provider that seeds a child from completed turns. */
 export const ENGINE_PROVIDER = 'fork'
@@ -401,6 +403,10 @@ export function classifyEvent(event) {
 
 /**
  * Fold one fleet snapshot into task events keyed by task id.
+ *
+ * `owner_session` is routing metadata copied from the task's spawn-side
+ * marker. It is not part of the signature: changing which session owns a task
+ * is a routing change, not new task traffic.
  * @param snapshot - `fm-fleet-snapshot.sh --json` output.
  * @returns a Map of task id to event.
  */
@@ -415,6 +421,7 @@ export function observeFleetEvents(snapshot) {
     const current = isPlainObject(task.current_state) ? task.current_state : {}
     const event = {
       id: task.id,
+      owner_session: typeof task.owner_session === 'string' && task.owner_session.length > 0 ? task.owner_session : null,
       state: typeof current.state === 'string' && current.state.length > 0 ? current.state : 'unknown',
       last_event: typeof last.raw === 'string' ? last.raw : '',
       last_verb: typeof last.state === 'string' ? last.state : '',
@@ -442,21 +449,38 @@ export function observeFleetEvents(snapshot) {
 }
 
 /**
+ * Whether one task event belongs in a given session's routine traffic.
+ *
+ * A task spawned by another session is never visible, at any class. A task
+ * with no spawn-side owner is legacy fleet state: its routine traffic stays
+ * out of every session's coordinator, while a captain-class outcome remains
+ * visible so a finished deliverable or blocker is still escalated.
+ * @param event - observed task event.
+ * @param ownerSession - interactive session this engine serves.
+ * @returns true when the event may enter this session's batch.
+ */
+function eventVisibleToOwner(event, ownerSession) {
+  if (event.owner_session === ownerSession) return true
+  return event.owner_session === null && event.class === 'captain'
+}
+
+/**
  * Diff the current task events against the engine's last observation.
  * @param options - diff inputs.
  * @param options.seen - task id to signature map from the last tick.
  * @param options.events - current events.
+ * @param options.ownerSession - interactive session whose coordinator receives the batch.
  * @returns changed events, captain-class first, then task id.
  */
-export function diffFleetEvents({ seen = {}, events } = {}) {
+export function diffFleetEvents({ seen = {}, events, ownerSession = null } = {}) {
   const changed = []
   for (const [id, event] of events) {
+    if (ownerSession !== null && !eventVisibleToOwner(event, ownerSession)) continue
     if (seen[id] !== event.signature) changed.push(event)
   }
   for (const id of Object.keys(seen)) {
-    if (!events.has(id)) {
-      changed.push({ id, removed: true, signature: 'removed', class: 'routine', state: 'gone', last_event: '', last_verb: '', pending_decision: false, blocked_event: false, open_decisions: [], pr_url: null, captain_actionable: false, hold_bucket: null })
-    }
+    if (events.has(id)) continue
+    changed.push({ id, removed: true, signature: 'removed', class: 'routine', state: 'gone', last_event: '', last_verb: '', pending_decision: false, blocked_event: false, open_decisions: [], pr_url: null, captain_actionable: false, hold_bucket: null, owner_session: null })
   }
   return changed.sort((left, right) => {
     const rank = (item) => (item.class === 'captain' ? 0 : 1)

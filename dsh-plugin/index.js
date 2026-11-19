@@ -273,6 +273,7 @@ export function apply(ctx, config = {}) {
       parentAgent: agent,
       identity,
       getSubagents,
+      getAgents: () => (typeof ctx.get === 'function' ? ctx.get('agents') : undefined),
       tickMs: engineTickMs,
     })
     engineHosts.set(sessionId, host)
@@ -745,7 +746,10 @@ export function apply(ctx, config = {}) {
       }
       const argv = normalizeArgs(args?.args)
       const timeoutMs = normalizeTimeout(args?.timeout_ms, defaultTimeout)
-      const env = { FM_NATIVE_PLUGIN_DIR: PLUGIN_DIR }
+      const env = {
+        FM_NATIVE_PLUGIN_DIR: PLUGIN_DIR,
+        FM_SESSION_OWNER: identity.kind === 'engine' ? (identity.parentSession ?? identity.sessionId) : identity.sessionId,
+      }
       const readOnly = CHANNEL_READ_ONLY_SCRIPTS.has(script)
       if (readOnly) {
         const result = await runScript(identity.home, script, argv, { timeoutMs, signal: exec?.signal, env })
@@ -832,6 +836,7 @@ export function apply(ctx, config = {}) {
         identity,
         apply: args?.apply === true,
         pluginDir: PLUGIN_DIR,
+        ownerSession: identity.kind === 'engine' ? (identity.parentSession ?? identity.sessionId) : identity.sessionId,
         signal: exec?.signal,
       })
       const hint = reconcileHint(report)

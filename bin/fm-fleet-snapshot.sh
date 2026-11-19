@@ -768,7 +768,7 @@ prefetch_task_current_states() {
 # Compose one task row from the observations its own worker captured.
 task_json_row() {  # <captured-meta> <id>
   local meta=$1 id=$2 original_meta kind harness mode yolo project worktree home projects spawn_gen branch backend target status_log report_path
-  local remote_host remote_root current_file endpoint_file observation_line
+  local remote_host remote_root current_file endpoint_file observation_line owner_session
   local pr pr_source event_json current_json endpoint_exists agent_alive meta_json status_json report_json worktree_json home_json
   local last_event_raw current_state current_source pending_decision blocked_event report_present=0 pr_from_status
   local open_decisions_tsv open_decisions_json
@@ -784,6 +784,7 @@ task_json_row() {  # <captured-meta> <id>
   home=$(meta_value "$meta" home)
   projects=$(meta_value "$meta" projects)
   spawn_gen=$(meta_value "$meta" spawn_gen)
+  owner_session=$(meta_value "$meta" dsh_session)
   branch=$(meta_value "$meta" branch)
   remote_host=$(meta_value "$meta" remote_host)
   remote_root=$(meta_value "$meta" remote_root)
@@ -881,6 +882,7 @@ task_json_row() {  # <captured-meta> <id>
     --arg home "$home" \
     --arg projects "$projects" \
     --arg spawn_gen "$spawn_gen" \
+    --arg owner_session "$owner_session" \
     --arg backend "$backend" \
     --arg target "$target" \
     --arg remote_host "$remote_host" \
@@ -911,6 +913,7 @@ task_json_row() {  # <captured-meta> <id>
       branch:($branch | if . == "" then null else . end),
       project:($project // ""),
       spawn_gen:($spawn_gen | if . == "" then null else . end),
+      owner_session:($owner_session | if . == "" then null else . end),
       backend:$backend,
       remote:(if $remote_host == "" then null else {host:$remote_host,root:$remote_root} end),
       paths:{

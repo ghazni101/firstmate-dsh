@@ -24,6 +24,22 @@ spawn_preserve_relaunch_state() {
 {
   echo "window=$META_WINDOW"
   echo "endpoint_task_id=$ID"
+  # Owning interactive DSH session, passed by the native command channel. It
+  # scopes routine supervision traffic to this session's own crews. A relaunch
+  # with no channel owner preserves the recorded line below.
+  if [ -n "${FM_SESSION_OWNER:-}" ]; then
+    case "$FM_SESSION_OWNER" in
+      *[!A-Za-z0-9._:-]*)
+        echo "error: FM_SESSION_OWNER for $ID is not a valid session id" >&2
+        exit 1
+        ;;
+    esac
+    [ "${#FM_SESSION_OWNER}" -le 128 ] || {
+      echo "error: FM_SESSION_OWNER for $ID is too long" >&2
+      exit 1
+    }
+    echo "dsh_session=$FM_SESSION_OWNER"
+  fi
   echo "worktree=$WT"
   echo "project=$PROJ_ABS"
   echo "harness=$HARNESS"

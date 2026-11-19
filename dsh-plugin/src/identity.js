@@ -168,6 +168,7 @@ export function identityNote(identity, { engine = false } = {}) {
   ]
   if (engine) {
     lines.push('A headless supervision engine absorbs routine fleet traffic for this session; captain-relevant items escalate into this conversation.')
+    lines.push('Watch the coordinator as the firstmate-coordinator child in this session\'s DSH subagents menu; it opens as an inspectable conversation pane.')
   }
   return lines.join('\n')
 }
