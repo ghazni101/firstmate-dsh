@@ -226,7 +226,7 @@ test_fake_gh_and_gh_axi() {
 }
 
 test_spawn_tmux_and_fakebin() {
-  local fakebin out log
+  local fakebin out log harness_path harness_log
   fakebin=$(make_spawn_fakebin "$TMP_ROOT/spawn" gh-axi)
   log="$TMP_ROOT/spawn/launch.log"
   : > "$log"
@@ -239,10 +239,21 @@ test_spawn_tmux_and_fakebin() {
   FM_FAKE_LAUNCH_LOG="$log" "$fakebin/tmux" send-keys -t @w -l 'codex --yolo'
   assert_grep 'codex --yolo' "$log" "send-keys -l payload was not logged"
   [ -x "$fakebin/treehouse" ] || fail "spawn fakebin should include treehouse"
+  [ -x "$fakebin/$FM_TEST_FIXTURE_HARNESS" ] \
+    || fail "spawn fakebin must shadow the real harness CLI"
+  harness_path=$(PATH="$fakebin:$PATH" command -v "$FM_TEST_FIXTURE_HARNESS")
+  case "$harness_path" in
+  "$fakebin"/*) ;;
+  *) fail "fixture PATH resolved a real harness binary: $harness_path" ;;
+  esac
+  harness_log="$TMP_ROOT/spawn/harness.log"
+  : > "$harness_log"
+  FM_FAKE_HARNESS_LOG="$harness_log" "$fakebin/$FM_TEST_FIXTURE_HARNESS" --version fixture-probe
+  assert_grep 'fixture-probe' "$harness_log" "fake harness did not record its argv"
   [ -x "$fakebin/gh-axi" ] || fail "extra exit-0 tools should land in the spawn fakebin"
   "$fakebin/treehouse" get
   expect_code 0 $? "fake treehouse should exit 0"
-  pass "spawn fakebin answers pane path, logs -l payloads, and installs extra tools"
+  pass "spawn fakebin shadows the real harness and answers pane path and treehouse"
 }
 
 test_send_stubs_and_ssh() {

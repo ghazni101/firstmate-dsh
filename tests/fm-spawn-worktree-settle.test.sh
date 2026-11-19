@@ -72,6 +72,30 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
+  fm_test_fake_herdr_spawn "$fakebin"
+  mv "$fakebin/herdr" "$fakebin/herdr-real"
+  # Model the herdr endpoint the spawn actually reads: `pane get` supplies the
+  # foreground cwd the settle loop polls, so count those reads and replay the
+  # transient stale path here rather than in the obsolete tmux counter.
+  cat > "$fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+if [ "${1:-} ${2:-}" = 'pane get' ]; then
+  countfile="${FM_FAKE_PANE_COUNTFILE:?FM_FAKE_PANE_COUNTFILE unset}"
+  n=0
+  [ -f "$countfile" ] && n=$(cat "$countfile")
+  n=$((n + 1))
+  printf '%s\n' "$n" > "$countfile"
+  cwd=${FM_FAKE_PANE_PATH:-}
+  [ "$n" -gt "${FM_FAKE_PANE_STALE_READS:-0}" ] || cwd=${FM_FAKE_PANE_STALE:-}
+  printf '{"result":{"pane":{"pane_id":"%s","cwd":"%s","foreground_cwd":"%s"}}}\n' \
+    "${3:-%9}" "$cwd" "$cwd"
+  exit 0
+fi
+exec "$(dirname "$0")/herdr-real" "$@"
+SH
+  chmod +x "$fakebin/herdr"
+  fm_test_fake_harness "$fakebin"
   fm_fake_exit0 "$fakebin" treehouse
   printf '%s\n' "$fakebin"
 }
@@ -146,10 +170,10 @@ test_single_stale_first_read_is_not_accepted() {
   pass "a single transient stale pane_current_path read is not accepted as the worktree"
 }
 
-# A pane that reports the real worktree from the very first read costs exactly
-# one confirming read - not a whole extra polling cycle on top of it. Counting
-# the pane reads measures the loop itself; wall-clock time would fold in every
-# other cost of a spawn (fetch, trust registration) and drift with the machine.
+# A pane that reports the real worktree from the very first read costs one
+# confirming herdr `pane get` from the launch-boundary cwd proof. The endpoint
+# model counts those reads; wall-clock time would fold in every other cost of
+# a spawn (fetch, trust registration) and drift with the machine.
 test_already_settled_pane_costs_one_confirm_read() {
   local rec id out status reads
   id=settle-already-settled-z2
@@ -162,8 +186,8 @@ test_already_settled_pane_costs_one_confirm_read() {
   assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
     "meta did not record the already-settled worktree"
   reads=$(cat "$COUNTFILE")
-  [ "$reads" -eq 3 ] || fail "already-settled pane took $reads reads to confirm - expected the first read, one confirmation, and the launch-boundary cwd check"
-  pass "an already-settled pane confirms on the next read, not a whole extra cycle"
+  [ "$reads" -eq 2 ] || fail "already-settled pane took $reads herdr cwd reads to confirm - expected the first read and one launch-boundary confirmation"
+  pass "an already-settled herdr endpoint confirms on the next read, not a whole extra cycle"
 }
 
 # make_primary_case <name> <id> <stale_reads> builds the linked-home shape: the
@@ -224,11 +248,11 @@ test_primary_checkout_that_never_settles_fails_at_the_deadline() {
   out=$(run_settle_spawn "$id")
   status=$?
   [ "$status" -ne 0 ] || fail "spawn accepted a pane that never left the primary checkout"$'\n'"$out"
-  assert_contains "$out" "did not enter an isolated worktree" \
+  assert_contains "$out" "not its recorded worktree" \
     "spawn did not explain that the pane never reached an isolated worktree"
   assert_contains "$out" "$STALE_DIR" \
     "the refusal did not name the path the pane kept reporting"
-  assert_contains "$out" "repository's primary checkout" \
+  assert_contains "$out" "refusing to continue outside the copy holding its work" \
     "the refusal did not say why that path was rejected"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "refused spawn published task metadata"
   pass "a pane stuck on the primary checkout fails loudly at the deadline"

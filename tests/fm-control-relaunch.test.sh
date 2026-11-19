@@ -186,6 +186,7 @@ SH
 exit 0
 SH
   chmod +x "$fb/sleep"
+  fm_fake_exit0 "$fb" claude
 }
 
 # new_case <name> [id] -> echoes a case dir with a live claude ship task.
@@ -197,8 +198,10 @@ new_case() {
   printf 'claude' > "$dir/fake/command"
   printf 'claude' > "$dir/fake/becomes"
   printf '%s\n' "fm-$id" > "$dir/fake/windows"
-  printf '%s' fmses > "$dir/fake/session-name"
   make_tmux_stub "$dir"
+  make_herdr_stub "$dir"
+  printf '%s\n' "fm-$id" > "$dir/fake/herdr-pane"
+  : > "$dir/fake/herdr-log"
   printf '%s\n' "$dir"
 }
 
@@ -379,6 +382,7 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint() {
   local dir out rc gen_before gen_after
   dir=$(new_case same rl1)
   add_ship_task "$dir" rl1 claude
+  : > "$dir/fake/herdr-agent-live"
   gen_before=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" rl1)
   printf 'busy_gen=%s\n' "$gen_before" >> "$dir/home/state/rl1.meta"
   out=$(run_control "$dir" rl1 relaunch --note "stopped mid-refactor"); rc=$?
@@ -436,6 +440,7 @@ test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text() {
   dir=$(new_case pending-exit rl43)
   add_ship_task "$dir" rl43 claude
   printf 'i' > "$dir/fake/composer"
+  : > "$dir/fake/herdr-agent-live"
 
   out=$(run_control "$dir" rl43 relaunch --note "preserve the pending draft"); rc=$?
 
@@ -453,6 +458,7 @@ test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven() {
   local dir out rc
   dir=$(new_case unproven-exit rl44)
   add_ship_task "$dir" rl44 claude
+  : > "$dir/fake/herdr-agent-live"
 
   out=$(FM_FAKE_COMPOSER_READ_FAIL=1 \
     run_control "$dir" rl44 relaunch --note "preserve on an unreadable composer"); rc=$?
@@ -517,9 +523,10 @@ test_relaunch_from_linked_home_preserves_recorded_worktree() {
 test_relaunch_accepts_a_standalone_clone_worktree() {
   local dir out rc
   dir=$(new_case clone-wt rl45)
-  add_ship_task "$dir" rl45 codex
-  printf 'codex' > "$dir/fake/command"
-  printf 'codex' > "$dir/fake/becomes"
+  add_ship_task "$dir" rl45 pi
+  printf 'pi' > "$dir/fake/command"
+  : > "$dir/fake/herdr-agent-live"
+  printf 'pi' > "$dir/fake/becomes"
   git -C "$dir/proj" worktree remove --force "$dir/wt"
   git clone -q "$dir/proj" "$dir/wt"
   [ "$(git -C "$dir/wt" rev-parse --path-format=absolute --git-dir --git-common-dir | sort -u | wc -l | tr -d ' ')" = 1 ] \
@@ -530,7 +537,7 @@ test_relaunch_accepts_a_standalone_clone_worktree() {
 
   out=$(run_control "$dir" rl45 relaunch --note "continue in the clone"); rc=$?
   expect_code 0 "$rc" "a standalone clone worktree should relaunch"$'\n'"$out"
-  assert_contains "$out" "relaunched rl45 harness=codex" "the outcome should name the transition"
+  assert_contains "$out" "relaunched rl45 harness=pi" "the outcome should name the transition"
   [ "$(meta_field "$dir" rl45 worktree)" = "$dir/wt" ] \
     || fail "the recorded copy must be reused, not reallocated"
   [ "$(meta_field "$dir" rl45 window)" = "fmses:fm-rl45" ] \
@@ -550,6 +557,7 @@ test_relaunch_refusal_of_the_project_primary_checkout_still_leaves_no_replacemen
   dir=$(new_case projwt-stop rl46)
   add_ship_task "$dir" rl46 claude
   sed -i.bak "s#^worktree=.*#worktree=$dir/proj#" "$dir/home/state/rl46.meta"
+  : > "$dir/fake/herdr-agent-live"
   printf '%s' "$dir/proj" > "$dir/fake/cwd"
 
   out=$(run_control "$dir" rl46 relaunch --note "x"); rc=$?
@@ -646,7 +654,7 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
     FM_FAKE_TRACE_RELEASE="$launch_release" \
     run_control "$dir" rl28 relaunch --note "continue after publication" > "$dir/control.out" &
   control_pid=$!
-  while [ ! -e "$prepare" ] && [ "$i" -lt 500 ]; do
+  while [ ! -e "$prepare" ] && [ "$i" -lt 2000 ]; do
     /bin/sleep 0.01
     i=$((i + 1))
   done
@@ -665,7 +673,7 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
       --carry-platform x --carry-max 280 > "$dir/link.out" 2>&1 &
   link_pid=$!
   i=0
-  while [ ! -e "$waiting" ] && [ "$i" -lt 500 ]; do
+  while [ ! -e "$waiting" ] && [ "$i" -lt 2000 ]; do
     /bin/sleep 0.01
     i=$((i + 1))
   done
@@ -674,7 +682,7 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
     : > "$release"
     wait "$link_pid" 2>/dev/null || true
     wait "$control_pid" 2>/dev/null || true
-    fail "a durable metadata writer was not blocked during relaunch delivery"
+    fail "a durable metadata writer was not blocked during relaunch delivery"$'\n'"control: $(cat "$dir/control.out" 2>/dev/null)"$'\n'"link: $(cat "$dir/link.out" 2>/dev/null)"
   }
   : > "$launch_release"
   i=0
@@ -882,20 +890,22 @@ SH
   pass "fm-control relaunch: a refused polytoken profile leaves the running agent untouched"
 }
 
-test_relaunch_off_opencode_removes_tracked_wiring() {
+test_relaunch_removes_tracked_prior_wiring() {
   local dir out
-  dir=$(new_case opencodetracked rl78)
-  add_ship_task "$dir" rl78 opencode
-  mkdir -p "$dir/wt/.opencode/plugins"
-  printf 'prior busy plugin\n' > "$dir/wt/.opencode/plugins/fm-busy-state.js"
-  git -C "$dir/wt" add .opencode/plugins/fm-busy-state.js
+  dir=$(new_case trackedwiring rl78)
+  add_ship_task "$dir" rl78 claude
+  mkdir -p "$dir/wt/.claude"
+  printf '{"hooks":{}}\n' > "$dir/wt/.claude/settings.local.json"
+  git -C "$dir/wt" add .claude/settings.local.json
   git -C "$dir/wt" -c user.email=t@t -c user.name=t commit -q -m "tracked prior wiring"
   printf 'zsh' > "$dir/fake/command"
-  out=$(run_spawn "$dir" rl78 --relaunch --harness claude)
-  assert_contains "$out" "spawned rl78 harness=claude" "the relaunch off opencode should complete"
-  [ ! -e "$dir/wt/.opencode/plugins/fm-busy-state.js" ] \
-    || fail "retiring opencode wiring must still remove tracked files as on main"
-  pass "fm-spawn --relaunch: tracked opencode wiring is retired as on main"
+  printf 'pi' > "$dir/fake/becomes"
+  rm -f "$dir/fake/herdr-agent-live"
+  out=$(run_spawn "$dir" rl78 --relaunch --harness pi)
+  assert_contains "$out" "spawned rl78 harness=pi" "the harness switch should complete"
+  [ ! -e "$dir/wt/.claude/settings.local.json" ] \
+    || fail "retiring prior wiring must still remove tracked files as on main"
+  pass "fm-spawn --relaunch: tracked prior wiring is retired on a kept-harness switch"
 }
 
 test_relaunch_from_a_raw_polytoken_launch_keeps_the_project_layers() {
@@ -2617,33 +2627,32 @@ test_spawn_relaunch_refuses_a_pane_outside_the_worktree() {
   printf '%s' "$dir/proj" > "$dir/fake/cwd"
   out=$(run_spawn "$dir" rl18 --relaunch --harness claude); rc=$?
   expect_code 1 "$rc" "a pane outside the worktree should refuse"
-  assert_contains "$out" "not its recorded worktree" "the refusal should name the wrong location"
-  [ ! -s "$dir/fake/keys" ] || fail "a refused tmux relaunch must send nothing to the pane"
+  assert_contains "$out" "did not return to its recorded worktree" "the refusal should name the wrong location"
+  assert_grep "cd -- '$dir/wt'" "$dir/fake/keys" "the relaunch should have tried to move the pane back"
   pass "fm-spawn --relaunch: refuses to start a replacement outside the copy holding its work"
 }
 
-# EXPECTED-FAILURE FIXTURE (open finding: secondmate relaunch pane-cwd check).
-# The ship case above refuses a pane outside its recorded worktree, but both
-# spawn_acquire_task_copy and spawn_assert_agent_worktree return early for
-# KIND=secondmate, so a secondmate with the same drift is relaunched unchecked.
-# Set FM_EXPECT_SECONDMATE_CWD_CHECK=1 once that path verifies the pane cwd.
+# A secondmate relaunch with a pane outside its recorded home is refused, like
+# the ship case above: spawn_acquire_task_copy and spawn_assert_agent_worktree
+# both verify the pane cwd for secondmates now.
 test_spawn_relaunch_secondmate_pane_cwd_check() {
-  local dir home id=rl18sm out rc
+  local dir home sm id=rl18sm out rc
   dir=$(new_case wrongcwdsm "$id")
   home="$dir/home"
+  sm="$dir/smhome"
+  mkdir -p "$sm/bin" "$sm/data" "$sm/state" "$sm/config" "$sm/projects"
+  printf '# Firstmate\n' > "$sm/AGENTS.md"
+  printf '%s\n' "$id" > "$sm/.fm-secondmate-home"
   add_ship_task "$dir" "$id" claude
-  sed -i "s|^kind=ship\$|kind=secondmate|" "$home/state/$id.meta"
+  sed -i -e "s|^kind=ship\$|kind=secondmate|" \
+    -e "s|^worktree=.*|worktree=$sm|" \
+    -e "s|^project=.*|project=$sm|" "$home/state/$id.meta"
+  printf 'home=%s\n' "$sm" >> "$home/state/$id.meta"
   printf 'zsh' > "$dir/fake/command"
   printf '%s' "$dir/proj" > "$dir/fake/cwd"
   out=$(run_spawn "$dir" "$id" --relaunch --harness claude); rc=$?
-  if [ -n "${FM_EXPECT_SECONDMATE_CWD_CHECK:-}" ]; then
-    expect_code 1 "$rc" "a drifted secondmate pane should refuse relaunch"$'\n'"$out"
-    assert_contains "$out" "not its recorded worktree" "the refusal should name the wrong location"
-  else
-    expect_code 0 "$rc" "EXPECTED FAILURE: a drifted secondmate pane is relaunched unchecked"$'\n'"$out"
-    pass "EXPECTED FAILURE pinned: secondmate relaunch skips the ship pane-cwd check"
-    return 0
-  fi
+  expect_code 1 "$rc" "a drifted secondmate pane should refuse relaunch"$'\n'"$out"
+  assert_contains "$out" "not its recorded worktree" "the refusal should name the wrong location"
   pass "secondmate relaunch now refuses a pane outside its recorded home"
 }
 
@@ -2818,21 +2827,43 @@ case "${1:-} ${2:-}" in
         "$(cat "$D/herdr-pane")"
     fi
     exit 0 ;;
+  'pane read')
+    [ -z "${FM_FAKE_COMPOSER_READ_FAIL:-}" ] || exit 1
+    case " $* " in *' --format ansi '*) exit 1 ;; esac
+    if [ -s "$D/composer" ]; then
+      printf '╭────╮\n│ %s  │\n╰────╯\n' "$(cat "$D/composer")"
+    else
+      printf '╭────╮\n│    │\n╰────╯\n'
+    fi
+    exit 0 ;;
+  'pane run')
+    printf '%s\n' "${4:-}" >> "$D/keys"
+    case "${4:-}" in
+      'export GOTMPDIR='*)
+        if [ -n "${FM_FAKE_TRACE_PREPARE:-}" ]; then
+          : > "$FM_FAKE_TRACE_PREPARE"
+          while [ ! -e "$FM_FAKE_TRACE_RELEASE" ]; do /bin/sleep 0.01; done
+        fi ;;
+    esac
+    exit 0 ;;
   'pane send-text')
     # Mirrors the tmux fake's `becomes`: delivering the launch brief is what
     # makes an agent exist on this pane, so the control plane's alive-wait can
     # observe the replacement come up. A launch arrives as a short line sourcing
     # the staged launch file rather than the literal command, so read that file
     # back before deciding what was delivered - exactly as the tmux fake above
-    # and tests/fixtures.sh do.
+    # and tests/fixtures.sh do. Record the resolved payload where the tmux
+    # cases read their literal and key streams.
     payload=${4:-}
     case "$payload" in
       ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
     esac
+    printf '%s\n' "$payload" >> "$D/literal"
     case "$payload" in
       *'encode launch-brief'* | *'Firstmate operational input waiting: read'*)
         printf '%s\n' "$payload" > "$D/launched-command"
         : > "$D/herdr-agent-live" ;;
+      /exit|/quit) rm -f "$D/herdr-agent-live"; printf 'zsh' > "$D/command" ;;
     esac
     exit 0 ;;
   'workspace list')
@@ -3238,6 +3269,7 @@ test_exit_and_relaunch_remove_the_dialog_file() {
   local dir out rc
   dir=$(new_case dialog-file-exit rl70)
   add_ship_task "$dir" rl70 claude
+  : > "$dir/fake/herdr-agent-live"
   out=$(run_control "$dir" rl70 exit); rc=$?
   expect_code 0 "$rc" "exit should stop the agent"$'\n'"$out"
   [ ! -e "$dir/home/state/rl70.composer-dialog" ] \
@@ -3245,6 +3277,7 @@ test_exit_and_relaunch_remove_the_dialog_file() {
 
   dir=$(new_case dialog-file-relaunch rl71)
   add_ship_task "$dir" rl71 claude
+  : > "$dir/fake/herdr-agent-live"
   out=$(run_control "$dir" rl71 relaunch --note "replace the agent"); rc=$?
   expect_code 0 "$rc" "relaunch should replace the agent"$'\n'"$out"
   [ ! -e "$dir/home/state/rl71.composer-dialog" ] \
@@ -3259,6 +3292,7 @@ test_exit_removes_the_dialog_file_before_releasing_the_lock() {
   local dir out rc lock sink trace
   dir=$(new_case dialog-file-order rl72)
   add_ship_task "$dir" rl72 claude
+  : > "$dir/fake/herdr-agent-live"
   lock="$dir/home/state/.control-rl72.lock"
   sink="$dir/home/state/rl72.composer-dialog"
   trace="$dir/fake/rm-trace"
@@ -3283,7 +3317,7 @@ SH
   pass "fm-control exit removes the dialog file before it releases the control lock"
 }
 
-test_relaunch_off_opencode_removes_tracked_wiring
+test_relaunch_removes_tracked_prior_wiring
 test_exit_and_relaunch_remove_the_dialog_file
 test_exit_removes_the_dialog_file_before_releasing_the_lock
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint

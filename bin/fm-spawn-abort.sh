@@ -168,14 +168,15 @@ spawn_abort_cleanup() {
     SPAWN_META_LOCK_HELD=0
     fm_lock_release "$SPAWN_META_LOCK" || true
   fi
-  # A fresh polytoken spawn that fails and leaves no record must leave the pool
-  # as it found it. Before its launch is delivered, the endpoint it opened holds nothing but
-  # the shell whose `treehouse get` leases the slot, so closing it returns the
-  # slot to the pool and leaves no window or tab for a retry to trip over; the
-  # Firstmate wiring, task temp root, and staged launch file it wrote go with it.
-  # Once a launch was delivered into an endpoint still open, a worker may be
-  # running there, so those stay for the operator, as the refusal says.
-  if [ "$status" -ne 0 ] && [ "${HARNESS:-}" = polytoken ] &&
+  # A fresh spawn that fails and leaves no record must leave the pool as it
+  # found it. Before its launch is delivered, the endpoint it opened holds
+  # nothing but the shell whose `treehouse get` leases the slot, so closing it
+  # returns the slot to the pool and leaves no window or tab for a retry to
+  # trip over; the Firstmate wiring, task temp root, and staged launch file it
+  # wrote go with it. Once a launch was delivered into an endpoint still open,
+  # a worker may be running there, so those stay for the operator, as the
+  # refusal says.
+  if [ "$status" -ne 0 ] &&
     { [ "$SPAWN_FRESH_ENDPOINT_OPENED" = 1 ] || [ "$SPAWN_FRESH_WIRING_PENDING" = 1 ] ||
       [ "$SPAWN_TASK_TMP_CREATED" = 1 ] || [ -n "$SPAWN_STAGED_LAUNCH_FILE" ]; } &&
     [ "$RELAUNCH" -eq 0 ] &&

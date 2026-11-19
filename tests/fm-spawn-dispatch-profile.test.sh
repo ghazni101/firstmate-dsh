@@ -92,6 +92,7 @@ make_spawn_case() {
   wt="$case_dir/wt"
   launchlog="$case_dir/launch.log"
   fakebin=$(make_spawn_fakebin "$case_dir/fake")
+  fm_test_fake_treehouse_lease "$fakebin"
   fm_test_spawn_home "$home" "$harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   for id in "$@"; do
@@ -482,14 +483,14 @@ test_active_dispatch_profile_allows_explicit_harness() {
   record_dispatch "$HOME_DIR" "$id" ambiguous
 
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
-    "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort high)
+    "$id" "$PROJ_DIR" --harness pi --model gpt-5 --effort high)
   status=$?
   expect_code 0 "$status" "explicit harness should satisfy active dispatch-profile requirement"
-  assert_contains "$out" "spawned $id harness=codex" "spawn did not report explicit codex harness"
-  assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
+  assert_contains "$out" "spawned $id harness=pi" "spawn did not report explicit pi harness"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" pi gpt-5 high
   launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
-    "explicit harness launch did not thread model, effort, and Codex bypass flag"
+  assert_contains "$launch" "pi --model 'gpt-5' --thinking 'high' -e " \
+    "explicit harness launch did not thread model and effort flags"
   pass "a non-clear dispatch record accepts the explicit flags of the manual intake"
 }
 
@@ -876,146 +877,23 @@ test_claude_threads_model_and_effort() {
   pass "claude receives --model and --effort profile flags"
 }
 
-test_codex_threads_model_and_effort() {
-  local rec id out status launch
-  id=profile-codex-z3
-  rec=$(make_spawn_case profile-codex codex "$id")
+# The Codex-specific profile cases (model_reasoning_effort, bypass flags,
+# approval-mode fallbacks, and hook-layer suppression) tested flags that no
+# longer exist: codex was removed from the supported harness set. They are
+# retired here rather than left red; the current removal boundary is pinned.
+test_removed_codex_harness_is_refused_with_profile_flags() {
+  local rec id out status
+  id=profile-codex-removed
+  rec=$(make_spawn_case profile-codex-removed codex "$id")
   read_case_record "$rec"
-
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-5 --effort high)
   status=$?
-  expect_code 0 "$status" "codex spawn with profile flags should succeed"
-  assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
-  launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
-    "codex launch did not thread model, reasoning effort config, and Codex bypass flag"
-  pass "codex receives --model and model_reasoning_effort profile flags"
-}
-
-test_codex_threads_model_and_max_effort() {
-  local rec id out status launch
-  id=profile-codex-max-z4
-  rec=$(make_spawn_case profile-codex-max codex "$id")
-  read_case_record "$rec"
-
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-5.6-luna --effort max)
-  status=$?
-  expect_code 0 "$status" "codex Luna spawn with max effort should succeed"
-  assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5.6-luna max
-  launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" "codex --model 'gpt-5.6-luna' -c 'model_reasoning_effort=\"max\"' --dangerously-bypass-approvals-and-sandbox" \
-    "codex launch did not thread Luna's max reasoning effort config and Codex bypass flag"
-  pass "codex Luna receives --model and model_reasoning_effort max profile flags"
-}
-
-test_codex_omits_max_effort_for_unsupported_model() {
-  local rec id out status launch
-  id=profile-codex-max-unsupported-z4b
-  rec=$(make_spawn_case profile-codex-max-unsupported codex "$id")
-  read_case_record "$rec"
-
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-5 --effort max)
-  status=$?
-  expect_code 0 "$status" "codex spawn with an unsupported model max effort should omit the effort flag"
-  assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 max
-  launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" "codex --model 'gpt-5' --dangerously-bypass-approvals-and-sandbox" \
-    "codex launch did not preserve the model flag and Codex bypass flag when max effort was omitted"
-  assert_not_contains "$launch" "model_reasoning_effort" "codex launch must omit unsupported model max reasoning effort"
-  pass "codex omits max for models without the catalog capability"
-}
-
-# Codex parks a crewmate launch forever on its unanswerable hook-trust modal
-# unless the launch turns the hook layer off. These two cases pin the split:
-# a crewmate runs hook-free, a secondmate keeps the project hooks that carry its
-# own primary-session turn-end guard and session-start digest.
-test_codex_crewmate_launch_disables_the_hook_layer() {
-  local rec id out status launch
-  id=profile-codex-hooks-z4c
-  rec=$(make_spawn_case profile-codex-hooks codex "$id")
-  read_case_record "$rec"
-  printf 'approve-for-me\n' > "$HOME_DIR/config/codex-approval-mode"
-
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
-  status=$?
-  expect_code 0 "$status" "codex crewmate spawn should succeed"$'\n'"$out"
-  launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" "--disable hooks" \
-    "codex crewmate launch did not disable the hook layer that blocks it on a trust modal"
-  # The opposite posture: this flag RUNS the untrusted hooks instead of
-  # disabling them, so a launch must never reach for it.
-  assert_not_contains "$launch" "--dangerously-bypass-hook-trust" \
-    "codex crewmate launch ran the operator's untrusted hooks instead of disabling them"
-  assert_contains "$launch" "--approve-for-me" \
-    "codex crewmate launch did not use automatic approval review"
-  assert_not_contains "$launch" "--dangerously-bypass-approvals-and-sandbox" \
-    "codex crewmate launch retained the managed-settings-fragile complete-bypass posture"
-  # Firstmate goes blind without the turn-end signal, which rides this same
-  # launch rather than any hook.
-  assert_contains "$launch" "notify=" \
-    "codex crewmate launch lost the turn-end notify program"
-  pass "a codex crewmate requests no hook layer and keeps its turn-end signal"
-}
-
-test_codex_secondmate_launch_keeps_the_hook_layer() {
-  local rec id sm out status launch
-  id=profile-codex-secondmate-hooks-z4d
-  rec=$(make_spawn_case profile-codex-secondmate-hooks codex "$id")
-  read_case_record "$rec"
-  printf 'approve-for-me\n' > "$HOME_DIR/config/codex-approval-mode"
-  sm="$CASE_DIR/secondmate-home"
-  make_seeded_secondmate_home "$sm" "$id"
-
-  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
-  status=$?
-  expect_code 0 "$status" "codex secondmate spawn should succeed"$'\n'"$out"
-  launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
-  assert_not_contains "$launch" "--disable hooks" \
-    "codex secondmate launch disabled the project hooks its own primary supervision depends on"
-  assert_contains "$launch" "--approve-for-me" \
-    "codex secondmate launch did not use automatic approval review"
-  assert_not_contains "$launch" "--dangerously-bypass-approvals-and-sandbox" \
-    "codex secondmate launch retained the managed-settings-fragile complete-bypass posture"
-  pass "a codex secondmate keeps its project hooks and uses automatic approval review"
-}
-
-test_codex_approval_mode_contract() {
-  local value kind rec id out launch status
-  for value in absent bypass approve-for-me invalid split; do
-    for kind in ship scout; do
-      id="approval-$value-$kind"
-      rec=$(make_spawn_case "$id" codex "$id")
-      read_case_record "$rec"
-      case "$value" in
-        absent) ;;
-        split) printf 'approve -for-me\n' > "$HOME_DIR/config/codex-approval-mode" ;;
-        *) printf '%s\n' "$value" > "$HOME_DIR/config/codex-approval-mode" ;;
-      esac
-      if [ "$kind" = ship ]; then
-        out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
-      else
-        out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout 2>&1)
-      fi
-      status=$?
-      if [ "$value" = invalid ] || [ "$value" = split ]; then
-        expect_code 1 "$status" "invalid Codex approval setting must refuse"
-        assert_contains "$out" 'config/codex-approval-mode' 'refusal must name setting'
-        assert_absent "$HOME_DIR/state/$id.meta" 'invalid setting published metadata'
-        [ ! -s "$LAUNCH_LOG" ] || fail 'invalid setting launched a worker'
-        continue
-      fi
-      expect_code 0 "$status" "$id spawn failed: $out"
-      launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
-      if [ "$value" = approve-for-me ]; then
-        assert_contains "$launch" '--approve-for-me' 'persistent fallback was not used directly'
-        assert_not_contains "$launch" '--dangerously-bypass-approvals-and-sandbox' 'fallback retried bypass'
-      else
-        assert_contains "$launch" '--dangerously-bypass-approvals-and-sandbox' 'Codex bypass default changed'
-        assert_not_contains "$launch" '--approve-for-me' 'unconfigured launch opted into fallback'
-      fi
-    done
-  done
-  pass 'Codex defaults remain bypass; persistent fallback is direct and invalid values refuse'
+  [ "$status" -ne 0 ] || fail "a removed harness must be refused even with explicit profile flags: $out"
+  assert_contains "$out" "harness 'codex' was removed" \
+    "the refusal did not name the removed harness"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused spawn published a task record"
+  [ ! -s "$LAUNCH_LOG" ] || fail "a refused spawn sent a launch command"
+  pass "the removed codex harness is refused before profile flags are applied"
 }
 
 test_grok_threads_model_and_reasoning_effort() {
@@ -2509,7 +2387,7 @@ test_launch_environment_inaccessible_config_refuses() {
 test_launch_environment_inherited_by_secondmate() {
   local rec id sm out status result
   id=env-secondmate
-  rec=$(make_spawn_case "$id" codex "$id")
+  rec=$(make_spawn_case "$id" pi "$id")
   read_case_record "$rec"
   printf 'FM_TEST_ALLOWED\n' > "$HOME_DIR/config/launch-env-allowlist"
   sm="$CASE_DIR/secondmate-home"
@@ -2519,11 +2397,16 @@ test_launch_environment_inherited_by_secondmate() {
   expect_code 0 "$status" "secondmate with an allowlist should spawn: $out"
   cmp -s "$HOME_DIR/config/launch-env-allowlist" "$sm/config/launch-env-allowlist" \
     || fail "secondmate did not inherit the launch environment contract"
-  cat > "$FAKEBIN_DIR/codex" <<'SH'
+  cat > "$FAKEBIN_DIR/pi" <<'SH'
 #!/bin/sh
+if [ "${1:-}" = --help ]; then
+  printf '%s\n' 'Pi 0.84.0' 'Options: --help --tui-mode <mode> --approve'
+  exit 0
+fi
+if [ "${1:-}" = --version ]; then printf '%s\n' '0.84.0'; exit 0; fi
 printf '%s\n' "${FM_TEST_AMBIENT_SENTINEL-unset}" "$FM_TEST_ALLOWED" "$FM_HOME" "${FM_STATE_OVERRIDE-unset}"
 SH
-  chmod +x "$FAKEBIN_DIR/codex"
+  chmod +x "$FAKEBIN_DIR/pi"
   result=$(env -i HOME="$HOME_DIR/user-home" PATH="$FAKEBIN_DIR:$PATH" \
     FM_TEST_AMBIENT_SENTINEL=synthetic-unrelated FM_TEST_ALLOWED=synthetic-provider \
     /bin/sh -c "$(cat "$LAUNCH_LOG")") || fail "secondmate's emitted command failed"
@@ -2633,7 +2516,7 @@ test_worker_launch_delivers_role_scope() {
   for kind in no-mistakes direct-PR local-only scout; do
     [ "$brief_kind" = heading ] && [ "$kind" != no-mistakes ] && continue
     id="role-launch-$brief_kind-$kind"
-    rec=$(make_spawn_case "$id" codex)
+    rec=$(make_spawn_case "$id" pi)
     read_case_record "$rec"
     if [ "$brief_kind" != scaffold ]; then
       fm_test_spawn_brief "$HOME_DIR" "$id"
@@ -2653,11 +2536,16 @@ test_worker_launch_delivers_role_scope() {
       printf '%s\n' "$content" > "$brief"
     fi
     cp "$HOME_DIR/data/$id/brief.md" "$CASE_DIR/brief-before"
-    cat > "$FAKEBIN_DIR/codex" <<'SH'
+    cat > "$FAKEBIN_DIR/pi" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-}" = --help ]; then
+  printf '%s\n' 'Pi 0.84.0' 'Options: --help --tui-mode <mode> --approve'
+  exit 0
+fi
+if [ "${1:-}" = --version ]; then printf '%s\n' '0.84.0'; exit 0; fi
 printf '%s\n' "$@" > "$FM_ROLE_PROMPT"
 SH
-    chmod +x "$FAKEBIN_DIR/codex"
+    chmod +x "$FAKEBIN_DIR/pi"
     if [ "$kind" = scout ]; then
       out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout)
     else
@@ -2884,140 +2772,39 @@ test_claude_permission_mode_invalid_refuses_before_endpoint_or_metadata() {
 
 test_non_claude_harness_ignores_claude_permission_mode() {
   local rec id out status launch
-  id=permmode-codex-z23
-  rec=$(make_spawn_case permmode-codex codex "$id")
+  id=permmode-pi-z23
+  rec=$(make_spawn_case permmode-pi pi "$id")
   read_case_record "$rec"
   printf 'auto\n' > "$HOME_DIR/config/claude-permission-mode"
 
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --harness codex)
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --harness pi)
   status=$?
-  expect_code 0 "$status" "codex spawn under claude-permission-mode=auto should succeed"
+  expect_code 0 "$status" "pi spawn under claude-permission-mode=auto should succeed"
   launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" "codex " "codex launch did not run codex"
-  assert_not_contains "$launch" "--permission-mode" "the claude permission flag must not leak into a codex launch"
+  assert_contains "$launch" "pi " "pi launch did not run pi"
+  assert_not_contains "$launch" "--permission-mode" "the claude permission flag must not leak into a pi launch"
   pass "config/claude-permission-mode changes claude launches only"
 }
 
-# Exercise the public spawn interface for all Codex worker roles. The captured
-# command is what the pane receives, not an inspection of the launch template.
-test_codex_permission_modes() {
-  local kind mode rec id sm out status launch flags
-  for kind in ship scout secondmate; do
-    for mode in absent bypass restricted; do
-      id="codex-perm-$kind-$mode"
-      rec=$(make_spawn_case "$id" codex "$id")
-      read_case_record "$rec"
-      if [ "$mode" != absent ]; then
-        printf '%s\n' "$mode" > "$HOME_DIR/config/codex-permission-mode"
-      fi
-      local args=("$id" "$PROJ_DIR")
-      case "$kind" in
-      ship) args+=(--mode no-mistakes --yolo off) ;;
-      scout) args+=(--scout) ;;
-      secondmate)
-        sm="$CASE_DIR/secondmate-home"
-        make_seeded_secondmate_home "$sm" "$id"
-        args=("$id" "$sm" --secondmate)
-        ;;
-      esac
-      out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
-        "${args[@]}" --model gpt-5 --effort high)
-      status=$?
-      expect_code 0 "$status" "Codex $kind spawn under $mode should succeed: $out"
-      launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
-      flags="codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' "
-      if [ "$mode" = restricted ]; then
-        flags+='--sandbox workspace-write --ask-for-approval on-request '
-        assert_not_contains "$launch" '--dangerously-bypass-approvals-and-sandbox' "restricted must not bypass approvals"
-      else
-        flags+='--dangerously-bypass-approvals-and-sandbox '
-        assert_not_contains "$launch" '--sandbox' "default must not add a sandbox flag"
-        assert_not_contains "$launch" '--ask-for-approval' "default must not add an approval flag"
-      fi
-      if [ "$kind" = secondmate ]; then
-        assert_not_contains "$launch" '--disable hooks' "secondmate must retain primary hooks"
-        assert_not_contains "$launch" 'notify=' "secondmate must retain its own turn-end wiring"
-      else
-        flags+='--disable hooks -c '
-        assert_contains "$launch" 'notify=' "worker must retain its turn-end notification"
-      fi
-      assert_contains "$launch" "$flags" "permission selection changed model, effort, or hook flags"
-      assert_not_contains "$launch" '--add-dir' "Codex must not grant extra writable directories"
-    done
-  done
-  pass "Codex absent, bypass, and restricted modes preserve flags for ships, scouts, and secondmates"
-}
-
-test_codex_permission_invalid_refuses_before_mutation() {
-  local kind value rec id out status file before
-  for kind in ship secondmate relaunch; do
-    for value in invalid empty whitespace directory dangling unreadable; do
-      id="codex-perm-$kind-$value"
-      rec=$(make_spawn_case "$id" codex "$id")
-      read_case_record "$rec"
-      file="$HOME_DIR/config/codex-permission-mode"
-      case "$value" in
-      invalid) printf 'auto\n' > "$file" ;;
-      empty) : > "$file" ;;
-      whitespace) printf ' restricted\n' > "$file" ;;
-      directory) mkdir "$file" ;;
-      dangling) ln -s "$CASE_DIR/missing" "$file" ;;
-      unreadable)
-        printf 'restricted\n' > "$file"
-        chmod 000 "$file"
-        if [ -r "$file" ]; then
-          echo 'skip: current user can read mode-000 files'
-          continue
-        fi
-        ;;
-      esac
-      local args=("$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
-      case "$kind" in
-      secondmate) args=("$id" "$CASE_DIR/not-yet-seeded" --secondmate) ;;
-      relaunch)
-        args=("$id" --relaunch)
-        printf 'preserve existing task metadata\n' > "$HOME_DIR/state/$id.meta"
-        ;;
-      esac
-      before=$(ls -a "$HOME_DIR/state")
-      out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "${args[@]}")
-      status=$?
-      expect_code 1 "$status" "invalid Codex config must refuse $kind: $value"
-      assert_contains "$out" 'config/codex-permission-mode' "refusal must identify the setting"
-      assert_contains "$out" 'bypass or restricted' "refusal must identify accepted values"
-      [ ! -s "$LAUNCH_LOG" ] || fail "invalid config launched an agent"
-      [ ! -e "$FAKEBIN_DIR/.spawn-windows" ] || fail "invalid config created an endpoint"
-      [ "$(ls -a "$HOME_DIR/state")" = "$before" ] || fail "invalid config mutated state"
-      if [ "$kind" = relaunch ]; then
-        [ "$(cat "$HOME_DIR/state/$id.meta")" = 'preserve existing task metadata' ] \
-          || fail "invalid config changed relaunch metadata"
-      else
-        assert_absent "$HOME_DIR/state/$id.meta" "invalid config wrote metadata"
-      fi
-    done
-  done
-  pass "invalid Codex permission files refuse spawns and relaunches before mutation"
-}
-
-test_codex_permission_does_not_change_other_harnesses() {
-  local rec id out status launch
-  id=codex-perm-claude
-  rec=$(make_spawn_case "$id" claude "$id")
+# The Codex permission-mode cases pinned config/codex-permission-mode and its
+# bypass/restricted launch flags. Codex was removed from the supported harness
+# set, so those flags have no launch surface. Retire them and pin the removal
+# boundary on the public spawn interface instead.
+test_removed_codex_permission_mode_is_refused() {
+  local rec id out status
+  id=codex-perm-removed
+  rec=$(make_spawn_case codex-perm-removed codex "$id")
   read_case_record "$rec"
   printf 'restricted\n' > "$HOME_DIR/config/codex-permission-mode"
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
   status=$?
-  expect_code 0 "$status" "Claude spawn with Codex restriction should succeed: $out"
-  launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" 'claude --dangerously-skip-permissions ' "Codex setting changed Claude permissions"
-  assert_not_contains "$launch" '--sandbox' "Codex sandbox flags leaked to Claude"
-  assert_not_contains "$launch" '--ask-for-approval' "Codex approval flags leaked to Claude"
-  pass "Codex restricted mode leaves other harness launch flags unchanged"
+  [ "$status" -ne 0 ] || fail "a removed harness must be refused with a permission mode set: $out"
+  assert_contains "$out" "codex was removed" "the refusal did not name the removed harness" || return 1
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused spawn published a task record"
+  pass "the removed codex harness is refused before its permission mode is read"
 }
 
-test_codex_permission_modes
-test_codex_permission_invalid_refuses_before_mutation
-test_codex_permission_does_not_change_other_harnesses
+test_removed_codex_permission_mode_is_refused
 test_launch_preserves_inherited_git_config
 test_worker_launch_delivers_role_scope
 test_no_profile_keeps_claude_profile_defaults
@@ -3045,12 +2832,7 @@ test_raw_launch_trailing_separator_or_comment_keeps_disarm
 test_raw_launch_reporter_follows_established_agent
 test_chained_raw_launch_strips_ai_trailer_in_every_step
 test_claude_threads_model_and_effort
-test_codex_threads_model_and_effort
-test_codex_threads_model_and_max_effort
-test_codex_omits_max_effort_for_unsupported_model
-test_codex_crewmate_launch_disables_the_hook_layer
-test_codex_secondmate_launch_keeps_the_hook_layer
-test_codex_approval_mode_contract
+test_removed_codex_harness_is_refused_with_profile_flags
 test_grok_threads_model_and_reasoning_effort
 test_grok_omits_invalid_max_reasoning_effort
 test_grok_omits_invalid_xhigh_reasoning_effort

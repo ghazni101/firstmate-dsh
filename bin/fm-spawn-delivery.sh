@@ -127,7 +127,9 @@ spawn_enter_recorded_worktree() {
 # before launch prevents the probe from becoming input to a live worker.
 spawn_assert_agent_worktree() {
   local expected seen i last_poll=19 agent_status
-  [ "$KIND" = secondmate ] && return 0
+  # A fresh secondmate launch opens its pane in its recorded home. Only a
+  # relaunch can drift, and that is where the pane cwd must be proved.
+  [ "$KIND" = secondmate ] && [ "$RELAUNCH" -eq 0 ] && return 0
   case "$BACKEND" in orca|t3code) return 0 ;; esac
   expected=$(real_path_or_raw "$WT")
   # The out-of-pane Herdr lease no longer waits for the new shell to process
@@ -160,9 +162,9 @@ spawn_assert_agent_worktree() {
 # before any launch environment is built, for every ship, scout, and
 # secondmate.
 spawn_acquire_task_copy() {
-  [ "$KIND" = secondmate ] && return 0
+  [ "$KIND" = secondmate ] && [ "$RELAUNCH" -eq 0 ] && return 0
   local relaunch_wt_real relaunch_seen relaunch_cd_path
-  if [ "$RELAUNCH" -eq 1 ]; then
+  if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ]; then
     # No worktree is acquired: the recorded one is reused as-is. Prove the
     # adopted endpoint's shell is actually sitting in it, and move it back when
     # it is not, rather than launching wherever the pane drifted.
@@ -190,6 +192,12 @@ spawn_acquire_task_copy() {
       exit 1
     fi
     validate_spawn_worktree "relaunch" "$T"
+  elif [ "$RELAUNCH" -eq 1 ]; then
+    # A secondmate's recorded home is its copy. Never move a drifted pane, and
+    # do not apply the pool-worktree isolation gate to a home directory:
+    # spawn_assert_agent_worktree below proves the pane sits in the recorded
+    # home and refuses otherwise, so the replacement cannot start elsewhere.
+    :
   else
     case "$BACKEND" in
     herdr) spawn_lease_herdr_slot ;;

@@ -19,6 +19,45 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-spawn-pool-base-freshen)
 
+# The origin-shape cases append to the config file `git rev-parse --git-path
+# config` reports for their pooled slot. Snapshot the caller repository's config
+# before any case runs and restore it byte-for-byte on exit, including a failed
+# or interrupted run, so a fixture can never leave the caller without its
+# origin URL or fetch refspec.
+CALLER_GIT_CONFIG=$(git -C "$ROOT" rev-parse --path-format=absolute --git-path config 2>/dev/null || true)
+CALLER_GIT_CONFIG_BEFORE=
+if [ -n "$CALLER_GIT_CONFIG" ] && [ -f "$CALLER_GIT_CONFIG" ]; then
+  CALLER_GIT_CONFIG_BEFORE="$TMP_ROOT/caller-git-config.before"
+  cp "$CALLER_GIT_CONFIG" "$CALLER_GIT_CONFIG_BEFORE"
+fi
+restore_caller_git_config() {
+  if [ -n "$CALLER_GIT_CONFIG_BEFORE" ] && [ -f "$CALLER_GIT_CONFIG" ] &&
+    ! cmp -s "$CALLER_GIT_CONFIG_BEFORE" "$CALLER_GIT_CONFIG"; then
+    cp "$CALLER_GIT_CONFIG_BEFORE" "$CALLER_GIT_CONFIG"
+  fi
+}
+pool_base_cleanup() {
+  restore_caller_git_config
+  fm_test_cleanup
+}
+trap pool_base_cleanup EXIT
+
+# The origin-shape cases above append include directives to the config path
+# their pooled slot reports. Prove none of them reached the caller repository.
+test_caller_git_config_stays_byte_identical() {
+  [ -n "$CALLER_GIT_CONFIG_BEFORE" ] || {
+    pass "no caller git config to compare"
+    return 0
+  }
+  cmp -s "$CALLER_GIT_CONFIG_BEFORE" "$CALLER_GIT_CONFIG" \
+    || fail "a pooled-fixture case modified the caller repository's git config"
+  [ -n "$(git -C "$ROOT" config --get remote.origin.url 2>/dev/null)" ] \
+    || fail "a fixture removed the caller repository's origin URL"
+  [ -n "$(git -C "$ROOT" config --get remote.origin.fetch 2>/dev/null)" ] \
+    || fail "a fixture removed the caller repository's origin fetch refspec"
+  pass "pooled fixtures leave the caller repository's git config byte-identical"
+}
+
 make_case() {
   local name=$1 id=$2 default=${3:-main} case_dir home project origin pool publisher fakebin initial
   case_dir="$TMP_ROOT/$name"
@@ -156,9 +195,9 @@ test_linked_spawning_home_rejects_primary_before_refresh() {
       # own project comparison, and the repository primary (named directly or
       # through a symlink) fails the isolation screen the poll shares with the
       # guard. The refusal names the last path the pane reported.
-      assert_contains "$out" "did not enter an isolated worktree" \
+      assert_contains "$out" "did not yield an isolated worktree" \
         "spawn did not explain its isolation refusal"
-      assert_contains "$out" "last seen" "refusal did not name the path the pane reported"
+      assert_contains "$out" "resolved '$POOL_DIR'" "refusal did not name the path the lease reported"
       [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "refused spawn published task metadata"
       [ ! -e "$primary/.git/FETCH_HEAD" ] || fail "refused spawn fetched before proving isolation"
     fi
@@ -731,10 +770,10 @@ test_pool_slot_claim_follows_the_spawn_outcome() {
   [ "$status" -ne 0 ] || fail "spawn launched a worker on a slot it could not claim"
   assert_contains "$out" "could not claim Treehouse pool slot" \
     "spawn did not name the unclaimable slot as the reason"
-  assert_contains "$out" "inspect window" \
-    "a non-polytoken unclaimable-slot refusal must keep its window pointer"
-  assert_not_contains "$out" "is closed on exit" \
-    "a non-polytoken refusal must not claim its window was closed"
+  assert_contains "$out" "is closed on exit" \
+    "a kept-harness unclaimable-slot refusal must say its endpoint closes on exit"
+  assert_not_contains "$out" "inspect window" \
+    "a kept-harness refusal must not leave the endpoint pointer ambiguous"
   [ -d "$SLOT_CLAIM" ] || fail "spawn replaced the directory blocking its slot claim"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "spawn published a record for an unclaimable slot"
   [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$before" ] \
@@ -832,153 +871,80 @@ SH
 
 # A launch refused after it claimed its slot must leave the pool and the task
 # records exactly as it found them, so a retry of the same task and a later
-# second task each land on a slot of their own. The refusal here is a polytoken
-# launch into a project that tracks its own .polytoken/hooks.json.
+# second task each land on a slot of their own. The refusal vehicle is a dirty
+# leased copy, which the current freshness gate refuses before publication;
+# the removed polytoken hook-layer refusal no longer exists to drive it.
 test_refused_launch_leaves_the_pool_for_a_retry_and_a_second_task() {
-  local rec id other out status slot_root world claim1 claim2
+  local rec id other out status
   id='pool-refused-retry-r1'
   other='pool-refused-second-r1'
   rm -rf "/tmp/fm-$id" "/tmp/fm-$other"
   rec=$(make_case refused-retry "$id")
   read_case_record "$rec"
   fm_test_spawn_brief "$HOME_DIR" "$other"
-  mkdir -p "$CASE_DIR/publisher/.polytoken"
-  printf '[]\n' > "$CASE_DIR/publisher/.polytoken/hooks.json"
-  git -C "$CASE_DIR/publisher" add .polytoken/hooks.json
-  git -C "$CASE_DIR/publisher" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm project-hooks
-  git -C "$CASE_DIR/publisher" push --quiet origin "$DEFAULT_BRANCH"
-  slot_root="$CASE_DIR/slots"
-  mkdir -p "$slot_root/1" "$slot_root/2"
-  git -C "$PROJECT_DIR" worktree move "$POOL_DIR" "$slot_root/1/project"
-  git -C "$PROJECT_DIR" worktree add --quiet --detach "$slot_root/2/project" "$INITIAL_SHA"
-  printf '{"worktrees":[{"name":"1","path":"%s"},{"name":"2","path":"%s"}]}\n' \
-    "$slot_root/1/project" "$slot_root/2/project" > "$slot_root/treehouse-state.json"
-  claim1="$slot_root/1/.fm-slot-owner"
-  claim2="$slot_root/2/.fm-slot-owner"
-  world="$CASE_DIR/tmux-world"
-  install_pool_world_tmux "$FAKEBIN_DIR" "$world" "$slot_root"
-  cat > "$FAKEBIN_DIR/polytoken" <<'SH'
-#!/usr/bin/env bash
-case "$*" in
-  *"print models"*) printf 'zai/glm-5.3-flash\nzai/glm-5.3-flash(low)\n' ;;
-esac
-exit 0
-SH
-  chmod +x "$FAKEBIN_DIR/polytoken"
+  printf 'uncommitted work\n' >> "$POOL_DIR/README.md"
 
-  out=$(run_spawn "$id" --harness polytoken --model zai/glm-5.3-flash --effort low --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
   status=$?
-  [ "$status" -ne 0 ] || fail "a polytoken launch into a project with its own hook layer should refuse"
-  assert_contains "$out" "not firstmate's to clobber" "the refusal message changed"$'\n'"$out"
+  [ "$status" -ne 0 ] || fail "a launch into a dirty leased copy should refuse"
+  assert_contains "$out" "is not clean" "the refusal message changed"$'\n'"$out"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "the refused launch published a task record"
-  [ ! -e "$world/fm-$id.id" ] \
-    || fail "the refused launch left its window open, still leasing $(cat "$world/fm-$id.path")"
-  [ ! -e "$claim1" ] && [ ! -e "$claim2" ] || fail "the refused launch left a slot claim behind"
-  [ ! -e "/tmp/fm-$id" ] || fail "the refused launch left its task temp root behind"
+  # A dirty copy is kept for the operator, and so is its task temp root: the
+  # retry below proves the retained paths do not block the same id again.
+  [ -e "/tmp/fm-$id" ] || fail "a refused dirty-copy launch discarded the task temp root"
 
-  out=$(run_spawn "$id" --harness codex --mode no-mistakes --yolo off)
+  git -C "$POOL_DIR" checkout -- README.md
+  out=$(run_spawn "$id" --harness "$FM_TEST_FIXTURE_HARNESS" --mode no-mistakes --yolo off)
   status=$?
   expect_code 0 "$status" "the retry of the refused task should launch"$'\n'"$out"
-  assert_grep "worktree=$slot_root/1/project" "$HOME_DIR/state/$id.meta" \
-    "the retry did not land on the slot the refused launch returned"
+  assert_grep "worktree=$POOL_DIR" "$HOME_DIR/state/$id.meta" \
+    "the retry did not land on the copy the refused launch returned"
 
-  out=$(run_spawn "$other" --harness codex --mode no-mistakes --yolo off)
+  out=$(run_spawn "$other" --harness "$FM_TEST_FIXTURE_HARNESS" --mode no-mistakes --yolo off)
   status=$?
   expect_code 0 "$status" "a second task spawned after the retry should launch"$'\n'"$out"
-  assert_grep "worktree=$slot_root/2/project" "$HOME_DIR/state/$other.meta" \
-    "the second task was handed the retried task's slot"
-  grep -Fxq -- "task=$id" "$claim1" || fail "slot 1 is not claimed by the retried task: $(cat "$claim1" 2>/dev/null)"
-  grep -Fxq -- "task=$other" "$claim2" || fail "slot 2 is not claimed by the second task: $(cat "$claim2" 2>/dev/null)"
+  assert_grep "worktree=$POOL_DIR" "$HOME_DIR/state/$other.meta" \
+    "the second task was not launched into its own lease"
   rm -rf "/tmp/fm-$id" "/tmp/fm-$other" "/tmp/fm-$id+"* "/tmp/fm-$other+"*
   pass "a launch refused after its slot claim leaves the pool for a retry and a second task"
 }
 
-# A refused polytoken launch removes its per-id paths only under the per-id
-# spawn lock. Here a retry of the same id takes that lock while the abort is
-# still closing the window, so the abort must leave the task temp root the
-# retry may already be reusing, while still closing the window and returning
-# the slot.
-test_refused_launch_spares_per_id_paths_under_a_contended_spawn_lock() {
-  local rec id out status slot_root world holder_pid
-  id='pool-refused-contended-r1'
-  rm -rf "/tmp/fm-$id"
-  rec=$(make_case refused-contended "$id")
+# The contended per-id cleanup case used a polytoken hook-layer refusal while a
+# stand-in retry held the spawn lock. Polytoken was removed from the stack, so
+# that refusal no longer exists to stage the contention. The lock-safe cleanup
+# contract is owned and covered by tests/fm-spawn-abort.test.sh and the kept-
+# harness abort cases in tests/fm-spawn-herdr-lease.test.sh; pin the removal
+# boundary here instead of leaving a test whose subject no longer runs.
+test_removed_polytoken_harness_is_refused() {
+  local rec id out status
+  id='pool-refused-polytoken-r1'
+  rec=$(make_case refused-polytoken "$id")
   read_case_record "$rec"
-  mkdir -p "$CASE_DIR/publisher/.polytoken"
-  printf '[]\n' > "$CASE_DIR/publisher/.polytoken/hooks.json"
-  git -C "$CASE_DIR/publisher" add .polytoken/hooks.json
-  git -C "$CASE_DIR/publisher" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm project-hooks
-  git -C "$CASE_DIR/publisher" push --quiet origin "$DEFAULT_BRANCH"
-  slot_root="$CASE_DIR/slots"
-  mkdir -p "$slot_root/1"
-  git -C "$PROJECT_DIR" worktree move "$POOL_DIR" "$slot_root/1/project"
-  printf '{"worktrees":[{"name":"1","path":"%s"}]}\n' "$slot_root/1/project" \
-    > "$slot_root/treehouse-state.json"
-  world="$CASE_DIR/tmux-world"
-  install_pool_world_tmux "$FAKEBIN_DIR" "$world" "$slot_root"
-  mv "$FAKEBIN_DIR/tmux" "$FAKEBIN_DIR/tmux.world"
-  cat > "$FAKEBIN_DIR/tmux" <<SH
-#!/usr/bin/env bash
-if [ "\${1:-}" = kill-window ] && [ ! -e '$CASE_DIR/holder.pid' ]; then
-  FM_HOME='$HOME_DIR' nohup bash -c '. "\$1"; fm_lock_try_acquire "\$2" || exit 1; : > "\$3"; exec /bin/sleep 60' _ \\
-    '$ROOT/bin/fm-wake-lib.sh' '$HOME_DIR/state/.spawn-$id.lock' '$CASE_DIR/holder.ready' \\
-    >/dev/null 2>&1 &
-  printf '%s\n' "\$!" > '$CASE_DIR/holder.pid'
-  n=0
-  while [ ! -e '$CASE_DIR/holder.ready' ] && [ "\$n" -lt 100 ]; do /bin/sleep 0.05; n=\$((n + 1)); done
-fi
-exec '$FAKEBIN_DIR/tmux.world' "\$@"
-SH
-  chmod +x "$FAKEBIN_DIR/tmux"
-  cat > "$FAKEBIN_DIR/polytoken" <<'SH'
-#!/usr/bin/env bash
-case "$*" in
-  *"print models"*) printf 'zai/glm-5.3-flash\nzai/glm-5.3-flash(low)\n' ;;
-esac
-exit 0
-SH
-  chmod +x "$FAKEBIN_DIR/polytoken"
-
-  out=$(run_spawn "$id" --harness polytoken --model zai/glm-5.3-flash --effort low --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --harness polytoken --mode no-mistakes --yolo off)
   status=$?
-  holder_pid=$(cat "$CASE_DIR/holder.pid" 2>/dev/null || true)
-  [ -z "$holder_pid" ] || kill "$holder_pid" 2>/dev/null || true
-  [ "$status" -ne 0 ] || fail "a polytoken launch into a project with its own hook layer should refuse"
-  [ -e "$CASE_DIR/holder.ready" ] || fail "the stand-in retry never took the per-id spawn lock"$'\n'"$out"
-  assert_contains "$out" "another spawn of $id holds its spawn lock" \
-    "the abort did not report skipping its per-id cleanup"$'\n'"$out"
-  [ -d "/tmp/fm-$id" ] || fail "the abort removed the task temp root while another spawn held the per-id lock"
-  [ ! -e "$world/fm-$id.id" ] || fail "the contended abort left its window open"
-  [ ! -e "$slot_root/1/.fm-slot-owner" ] || fail "the contended abort left its slot claim behind"
-  rm -rf "/tmp/fm-$id"
-  pass "a refused polytoken launch leaves its per-id paths alone while another spawn holds the per-id lock"
+  [ "$status" -ne 0 ] || fail "a removed harness must be refused: $out"
+  assert_contains "$out" "harness 'polytoken' was removed" \
+    "the refusal did not name the removed harness"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused spawn published a task record"
+  pass "the removed polytoken harness is refused before it can lease or mutate a pool slot"
 }
 
-# A launch on any harness other than polytoken keeps main's abort behavior: its
-# pre-publication claim is dropped under the allocation lock, but the window
-# it opened, and with it the slot's lease, stays for the operator to inspect.
-test_non_polytoken_refused_launch_keeps_its_window() {
-  local rec id out status slot_root world
-  id='pool-refused-codex-r1'
-  rec=$(make_originless_case refused-codex "$id")
+# A launch refused before publication must drop its slot claim and leave no
+# task record. The old "every harness but polytoken keeps its window" split is
+# gone: fresh-endpoint cleanup now applies to kept harnesses too.
+test_kept_harness_refused_launch_publishes_nothing() {
+  local rec id out status
+  id='pool-refused-kept-r1'
+  rec=$(make_originless_case refused-kept "$id")
   read_case_record "$rec"
-  slot_root="$CASE_DIR/slots"
-  mkdir -p "$slot_root/1"
-  git -C "$PROJECT_DIR" worktree move "$POOL_DIR" "$slot_root/1/project"
-  printf '{"worktrees":[{"name":"1","path":"%s"}]}\n' "$slot_root/1/project" \
-    > "$slot_root/treehouse-state.json"
-  git -C "$slot_root/1/project" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
-  world="$CASE_DIR/tmux-world"
-  install_pool_world_tmux "$FAKEBIN_DIR" "$world" "$slot_root"
+  git -C "$POOL_DIR" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
 
-  out=$(run_spawn "$id" --harness codex --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --harness "$FM_TEST_FIXTURE_HARNESS" --mode no-mistakes --yolo off)
   status=$?
-  [ "$status" -ne 0 ] || fail "a codex launch on a slot with an unusable origin should refuse"
-  assert_contains "$out" "could not fetch origin" "the codex refusal message changed"$'\n'"$out"
-  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "the refused codex launch published a task record"
-  [ -e "$world/fm-$id.id" ] || fail "a non-polytoken refusal closed its window, unlike main"
-  [ ! -e "$slot_root/1/.fm-slot-owner" ] || fail "the refused codex launch left its slot claim"
-  pass "a non-polytoken launch refused after its slot claim keeps main's abort behavior"
+  [ "$status" -ne 0 ] || fail "a launch on a slot with an unusable origin should refuse"
+  assert_contains "$out" "could not fetch origin" "the refusal message changed"$'\n'"$out"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "the refused launch published a task record"
+  pass "a kept-harness launch refused by an unusable origin publishes nothing"
 }
 
 # install_isolation_flip_git <fakebin> <worktree>: a git that answers every
@@ -1005,50 +971,35 @@ SH
   chmod +x "$fakebin/git"
 }
 
-# The post-poll treehouse-get isolation refusal points the operator at the
-# window only when that window survives the abort: every harness but polytoken
-# keeps main's `Inspect target <window>`, and a fresh polytoken spawn, whose
-# window is closed on exit, names the worktree and says so instead.
+
+# Once a fresh endpoint closes on abort for every harness, the isolation
+# refusal must say so instead of pointing the operator at a window that no
+# longer survives. The old polytoken-vs-main pointer split is gone; pin the
+# kept-harness pointer and that the removed harness is refused.
 test_treehouse_isolation_refusal_points_at_what_survives() {
   local rec id out status
-  id='pool-isolation-codex-r1'
-  rec=$(make_case isolation-codex "$id")
+  id='pool-isolation-kept-r1'
+  rec=$(make_case isolation-kept "$id")
   read_case_record "$rec"
-  fm_test_fake_sleep_noop "$FAKEBIN_DIR"
-  install_isolation_flip_git "$FAKEBIN_DIR" "$POOL_DIR"
-  out=$(run_spawn "$id" --harness codex --mode no-mistakes --yolo off)
-  status=$?
-  [ "$status" -ne 0 ] || fail "a codex spawn whose slot stopped being isolated should refuse"
-  assert_contains "$out" "treehouse get did not yield an isolated worktree" \
-    "the codex spawn did not refuse on the post-poll isolation check"$'\n'"$out"
-  assert_contains "$out" "refusing to launch to avoid tangling the primary checkout. Inspect target firstmate:fm-$id" \
-    "a non-polytoken isolation refusal must keep main's window pointer"$'\n'"$out"
-  assert_not_contains "$out" "is closed on exit" \
-    "a non-polytoken isolation refusal must not claim its window was closed"
-
-  id='pool-isolation-polytoken-r1'
-  rec=$(make_case isolation-polytoken "$id")
-  read_case_record "$rec"
-  fm_test_fake_sleep_noop "$FAKEBIN_DIR"
-  install_isolation_flip_git "$FAKEBIN_DIR" "$POOL_DIR"
-  cat > "$FAKEBIN_DIR/polytoken" <<'SH'
+  # The current isolation gate proves the leased copy is distinct from the
+  # project's primary checkout. Have the pool hand back that primary directly;
+  # the refusal must name the lease and the closed endpoint, not a live window.
+  cat > "$FAKEBIN_DIR/treehouse" <<SH
 #!/usr/bin/env bash
-case "$*" in
-  *"print models"*) printf 'zai/glm-5.3-flash\nzai/glm-5.3-flash(low)\n' ;;
-esac
+if [ "\${1:-} \${2:-}" = 'get --lease' ]; then printf '%s\n' '$PROJECT_DIR'; fi
 exit 0
 SH
-  chmod +x "$FAKEBIN_DIR/polytoken"
-  out=$(run_spawn "$id" --harness polytoken --model zai/glm-5.3-flash --effort low --mode no-mistakes --yolo off)
+  chmod +x "$FAKEBIN_DIR/treehouse"
+  out=$(run_spawn "$id" --harness "$FM_TEST_FIXTURE_HARNESS" --mode no-mistakes --yolo off)
   status=$?
-  [ "$status" -ne 0 ] || fail "a polytoken spawn whose slot stopped being isolated should refuse"
-  assert_contains "$out" "treehouse get did not yield an isolated worktree" \
-    "the polytoken spawn did not refuse on the post-poll isolation check"$'\n'"$out"
-  assert_contains "$out" "pool (window firstmate:fm-$id is closed on exit" \
-    "a fresh polytoken isolation refusal must name the worktree and the closed window"$'\n'"$out"
-  assert_not_contains "$out" "Inspect target firstmate:fm-$id" \
-    "a fresh polytoken isolation refusal must not point at its closed window"
-  rm -rf "/tmp/fm-$id" "/tmp/fm-$id+"*
+  [ "$status" -ne 0 ] || fail "a lease that is the project primary checkout should refuse"$'\n'"$out"
+  assert_contains "$out" "did not yield an isolated worktree" \
+    "the spawn did not refuse on the lease isolation check"$'\n'"$out"
+  # A refusal raised while acquiring the lease, before the endpoint-close flag
+  # is armed, still uses the inspect pointer. The close-on-exit pointer is
+  # pinned by test_pool_slot_claim_follows_the_spawn_outcome.
+  assert_contains "$out" "Inspect target" \
+    "the lease isolation refusal must still name what to inspect"$'\n'"$out"
   pass "the treehouse-get isolation refusal points only at what survives the abort"
 }
 
@@ -1194,9 +1145,10 @@ make_local_landing_case() { # <name> <id> <landings>
   origin="$case_dir/origin.git"
   pool="$case_dir/pool"
   fakebin=$(make_spawn_fakebin "$case_dir/fake")
+  fm_test_fake_treehouse_lease "$fakebin"
 
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
-  printf 'codex\n' > "$home/config/crew-harness"
+  printf '%s\n' "$FM_TEST_FIXTURE_HARNESS" > "$home/config/crew-harness"
   fm_test_spawn_brief "$home" "$id"
   touch "$home/state/.last-watcher-beat"
 
@@ -1384,8 +1336,8 @@ test_opt_in_still_refuses_an_unclean_slot_first() {
 test_remote_seeded_home_spawns_from_treehouse_pool
 test_pool_slot_claim_follows_the_spawn_outcome
 test_refused_launch_leaves_the_pool_for_a_retry_and_a_second_task
-test_refused_launch_spares_per_id_paths_under_a_contended_spawn_lock
-test_non_polytoken_refused_launch_keeps_its_window
+test_removed_polytoken_harness_is_refused
+test_kept_harness_refused_launch_publishes_nothing
 test_treehouse_isolation_refusal_points_at_what_survives
 test_linked_spawning_home_rejects_primary_before_refresh
 test_stale_pool_base_refreshes_before_branching
@@ -1413,5 +1365,6 @@ test_default_keeps_origin_tip_while_the_primary_leads
 test_opt_in_base_follows_the_delivery_and_the_review_follows_the_base
 test_opt_in_keeps_a_named_base_branch_on_origin
 test_opt_in_still_refuses_an_unclean_slot_first
+test_caller_git_config_stays_byte_identical
 
 echo "# all fm-spawn-pool-base-freshen tests passed"
