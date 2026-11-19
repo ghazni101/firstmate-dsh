@@ -48,6 +48,7 @@ import {
   resetEngineInboxDeliveries,
   resolveEngineConfig,
   updateEngineRecord,
+  withdrawEngineBatch,
   writeEngineRecord,
 } from './engine-records.js'
 
@@ -357,7 +358,13 @@ export class EngineHost {
         retryCount: pending.length,
         signal,
       })
-      if (!creation.ok) return this.remember({ ...creation, reason })
+      if (!creation.ok) {
+        // No engine exists to read this batch, and the next tick re-diffs the
+        // same changes into a fresh creation batch; leaving it would stack one
+        // undelivered duplicate per failed creation.
+        withdrawEngineBatch({ home: this.home, parentSession: this.parentSession, id: batch.id, now: this.now })
+        return this.remember({ ...creation, reason })
+      }
       this.writeSeen(nextSeen)
       markBatchDelivered({ home: this.home, parentSession: this.parentSession, id: batch.id, now: this.now })
       if (pending.length > 0) {

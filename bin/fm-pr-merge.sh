@@ -670,6 +670,10 @@ META="$STATE/$ID.meta"
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-lease-lib.sh"
 fm_lease_forbid_branch "PR merge (fm-pr-merge)"
+# Task lease: in a config/dsh-native-lease home a merge runs only under the live
+# lease of the task it lands (docs/dsh-native-architecture.md section 6.4);
+# inert elsewhere.
+fm_lease_guard "$ID" "PR merge (fm-pr-merge)"
 
 if [ ! -f "$META" ] || [ -L "$META" ]; then
   echo "error: task metadata is unavailable" >&2

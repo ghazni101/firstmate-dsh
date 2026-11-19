@@ -48,6 +48,17 @@ export const MAINTENANCE_TTL_MS = 300000
 /** The reserved lease id for the narrow maintenance scope. */
 export const MAINTENANCE_TASK = 'maintenance'
 
+/** The only operations the maintenance lease may be held for (section 4.8). */
+export const MAINTENANCE_PURPOSES = Object.freeze([
+  'bootstrap-network',
+  'fleet-sync',
+  'self-update',
+  'capacity-allocate',
+])
+
+/** Module-private grant that lets {@link acquireMaintenanceLease} claim the reserved id. */
+const MAINTENANCE_GRANT = Symbol('maintenance-grant')
+
 /** Record format version this module reads and writes. */
 const RECORD_VERSION = 1
 
@@ -194,16 +205,17 @@ function sleepSync(ms) {
  * @param options - mutex inputs and the body.
  * @param options.home - Firstmate home.
  * @param options.task - task id.
- * @param options.now - clock function.
- * @param options.lockWaitMs - bounded wait.
+ * @param options.lockWaitMs - bounded wait, in wall-clock milliseconds.
  * @param options.body - the critical section.
  * @returns the body's result.
  */
-function withMutex({ home, task, now = Date.now, lockWaitMs = DEFAULT_LOCK_WAIT_MS }, body) {
-  const clock = typeof now === 'function' ? now : () => now
+function withMutex({ home, task, lockWaitMs = DEFAULT_LOCK_WAIT_MS }, body) {
+  // The mutex is timed by the wall clock, never by an injected lease clock: its
+  // staleness is judged against the lock directory's filesystem mtime, and its
+  // bounded wait must elapse even when a caller fixes `now` for the record.
   const { dir, lockDir } = leasePaths(home, task)
   mkdirSync(dir, { recursive: true })
-  const deadline = clock() + Math.max(0, lockWaitMs)
+  const deadline = Date.now() + Math.max(0, lockWaitMs)
   for (;;) {
     try {
       mkdirSync(lockDir)
@@ -212,7 +224,7 @@ function withMutex({ home, task, now = Date.now, lockWaitMs = DEFAULT_LOCK_WAIT_
       if (error?.code !== 'EEXIST') throw error
       let stale = false
       try {
-        stale = clock() - statSync(lockDir).mtimeMs > LOCK_STALE_MS
+        stale = Date.now() - statSync(lockDir).mtimeMs > LOCK_STALE_MS
       } catch {
         // The holder released between the failure and the stat; retry.
         continue
@@ -225,7 +237,7 @@ function withMutex({ home, task, now = Date.now, lockWaitMs = DEFAULT_LOCK_WAIT_
         }
         continue
       }
-      if (clock() >= deadline) {
+      if (Date.now() >= deadline) {
         throw new LeaseError(
           'busy',
           `lease mutex for task '${task}' stayed busy past ${lockWaitMs}ms`,
@@ -271,15 +283,25 @@ export function acquireLease({
   ttlMs = DEFAULT_TTL_MS,
   now = Date.now,
   lockWaitMs = DEFAULT_LOCK_WAIT_MS,
+  [MAINTENANCE_GRANT]: maintenanceGrant = false,
 } = {}) {
   const target = assertSameHome(identity, home)
   requireHome(target)
   validateTaskId(task)
+  // The maintenance id is reserved: it cannot be claimed as a task, so only
+  // acquireMaintenanceLease, for one of its named purposes, may take it.
+  if (task === MAINTENANCE_TASK && maintenanceGrant !== true) {
+    throw new LeaseError(
+      'usage',
+      `'${MAINTENANCE_TASK}' is the reserved maintenance lease id and cannot be claimed as a task`,
+      { task },
+    )
+  }
   const clock = typeof now === 'function' ? now : () => now
   if (!Number.isFinite(ttlMs) || ttlMs <= 0) {
     throw new LeaseError('usage', `invalid ttl: ${String(ttlMs)}`, { ttl: ttlMs })
   }
-  return withMutex({ home: target, task, now: clock, lockWaitMs }, () => {
+  return withMutex({ home: target, task, lockWaitMs }, () => {
     const { record, corrupt } = readLease(target, task)
     const base = record ?? freeRecord(target, task)
     const at = clock()
@@ -359,7 +381,7 @@ export function renewLease({
   requireHome(target)
   validateTaskId(task)
   const clock = typeof now === 'function' ? now : () => now
-  return withMutex({ home: target, task, now: clock, lockWaitMs }, () => {
+  return withMutex({ home: target, task, lockWaitMs }, () => {
     const { record, corrupt } = readLease(target, task)
     if (corrupt) {
       throw new LeaseError('invalid-record', `lease record for '${task}' is unreadable and grants nothing`, { task })
@@ -423,7 +445,7 @@ export function releaseLease({
   requireHome(target)
   validateTaskId(task)
   const clock = typeof now === 'function' ? now : () => now
-  return withMutex({ home: target, task, now: clock, lockWaitMs }, () => {
+  return withMutex({ home: target, task, lockWaitMs }, () => {
     const { record, corrupt } = readLease(target, task)
     if (corrupt) {
       throw new LeaseError('invalid-record', `lease record for '${task}' is unreadable; nothing to release`, { task })
@@ -571,7 +593,7 @@ export function reapExpiredLeases({ home, now = Date.now, lockWaitMs = DEFAULT_L
     if (corrupt || record === null || record.state !== 'held') continue
     if (at - record.renewed_at < record.ttl) continue
     try {
-      const freed = withMutex({ home: target, task, now: clock, lockWaitMs }, () => {
+      const freed = withMutex({ home: target, task, lockWaitMs }, () => {
         const current = readLease(target, task)
         if (current.corrupt || current.record === null || current.record.state !== 'held') return null
         if (clock() - current.record.renewed_at < current.record.ttl) return null
@@ -632,8 +654,12 @@ export async function withLease(options, body) {
  * @returns the held record.
  */
 export function acquireMaintenanceLease({ home, identity, purpose, now = Date.now } = {}) {
-  if (typeof purpose !== 'string' || purpose.length === 0) {
-    throw new LeaseError('usage', 'the maintenance lease requires a named purpose')
+  if (typeof purpose !== 'string' || !MAINTENANCE_PURPOSES.includes(purpose)) {
+    throw new LeaseError(
+      'usage',
+      `the maintenance lease requires one of its reserved purposes: ${MAINTENANCE_PURPOSES.join(', ')}`,
+      { purpose: typeof purpose === 'string' ? purpose : null },
+    )
   }
   return acquireLease({
     home,
@@ -642,5 +668,6 @@ export function acquireMaintenanceLease({ home, identity, purpose, now = Date.no
     purpose: `maintenance:${purpose}`,
     ttlMs: MAINTENANCE_TTL_MS,
     now,
+    [MAINTENANCE_GRANT]: true,
   })
 }

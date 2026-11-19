@@ -560,6 +560,32 @@ export function markBatchDelivered({ home, parentSession, id, now = Date.now } =
 }
 
 /**
+ * Withdraw one batch that was never delivered, such as the creation batch of an
+ * engine whose fork failed, so a retried creation does not stack a duplicate.
+ * A delivered or acknowledged batch is never removed.
+ * @param options - withdrawal inputs.
+ * @returns true when the batch was removed.
+ */
+export function withdrawEngineBatch({ home, parentSession, id, now = Date.now } = {}) {
+  let removed = false
+  mutateInbox({
+    home,
+    parentSession,
+    now,
+    mutate(records) {
+      const index = records.findIndex((record) => record.id === id)
+      if (index < 0) return
+      const record = records[index]
+      if (record.delivered_at !== null && record.delivered_at !== undefined) return
+      if (record.acked_at !== null && record.acked_at !== undefined) return
+      records.splice(index, 1)
+      removed = true
+    },
+  })
+  return removed
+}
+
+/**
  * Clear delivery marks on unacknowledged batches so a fresh engine reads them.
  * @param options - reset inputs.
  * @returns the reset record count.

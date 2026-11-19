@@ -17,6 +17,34 @@ import { cleanup, makeHome } from './helpers.mjs'
 const PLUGIN_DIR = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]+$/, '')
 const LEASE_LIB = fileURLToPath(new URL('../../bin/fm-lease-lib.sh', import.meta.url))
 const CLI = join(PLUGIN_DIR, 'bin', 'fm-lease.mjs')
+const PR_MERGE = fileURLToPath(new URL('../../bin/fm-pr-merge.sh', import.meta.url))
+const MERGE_LOCAL = fileURLToPath(new URL('../../bin/fm-merge-local.sh', import.meta.url))
+
+/**
+ * Run one real merge entrypoint against a fixture home.
+ * @param home - fixture home.
+ * @param argv - entrypoint and arguments.
+ * @param lease - presented lease variables.
+ * @returns the spawn result.
+ */
+function merge(home, argv, lease = {}) {
+  return spawnSync(argv[0], argv.slice(1), {
+    env: {
+      ...process.env,
+      FM_HOME: home,
+      FM_LEASE_TOKEN: '',
+      FM_LEASE_SESSION: '',
+      FM_LEASE_TASK: '',
+      ...lease,
+    },
+    encoding: 'utf8',
+  })
+}
+
+const MERGE_ENTRYPOINTS = [
+  ['PR merge', () => [PR_MERGE, 'task-a', 'https://github.com/example/repo/pull/1'], /PR merge \(fm-pr-merge\) refused/],
+  ['local-only landing', () => [MERGE_LOCAL, 'task-a'], /local-only landing \(fm-merge-local\) refused/],
+]
 
 /**
  * Acquire a lease through the owning CLI.
@@ -84,6 +112,89 @@ test('a native home accepts a mutation that presents a live lease token', () => 
     cleanup(home)
   }
 })
+
+test('a native home refuses a task id that cannot name a lease instead of skipping the guard', () => {
+  const home = nativeHome()
+  try {
+    const result = bash(home, 'fm_lease_guard "../task-a" "steer test"; echo reached')
+    assert.equal(result.status, 6, result.stdout + result.stderr)
+    assert.doesNotMatch(result.stdout, /reached/)
+    assert.match(result.stderr, /cannot name a native task lease/)
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('a home without the native marker still passes an unusual task id untouched', () => {
+  const home = nativeHome({ marker: false })
+  try {
+    const result = bash(home, 'fm_lease_guard "../task-a" "steer test"; echo reached')
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /reached/)
+  } finally {
+    cleanup(home)
+  }
+})
+
+for (const [label, argv, refusal] of MERGE_ENTRYPOINTS) {
+  test(`a native home refuses a ${label} that presents no task lease`, () => {
+    const home = nativeHome()
+    try {
+      const result = merge(home, argv())
+      assert.equal(result.status, 6, result.stderr)
+      assert.match(result.stderr, refusal)
+      assert.match(result.stderr, /no live native lease/)
+    } finally {
+      cleanup(home)
+    }
+  })
+
+  test(`a native home refuses a ${label} whose lease covers another task`, () => {
+    const home = nativeHome()
+    try {
+      const record = acquire(home, 'task-b', 'session-a')
+      const result = merge(home, argv(), {
+        FM_LEASE_TOKEN: String(record.token),
+        FM_LEASE_SESSION: 'session-a',
+        FM_LEASE_TASK: 'task-b',
+      })
+      assert.equal(result.status, 6, result.stderr)
+      assert.match(result.stderr, /belongs to task task-b, not task-a/)
+    } finally {
+      cleanup(home)
+    }
+  })
+
+  test(`a native home lets a ${label} with a live task lease past the lease gate`, () => {
+    const home = nativeHome()
+    try {
+      const record = acquire(home, 'task-a', 'session-a')
+      const result = merge(home, argv(), {
+        FM_LEASE_TOKEN: String(record.token),
+        FM_LEASE_SESSION: 'session-a',
+        FM_LEASE_TASK: 'task-a',
+      })
+      // The fixture has no task record, so the entrypoint proceeds past the lease
+      // gate and stops at its next, unrelated guard.
+      assert.notEqual(result.status, 6, result.stderr)
+      assert.doesNotMatch(result.stderr, /refused - /)
+      assert.match(result.stderr, /task metadata is unavailable|no meta for task task-a/)
+    } finally {
+      cleanup(home)
+    }
+  })
+
+  test(`a home without the native marker runs a ${label} with no lease, as before`, () => {
+    const home = nativeHome({ marker: false })
+    try {
+      const result = merge(home, argv())
+      assert.notEqual(result.status, 6, result.stderr)
+      assert.doesNotMatch(result.stderr, /native lease/)
+    } finally {
+      cleanup(home)
+    }
+  })
+}
 
 test('a native home refuses a mutation with no presented lease', () => {
   const home = nativeHome()

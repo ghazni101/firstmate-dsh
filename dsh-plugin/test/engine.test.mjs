@@ -455,6 +455,52 @@ test('a crashed engine is recreated on the next tick without touching the parent
   }
 })
 
+test('a failing engine creation does not stack a duplicate batch on every tick', async () => {
+  const home = engineHome()
+  try {
+    const fake = makeSubagents()
+    let attempts = 0
+    fake.subagents.startActivation = async () => {
+      attempts += 1
+      throw new Error('no fork provider is registered')
+    }
+    const parent = rootAgent({ home })
+    const { host } = hostFixture({ home, fake, parent })
+    for (let i = 0; i < 3; i += 1) {
+      const report = await host.tick()
+      assert.equal(report.ok, false)
+      assert.equal(report.skipped, 'create-failed')
+    }
+    assert.equal(attempts, 3, 'every tick retried creation')
+    const inbox = readEngineInbox({ home, parentSession: 'parent-a' }).records
+    assert.equal(inbox.length, 0, `no engine ever read these batches: ${JSON.stringify(inbox)}`)
+
+    fake.subagents.startActivation = makeSubagents().subagents.startActivation
+    const created = await host.tick()
+    assert.equal(created.created, true)
+    const after = readEngineInbox({ home, parentSession: 'parent-a' }).records
+    assert.equal(after.length, 1, 'the successful creation carries exactly one batch')
+    assert.equal(after[0].items[0].id, 'task-a')
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('an unavailable subagent service does not stack batches while the engine waits', async () => {
+  const home = engineHome()
+  try {
+    const parent = rootAgent({ home })
+    const host = new EngineHost({ home, parentAgent: parent, identity: makeIdentity(home, 'parent-a'), tickMs: 0 })
+    for (let i = 0; i < 3; i += 1) {
+      const report = await host.tick()
+      assert.equal(report.skipped, 'no-subagent-service')
+    }
+    assert.equal(readEngineInbox({ home, parentSession: 'parent-a' }).records.length, 0)
+  } finally {
+    cleanup(home)
+  }
+})
+
 test('closing an engine marks its record closed and never closes the parent', async () => {
   const home = engineHome()
   try {

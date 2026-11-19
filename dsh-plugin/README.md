@@ -29,7 +29,8 @@ the twelve settled decisions in
 - **Native engine guard.** When a home carries `config/dsh-native-lease`,
   `bin/fm-lease-lib.sh` routes `fm_lease_guard` / `fm_lease_forbid_branch` to
   `bin/fm-native-lib.sh`, so the existing mutating entrypoints enforce the DSH lease instead
-  of the fleet lock. A mutation without a live token/session is refused.
+  of the fleet lock. A mutation without a live token/session is refused; a fresh spawn is
+  exempt ([which entrypoints enforce it](../docs/dsh-native-architecture.md#411-which-mutating-entrypoints-enforce-the-lease)).
 - **Supervision engine.** One headless, forked child session per interactive session absorbs
   routine fleet traffic so the captain's conversation only receives captain-relevant outcomes.
   The plugin's deterministic tick routes batches; the engine decides and escalates. Off by

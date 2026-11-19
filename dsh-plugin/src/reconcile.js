@@ -323,6 +323,27 @@ export async function mergeAuthority({ home, rule, script, task, prUrl, timeoutM
 }
 
 /**
+ * Re-read one selected item from the durable records, under its lease.
+ * @param options - re-read inputs.
+ * @param options.home - the home.
+ * @param options.item - the item the tick selected before taking the lease.
+ * @param options.signal - cancellation.
+ * @returns `{ item, stale }`; `stale` names why the selection no longer holds, else null.
+ */
+async function currentItem({ home, item, signal }) {
+  const observation = await observeHome({ home, signal })
+  if (observation.degraded !== null) {
+    return { item: null, stale: `could not re-read task ${item.id} under its lease: ${observation.degraded}` }
+  }
+  const pool = item.when === 'queued' ? observation.queued : observation.inFlight
+  const fresh = pool.find((candidate) => candidate.id === item.id)
+  if (fresh === undefined) {
+    return { item: null, stale: `task ${item.id} is no longer ${item.when} after taking its lease` }
+  }
+  return { item: fresh, stale: null }
+}
+
+/**
  * Run one reconciliation tick.
  * @param options - tick inputs.
  * @param options.home - the home to reconcile.
@@ -428,20 +449,6 @@ export async function reconcileTick({
     }
     report.actions.push(action)
     if (!apply) continue
-    const authority = await mergeAuthority({
-      home,
-      rule,
-      script: rule.script,
-      task: item.id,
-      prUrl: item.pr_url,
-      signal,
-    })
-    if (!authority.allowed) {
-      action.outcome = 'skipped'
-      action.reason = authority.reason
-      report.skipped.push({ task: item.id, rule: rule.id, reason: authority.reason })
-      continue
-    }
     const timeoutMs = rule.timeout_ms
     try {
       const leased = await withLease(
@@ -452,29 +459,64 @@ export async function reconcileTick({
           purpose: `reconcile:${rule.id}`,
           ttlMs: Math.max(120000, timeoutMs + 60000),
         },
-        async (handle) => runScript(home, rule.script, built.argv, {
-          timeoutMs,
-          signal,
-          env: {
-            ...(pluginDir === undefined ? {} : { FM_NATIVE_PLUGIN_DIR: pluginDir }),
-            FM_LEASE_HOME: home,
-            FM_LEASE_TASK: item.id,
-            FM_LEASE_TOKEN: String(handle.token),
-            FM_LEASE_SESSION: identity.sessionId,
-            FM_LEASE_OWNER: identity.ownerLabel,
-          },
-        }),
+        async (handle) => {
+          // Lease-then-act, always reconcile first (section 6.3): the selection
+          // above read the home before this lease existed, so another holder
+          // may have acted on the task in between. Re-read it under the lease
+          // and act only when the same rule still selects it.
+          const current = await currentItem({ home, item, signal })
+          if (current.stale !== null) return { stale: current.stale }
+          if (loop.rules.find((candidate) => ruleMatches(candidate, current.item)) !== rule) {
+            return { stale: `task ${item.id} no longer matches rule ${rule.id} after taking its lease` }
+          }
+          // Merge authority is checked while holding the task's lease (section 6.4).
+          const authority = await mergeAuthority({
+            home,
+            rule,
+            script: rule.script,
+            task: item.id,
+            prUrl: current.item.pr_url,
+            signal,
+          })
+          if (!authority.allowed) return { denied: authority.reason }
+          return {
+            result: await runScript(home, rule.script, built.argv, {
+              timeoutMs,
+              signal,
+              env: {
+                ...(pluginDir === undefined ? {} : { FM_NATIVE_PLUGIN_DIR: pluginDir }),
+                FM_LEASE_HOME: home,
+                FM_LEASE_TASK: item.id,
+                FM_LEASE_TOKEN: String(handle.token),
+                FM_LEASE_SESSION: identity.sessionId,
+                FM_LEASE_OWNER: identity.ownerLabel,
+              },
+            }),
+          }
+        },
       )
       action.token = leased.lease?.token ?? null
-      action.exit_code = leased.result.code
-      action.outcome = leased.result.code === 0 ? 'acted' : 'failed'
+      const outcome = leased.result
+      if (outcome.stale !== undefined) {
+        action.outcome = 'stale'
+        action.reason = outcome.stale
+        continue
+      }
+      if (outcome.denied !== undefined) {
+        action.outcome = 'skipped'
+        action.reason = outcome.denied
+        report.skipped.push({ task: item.id, rule: rule.id, reason: outcome.denied })
+        continue
+      }
+      action.exit_code = outcome.result.code
+      action.outcome = outcome.result.code === 0 ? 'acted' : 'failed'
       if (leased.fenced !== null) {
         action.outcome = 'fenced'
         action.reason = `${leased.fenced.code ?? 'fenced'}: ${leased.fenced.message}`
-      } else if (leased.result.code !== 0) {
-        action.reason = combinedOutput(leased.result).slice(0, 2000)
+      } else if (outcome.result.code !== 0) {
+        action.reason = combinedOutput(outcome.result).slice(0, 2000)
       }
-      if (leased.result.timedOut) action.reason = `timed out after ${timeoutMs}ms`
+      if (outcome.result.timedOut) action.reason = `timed out after ${timeoutMs}ms`
     } catch (error) {
       const code = error?.code === 'contention' ? 'contention' : (error?.code ?? 'error')
       action.outcome = code === 'contention' ? 'contended' : 'error'
