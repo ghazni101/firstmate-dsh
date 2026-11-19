@@ -172,6 +172,133 @@ test_forgejo_unconfigured_ci_refuses_as_none() {
   pass "fm-pr-merge treats an unconfigured Forgejo combined status as none, refusing rather than skipping the check"
 }
 
+
+# --allow-no-status is the attended Forgejo waiver for a repository that
+# deliberately runs no CI. It covers only a combined status reported as none;
+# a failing, pending, or unreadable status is a verdict and still refuses.
+test_allow_no_status_waives_only_an_absent_forgejo_status() {
+  local case_dir rc merge_line name spec expected
+
+  # An absent combined status merges under the waiver, bound to the live head.
+  case_dir=$(make_forgejo_case forgejo-no-status-waived)
+  write_forgejo_status_json "$case_dir/tea-status.json" total_count=0
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" --allow-no-status \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "forgejo-no-status-waived: an absent status should merge under the waiver: $(cat "$case_dir/stderr")"
+  merge_line=$(tea_merge_line "$case_dir/tea.log")
+  case "$merge_line" in
+    *"--login $FJ_LOGIN --repo $FJ_OWNER/$FJ_REPO -X POST /repos/{owner}/{repo}/pulls/9/merge -f Do=merge -f head_commit_id=$FJ_HEAD"*) : ;;
+    *) fail "forgejo-no-status-waived: unexpected merge invocation: '$merge_line'" ;;
+  esac
+  assert_grep "with no combined commit status, waived by --allow-no-status" "$case_dir/stderr" \
+    "forgejo-no-status-waived: the waived verification was not reported"
+  assert_grep "pr=$FJ_URL" "$case_dir/state/task-x1.meta" \
+    "forgejo-no-status-waived: pr= was not recorded before merging"
+
+  # The same absent status still refuses without the waiver.
+  case_dir=$(make_forgejo_case forgejo-no-status-unwaived)
+  write_forgejo_status_json "$case_dir/tea-status.json" total_count=0
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "forgejo-no-status-unwaived: an absent status must refuse by default"
+  assert_grep 'the combined commit status is "none", not success' "$case_dir/stderr" \
+    "forgejo-no-status-unwaived: the refusal did not name the missing status"
+  [ -z "$(tea_merge_line "$case_dir/tea.log")" ] \
+    || fail "forgejo-no-status-unwaived: a merge was attempted without the waiver"
+
+  # A reported verdict is not an absence, so the waiver never reaches it.
+  set -- \
+    "failure|state=failure|the combined commit status is \"failure\", not success" \
+    "pending|state=pending|the combined commit status is \"pending\", not success"
+  for spec in "$@"; do
+    name=${spec%%|*}
+    spec=${spec#*|}
+    expected=${spec##*|}
+    spec=${spec%%|*}
+    case_dir=$(make_forgejo_case "forgejo-no-status-$name-waived")
+    write_forgejo_status_json "$case_dir/tea-status.json" "$spec"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$FJ_URL" --allow-no-status \
+      > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 1 "$rc" "forgejo-no-status-$name-waived: the waiver must not merge a $name status"
+    assert_grep "$expected" "$case_dir/stderr" \
+      "forgejo-no-status-$name-waived: the refusal did not name the failing status"
+    [ -z "$(tea_merge_line "$case_dir/tea.log")" ] \
+      || fail "forgejo-no-status-$name-waived: a merge was attempted past a $name status"
+  done
+
+  # An unreadable status endpoint is not a reported absence either.
+  case_dir=$(make_forgejo_case forgejo-no-status-unreadable-waived)
+  : > "$case_dir/tea-status-fails"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" --allow-no-status \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "forgejo-no-status-unreadable-waived: an unreadable status must still refuse"
+  assert_grep 'the combined commit status is "unreadable", not success' "$case_dir/stderr" \
+    "forgejo-no-status-unreadable-waived: the unreadable status was not reported"
+  [ -z "$(tea_merge_line "$case_dir/tea.log")" ] \
+    || fail "forgejo-no-status-unreadable-waived: a merge was attempted on an unreadable status"
+  pass "fm-pr-merge --allow-no-status waives only an absent Forgejo combined status and keeps red, pending, and unreadable statuses refused"
+}
+
+test_allow_no_status_is_attended_only_and_forgejo_only() {
+  local case_dir rc head
+  head=abababababababababababababababababababab
+
+  case_dir=$(make_forgejo_case forgejo-no-status-away)
+  write_forgejo_status_json "$case_dir/tea-status.json" total_count=0
+  write_away_record "$case_dir" --words 'merge task-x1'
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" --allow-no-status \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "forgejo-no-status-away: the waiver must be refused while away"
+  assert_grep '--allow-no-status is attended-only' "$case_dir/stderr" \
+    "forgejo-no-status-away: the refusal did not name attended-only"
+  [ -z "$(tea_merge_line "$case_dir/tea.log")" ] \
+    || fail "forgejo-no-status-away: a merge ran despite an away waiver"
+
+  case_dir=$(make_forgejo_case forgejo-no-status-equals)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" --allow-no-status=true \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "forgejo-no-status-equals: a value must be refused"
+  [ -z "$(tea_merge_line "$case_dir/tea.log")" ] \
+    || fail "forgejo-no-status-equals: tea merged for a valued flag"
+
+  case_dir=$(make_case github-no-status-flag)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/88 --allow-no-status \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "github-no-status-flag: the waiver must not apply on GitHub"
+  assert_grep '--allow-no-status applies only to Forgejo' "$case_dir/stderr" \
+    "github-no-status-flag: the refusal did not name Forgejo"
+
+  case_dir=$(make_gitlab_case gitlab-no-status-flag)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" --allow-no-status \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "gitlab-no-status-flag: the waiver must not apply on GitLab"
+  assert_grep '--allow-no-status applies only to Forgejo' "$case_dir/stderr" \
+    "gitlab-no-status-flag: the refusal did not name Forgejo"
+  pass "fm-pr-merge --allow-no-status is attended-only and Forgejo-only"
+}
+
 # The combined status endpoint computes its state from one page of contexts,
 # so a failing context on a later page must still refuse the merge, and a
 # head whose every page is green must still merge.
@@ -1318,6 +1445,8 @@ test_forgejo_login_resolves_from_the_host
 test_forgejo_refuses_when_login_is_ambiguous
 test_forgejo_each_condition_refuses_independently
 test_forgejo_unconfigured_ci_refuses_as_none
+test_allow_no_status_waives_only_an_absent_forgejo_status
+test_allow_no_status_is_attended_only_and_forgejo_only
 test_forgejo_combined_status_reads_every_page
 test_forgejo_stale_recorded_head_is_reported
 test_forgejo_invalid_head_refuses

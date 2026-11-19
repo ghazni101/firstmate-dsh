@@ -15,7 +15,7 @@
 # Usage:
 #   fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--update-branch]
 #     [--expected-head <full-sha>]
-#     [--allow-red <check>] [--allow-missing <check>] [--allow-no-pipeline]
+#     [--allow-red <check>] [--allow-missing <check>] [--allow-no-pipeline] [--allow-no-status]
 #     [-- <forge merge flags>]
 #   fm-pr-merge.sh -h | --help
 #
@@ -77,7 +77,8 @@
 # refused while the away-posture record exists, and neither
 # applies on GitLab, where a merge already requires the head pipeline to have
 # succeeded, or on Forgejo, where a merge already requires the head's combined
-# commit status to have succeeded. After gh returns success, GitHub's live
+# commit status to have succeeded unless the attended --allow-no-status waiver
+# below covers a status reported as none. After gh returns success, GitHub's live
 # state is read back and
 # accepted only when the pull request is merged or in the merge queue. gh's
 # GraphQL API supplies that queue-aware read; when that read fails, gh-axi's
@@ -159,7 +160,11 @@
 # true, and the combined commit status at the exact current head, read across
 # every status page, is success (an unconfigured status, reported as "none",
 # refuses rather than being treated as nothing to check, the same reading
-# GitLab's null head_pipeline gets above). Every
+# GitLab's null head_pipeline gets above). An attended --allow-no-status waives
+# only that "none" reading for a repository that deliberately runs no CI: a
+# failing, pending, or unreadable combined status still refuses, every other
+# condition still holds, and it is refused while the away-posture record exists
+# and on any forge other than Forgejo. Every
 # failing condition is reported, not just the first. tea exposes no head-
 # binding flag on its own merge subcommand, so the verified head is instead
 # passed as head_commit_id to a direct call against Forgejo/Gitea's REST API
@@ -221,7 +226,7 @@
 # explicit captain instruction and never skips the live green check, the
 # away-record read, or a captain hold.
 #
-# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--update-branch] [--expected-head <full-sha>] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [-- <extra forge merge args>]
+# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--update-branch] [--expected-head <full-sha>] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [--allow-no-status] [-- <extra forge merge args>]
 #
 # On GitLab, this script confirms the MR is actually merged before reporting it;
 # an auto-merge-queued or unconfirmed request leaves the poll armed and records
@@ -301,6 +306,7 @@ shift 2
 ATTENDED_OVERRIDE=false
 UPDATE_BRANCH=false
 ALLOW_NO_PIPELINE=false
+ALLOW_NO_STATUS=false
 ALLOW_RED=()
 ALLOW_MISSING=()
 EXPECTED_HEAD=
@@ -348,6 +354,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --allow-no-pipeline=*)
       echo "error: --allow-no-pipeline takes no value" >&2
+      exit 2
+      ;;
+    --allow-no-status)
+      ALLOW_NO_STATUS=true
+      shift
+      ;;
+    --allow-no-status=*)
+      echo "error: --allow-no-status takes no value" >&2
       exit 2
       ;;
     --expected-head)
@@ -400,10 +414,18 @@ if [ "${#ALLOW_RED[@]}" -gt 0 ]; then
   esac
 fi
 # --allow-no-pipeline waives only GitLab's own reading of a merge request that
-# has no head pipeline at all. GitHub's per-check waivers and Forgejo's
-# combined status have no such state to waive, so it is refused there too.
+# has no head pipeline at all. GitHub's per-check waivers have no such state to
+# waive, and Forgejo's absent combined status is waived by --allow-no-status,
+# so --allow-no-pipeline is refused on both.
 if [ "$ALLOW_NO_PIPELINE" = true ] && [ "$PROVIDER" != gitlab ]; then
   echo "error: --allow-no-pipeline applies only to GitLab, where it waives a merge request that has no head pipeline at all" >&2
+  exit 2
+fi
+# --allow-no-status waives only Forgejo's own reading of a combined status
+# reported as none, as --allow-no-pipeline does for GitLab. It is refused on
+# GitHub and GitLab, whose check and pipeline rules have no such state.
+if [ "$ALLOW_NO_STATUS" = true ] && [ "$PROVIDER" != forgejo ]; then
+  echo "error: --allow-no-status applies only to Forgejo, where it waives a combined commit status reported as none" >&2
   exit 2
 fi
 if [ "${#ALLOW_MISSING[@]}" -gt 0 ]; then
@@ -879,7 +901,7 @@ FIELDS
 # GitHub and GitLab this never sets an async/queued signal: every accepted
 # Forgejo merge here is immediate. Shares FM_PR_MERGE_HEAD, declared above.
 forgejo_verify_mergeable() {
-  local pr_json status_json fields line
+  local pr_json status_json fields line status_waived
   local total=0 named=0 refusals=''
   local state='' mergeable='' draft='' live_head='' ci_state='' page_state='' page_count='' page=1
 
@@ -983,9 +1005,17 @@ FIELDS
   [ "$draft" != true ] \
     || refusals="$refusals  - the pull request is a draft
 "
-  [ "$ci_state" = success ] \
-    || refusals="$refusals  - the combined commit status is \"$ci_state\", not success
+  # The waiver covers only a status endpoint that reported no statuses at all
+  # ("none"). A failing, pending, or unreadable status is a verdict, not an
+  # absence of one, and still refuses with the waiver in place.
+  status_waived=false
+  if [ "$ALLOW_NO_STATUS" = true ] && [ "$ci_state" = none ]; then
+    status_waived=true
+  else
+    [ "$ci_state" = success ] \
+      || refusals="$refusals  - the combined commit status is \"$ci_state\", not success
 "
+  fi
 
   note_expected_head "$live_head"
   if [ -n "$FM_PR_EXPECTED_HEAD_REFUSAL" ]; then
@@ -998,8 +1028,13 @@ FIELDS
     printf '%s' "$refusals" >&2
     return 1
   fi
-  printf 'verified: %s is open and mergeable, with a successful combined status at head %s\n' \
-    "$URL" "$live_head" >&2
+  if [ "$status_waived" = true ]; then
+    printf 'verified: %s is open and mergeable at head %s, with no combined commit status, waived by --allow-no-status\n' \
+      "$URL" "$live_head" >&2
+  else
+    printf 'verified: %s is open and mergeable, with a successful combined status at head %s\n' \
+      "$URL" "$live_head" >&2
+  fi
   FM_PR_MERGE_HEAD=$live_head
 }
 
@@ -1624,6 +1659,10 @@ require_current_away_authority() {
   fi
   if [ "$FM_PR_AWAY_POSTURE" = true ] && [ "$ALLOW_NO_PIPELINE" = true ]; then
     echo "error: --allow-no-pipeline is attended-only; while the away-posture record exists a GitLab merge requires a successful head pipeline" >&2
+    return 2
+  fi
+  if [ "$FM_PR_AWAY_POSTURE" = true ] && [ "$ALLOW_NO_STATUS" = true ]; then
+    echo "error: --allow-no-status is attended-only; while the away-posture record exists a Forgejo merge requires a successful combined status" >&2
     return 2
   fi
 }
