@@ -24,7 +24,8 @@ import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
-import { completedTurnBoundary, writeEngineRecord } from '../../dsh-plugin/src/engine-records.js'
+import { completedTurnBoundary, readEscalations, recordEscalation, writeEngineRecord } from '../../dsh-plugin/src/engine-records.js'
+import { RESTART_OUTCOME } from './fm-dsh-scripted-llm/index.js'
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '')
 const PLUGIN = join(REPO, 'dsh-plugin')
@@ -105,30 +106,50 @@ function task(id, owner, raw = 'working [at=1]: reviewing') {
 }
 
 let child
+let base
+let cookie
+let count = 0
+let hostStderr = ''
 try {
   makeLab()
   makeProfile()
-  child = spawn('dsh', ['--profile', 'web', '--host', '127.0.0.1', '--port', '0', '--no-open'], {
-    env: { ...process.env, DSH_HOME }, stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  let banner = ''
-  child.stdout.on('data', (chunk) => { banner += chunk.toString() })
-  child.stderr.on('data', (chunk) => { process.stderr.write(`[dsh] ${chunk}`) })
-  let base = null
-  let token = null
-  for (let attempt = 0; attempt < 300; attempt += 1) {
-    const match = banner.match(/http:\/\/127\.0\.0\.1:(\d+)\/\?token=([^\s]+)/)
-    if (match) { base = `http://127.0.0.1:${match[1]}`; token = match[2]; break }
-    await sleep(100)
-  }
-  assert.ok(base && token, `the disposable Host never printed its API URL: ${banner.slice(0, 300)}`)
-  note('disposable DSH Host listens on a private loopback port')
 
-  const connect = await fetch(`${base}/connect?token=${token}&interactions=answer`, { redirect: 'manual' })
-  const cookie = connect.headers.get('set-cookie')?.split(';')[0]
-  assert.equal(connect.status, 302)
-  assert.ok(cookie, 'the API peer exchange must mint a cookie')
-  let count = 0
+  /** Stop only the disposable Host started by this guard. */
+  async function stopHost() {
+    const current = child
+    if (current === null || current.exitCode !== null || current.signalCode !== null) return
+    const exited = new Promise((resolve) => current.once('exit', resolve))
+    current.kill('SIGTERM')
+    await exited
+  }
+
+  /** Start or restart the Host with the same home and rebind its RPC client. */
+  async function startHost() {
+    child = spawn('dsh', ['--profile', 'web', '--host', '127.0.0.1', '--port', '0', '--no-open'], {
+      env: { ...process.env, DSH_HOME }, stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let banner = ''
+    child.stdout.on('data', (chunk) => { banner += chunk.toString() })
+    child.stderr.on('data', (chunk) => {
+      hostStderr += chunk.toString()
+      process.stderr.write(`[dsh] ${chunk}`)
+    })
+    let token = null
+    base = null
+    for (let attempt = 0; attempt < 300; attempt += 1) {
+      const match = banner.match(/http:\/\/127\.0\.0\.1:(\d+)\/\?token=([^\s]+)/)
+      if (match) { base = `http://127.0.0.1:${match[1]}`; token = match[2]; break }
+      await sleep(100)
+    }
+    assert.ok(base && token, `the disposable Host never printed its API URL: ${banner.slice(0, 300)}`)
+    const connect = await fetch(`${base}/connect?token=${token}&interactions=answer`, { redirect: 'manual' })
+    cookie = connect.headers.get('set-cookie')?.split(';')[0]
+    assert.equal(connect.status, 302)
+    assert.ok(cookie, 'the API peer exchange must mint a cookie')
+    note('disposable DSH Host listens on a private loopback port')
+  }
+
+  await startHost()
 
   /** One GUI-shaped Host RPC call. */
   async function rpc(method, args) {
@@ -238,6 +259,69 @@ try {
     row.event.type === 'user/message' && row.event.data?.source?.kind === 'subagent-settled')
   assert.equal(settled.length, 0, 'no subagent settlement notice reached the parent')
   note('a real coordinator escalation turn delivered one tagged message to its own parent only')
+
+  // Record an undelivered captain outcome, restart only the disposable Host,
+  // and prove that its new process adopts the persisted coordinator and
+  // delivers that outcome. The home, sessions, and durable records are reused.
+  const readRecord = (sessionId) => JSON.parse(readFileSync(join(LAB, 'state', 'engines', `${sessionId}.json`), 'utf8'))
+  const preRestart = sessions.map((session) => ({ sessionId: session.sessionId, record: readRecord(session.sessionId) }))
+  const pending = recordEscalation({
+    home: LAB, parentSession: sessions[0].sessionId,
+    engineSession: preRestart[0].record.engine_session,
+    task: sessions[0].taskId, outcome: RESTART_OUTCOME,
+  }).record
+  assert.equal(pending.delivered_at, null, 'the outcome must be pending before the restart')
+  await stopHost()
+  await startHost()
+  note('disposable DSH Host restarted with the same persisted home and sessions')
+
+  const resumed = await rpc('session/prompt', { request: {
+    requestId: 'req-restart', sessionId: sessions[0].sessionId, mode: 'queue',
+    content: [{ type: 'text', text: 'continue after restart' }],
+  } })
+  assert.equal(resumed.accepted, true, 'the persisted parent session must resume after the restart')
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    const page = await events(sessions[0].sessionId)
+    if (page.records.some((row) => row.event.type === 'turn/end' && row.event.seq > preRestart[0].record.seed_boundary)) break
+    await sleep(100)
+  }
+
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const current = readRecord(sessions[0].sessionId)
+    if (current.status === 'live' && current.engine_session === preRestart[0].record.engine_session && current.owner_pid === child.pid) break
+    await sleep(200)
+  }
+  const adopted = readRecord(sessions[0].sessionId)
+  assert.equal(adopted.engine_session, preRestart[0].record.engine_session, 'the restarted Host must adopt the persisted coordinator session')
+  assert.equal(adopted.status, 'live')
+  assert.equal(adopted.owner_pid, child.pid, 'the engine record must be re-owned by the new Host process')
+  assert.equal(hostStderr.includes('already used by another subagent you created'), false, 'no coordinator name collision after restart')
+  note('the restarted Host adopted the persisted coordinator without a name collision')
+
+  const restartBlocker = {
+    ...task(sessions[0].taskId, sessions[0].sessionId, 'blocked [at=restart]: restart-proof PR is ready for the captain'),
+    hints: { pending_decision: true, blocked_event: true, open_decisions: ['merge'] },
+  }
+  writeFileSync(join(LAB, 'snapshot.json'), JSON.stringify({
+    schema: 'fm-fleet-snapshot.v1', backlog: { records: [] },
+    tasks: [restartBlocker, ...sessions.slice(1).map((s) => task(s.taskId, s.sessionId))],
+  }))
+  let restartTagged = []
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    restartTagged = tagged(await events(sessions[0].sessionId))
+      .filter((row) => JSON.stringify(row.event.data ?? {}).includes(RESTART_OUTCOME))
+    if (restartTagged.length > 0) break
+    await sleep(100)
+  }
+  assert.equal(restartTagged.length, 1, 'the pending captain outcome must be delivered after the restart')
+  assert.equal(restartTagged[0].event.data?.source?.kind, 'user')
+  const deliveredAfter = readEscalations({ home: LAB, parentSession: sessions[0].sessionId })
+    .records.find((row) => row.id === pending.id)
+  assert.ok(deliveredAfter && typeof deliveredAfter.delivered_at === 'number', 'the pending escalation must be marked delivered')
+  const catalogAfter = (await events(sessions[0].sessionId)).records
+  assert.equal(catalogAfter.filter((row) => row.event.type === 'subagent/catalog').length, 1, 'only one coordinator child remains in the parent catalog')
+  assert.equal(catalogAfter.filter((row) => row.event.type === 'user/message' && row.event.data?.source?.kind === 'subagent-settled').length, 0, 'no settlement notice reached the parent')
+  note('the adopted coordinator delivered the pending captain outcome after restart')
 
   assert.ok(existsSync(join(LAB, 'state', 'engines')), 'the disposable home must hold the engine records')
   note(`${base} ${realpathSync(PLUGIN)}`)

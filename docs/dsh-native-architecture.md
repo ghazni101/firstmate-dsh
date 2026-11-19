@@ -682,9 +682,11 @@ supervision host.
 - **Watchable.** The fork is a local in-process child, so DSH publishes it to the parent's
   `subagentCatalog` projection. The installed web profile's `ui-subagent` package renders that
   catalog in the session-header subagents menu and opens the child as an inspectable
-  conversation pane. The activation asks for the stable catalog name `firstmate-coordinator`,
-  so the coordinator is findable in every interactive session. No DSH core patch or new UI is
-  involved; the existing DSH view is the supported surface.
+  conversation pane. The first activation asks for the catalog name `firstmate-coordinator`;
+  a replacement fork keeps that prefix with a unique suffix because DSH reserves child names
+  in the parent's durable catalog. The coordinator stays findable by prefix in every
+  interactive session. No DSH core patch or new UI is involved; the existing DSH view is the
+  supported surface.
 - **Plugin-owned wakes.** Creation uses the subagent manager once, so the child inherits the
   parent's composition and its catalog entry. Later routine batches are steered by the plugin
   through its own agent-registry handle on that persisted session, not by
@@ -695,9 +697,12 @@ supervision host.
 - **Seeded once.** The `fork` provider seeds the child with the parent's completed-turn prefix
   through the last `turn/end`; the in-flight turn is never seeded. The prefix is captured at
   creation and becomes part of the child's own durable transcript, so a later cold resume
-  replays that prefix instead of re-forking newer parent history. A resumed interactive
-  session (`resume`/`clear`/`compact`) marks its old engine superseded and gets a fresh engine
-  forked from its then-completed turns on the next tick.
+  replays that prefix instead of re-forking newer parent history. An interactive session
+  resumed in the same process (`resume`/`clear`/`compact`) marks its old engine superseded and
+  gets a uniquely named fresh engine forked from its then-completed turns on the next tick. A
+  process restart instead re-owns the dead owner's record and resumes its persisted
+  coordinator through the plugin's agent registry, even when a graceful shutdown marked that
+  record closed; it never forks a second child for that parent.
 - **Lazy.** Creation waits for the session's first supervision need: a task it claims through
   the lease tool or dispatches through the guarded run channel. The first tick after that need
   creates the fork, so the dispatch turn is already completed and available to the seed. A
@@ -800,8 +805,8 @@ happens; it re-derives every decision from durable records rather than trusting 
   whose spawn marker names that session. A lease release frees a write claim only: no worker,
   worktree, branch, or PR is touched, and another session's crews are untouched. The parent is
   never disposed, reset, or steered by engine cleanup.
-- **Resume.** A resumed interactive session supersedes its previous engine record before the
-  host starts, so the next fork reflects the resumed history.
+- **Resume.** Same-process `resume`/`clear`/`compact` forks fresh; a new process adopts the
+  persisted coordinator as owned in section 6.8.
 - **Foreign owner.** If a record still names a live different process, the tick skips it
   rather than forking a second engine for that session.
 - **Plugin unload.** Timers and watchers stop and live activations are disposed without marking

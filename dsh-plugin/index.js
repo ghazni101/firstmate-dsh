@@ -52,7 +52,6 @@ import {
   isEngineHome,
   markEscalationAttempt,
   markEscalationDelivered,
-  ownerIsLive,
   pendingEngineInbox,
   readEngineRecord,
   recordEscalation,
@@ -306,7 +305,11 @@ export function apply(ctx, config = {}) {
   }
 
   /**
-   * Retire the previous engine before a resumed session gets a fresh fork.
+   * Retire the previous engine before a resumed session in this process gets a
+   * fresh fork. A record owned by another process is left for adoption: a live
+   * foreign owner is never touched, and a dead owner is the persisted
+   * coordinator that the next tick resumes instead of forking a colliding
+   * second child.
    * @param identity - the resumed root identity.
    */
   const supersedeEngine = (identity) => {
@@ -317,7 +320,7 @@ export function apply(ctx, config = {}) {
     }
     const record = readEngineRecord({ home: identity.home, parentSession: identity.sessionId })
     if (record === null) return
-    if (record.owner_pid !== process.pid && ownerIsLive(record)) return
+    if (record.owner_pid !== process.pid) return
     updateEngineRecord({
       home: identity.home,
       parentSession: identity.sessionId,

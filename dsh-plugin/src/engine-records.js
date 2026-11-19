@@ -41,8 +41,31 @@ export const ENGINE_MARKER_FILE = 'config/dsh-engine'
 
 /** Catalog label recorded on the engine child. Names are per-parent unique. */
 export const ENGINE_LABEL = 'firstmate-engine'
-/** Stable catalog name of the forked coordinator in the parent's DSH subagent menu. */
-export const ENGINE_AGENT_NAME = 'firstmate-coordinator'
+/** Prefix kept in every coordinator catalog name so the child stays findable. */
+export const ENGINE_AGENT_NAME_PREFIX = 'firstmate-coordinator'
+/** Stable catalog name of the first forked coordinator in a parent's DSH subagent menu. */
+export const ENGINE_AGENT_NAME = ENGINE_AGENT_NAME_PREFIX
+
+/**
+ * Catalog name for one coordinator generation.
+ *
+ * DSH reserves a child name in the parent's durable subagent catalog, so a
+ * fresh fork cannot reuse the name of a previous coordinator for that parent.
+ * The first child keeps the stable name; later generations add a short suffix
+ * derived from their engine session id, which keeps the prefix watchable and
+ * the name unique.
+ * @param engineSession - the new coordinator's session id.
+ * @param previous - the record being replaced, when any.
+ * @returns a catalog name within DSH's 32-character limit.
+ */
+export function engineAgentName(engineSession, previous = null) {
+  if (previous === null || previous === undefined) return ENGINE_AGENT_NAME
+  const token = typeof engineSession === 'string'
+    ? engineSession.toLowerCase().replace(/[^a-z0-9]/g, '')
+    : ''
+  const suffix = token.length > 0 ? token.slice(0, 8) : randomUUID().replace(/-/g, '').slice(0, 8)
+  return `${ENGINE_AGENT_NAME_PREFIX}-${suffix}`
+}
 
 /** Registered in-process subagent provider that seeds a child from completed turns. */
 export const ENGINE_PROVIDER = 'fork'
