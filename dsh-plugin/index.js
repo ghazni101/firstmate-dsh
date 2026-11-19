@@ -37,6 +37,7 @@
  *
  * @module @local/dsh-plugin-firstmate-native
  */
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -202,6 +203,18 @@ export function apply(ctx, config = {}) {
   }
 
   /**
+   * Read the agent registry when this profile provides it.
+   * @returns the registry, or undefined.
+   */
+  const getAgents = () => {
+    try {
+      return typeof ctx.get === 'function' ? ctx.get('agents') : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
    * Resolve an agent's supervisor surface, re-deriving it when the agent
    * predates plugin activation.
    * @param exec - the tool run context.
@@ -273,7 +286,7 @@ export function apply(ctx, config = {}) {
       parentAgent: agent,
       identity,
       getSubagents,
-      getAgents: () => (typeof ctx.get === 'function' ? ctx.get('agents') : undefined),
+      getAgents,
       tickMs: engineTickMs,
     })
     engineHosts.set(sessionId, host)
@@ -318,42 +331,53 @@ export function apply(ctx, config = {}) {
 
   /**
    * Deliver one escalation into this engine's parent session.
+   *
+   * The parent belongs to the plugin, not to DSH's managed subagent tree, so
+   * delivery resolves the live parent through the agent registry and steers it
+   * directly. The engine agent cannot be the sender: after the coordinator's
+   * first turn settles, `agents.resume` replaces it with a same-id agent that
+   * DSH's `rootOf` refuses as a tree caller.
    * @param options - delivery inputs.
    * @param options.record - the escalation record.
-   * @param options.sender - the live engine agent.
    * @param options.identity - the engine identity.
    * @param options.signal - cancellation.
    * @returns `{ delivered, error }`.
    */
-  const deliverEscalation = async ({ record, sender, identity, signal }) => {
-    const subagents = getSubagents()
-    if (subagents === undefined || typeof subagents.sendMessage !== 'function') {
+  const deliverEscalation = async ({ record, identity, signal }) => {
+    const attempt = (error) => {
       markEscalationAttempt({
         home: identity.home,
         parentSession: identity.parentSession,
         id: record.id,
-        error: 'the subagent service is unavailable',
+        error,
       })
-      return { delivered: false, error: 'the subagent service is unavailable' }
+      return { delivered: false, error }
     }
+    const agents = getAgents()
+    if (agents === undefined) return attempt('the agent registry is unavailable')
+    const abort = signal ?? new AbortController().signal
     try {
-      await subagents.sendMessage(
-        sender,
-        identity.parentSession,
-        [{ type: 'text', text: buildEscalationMessage(record) }],
-        { signal: signal ?? new AbortController().signal },
-      )
+      let parent = typeof agents.get === 'function' ? agents.get(identity.parentSession) : undefined
+      if (parent === undefined && typeof agents.resume === 'function') {
+        // The parent is persisted but not live; resume it through the plugin's
+        // registry so the escalation wakes it without a manager settlement.
+        const handle = await agents.resume({ resumeSessionId: identity.parentSession, signal: abort })
+        parent = handle?.agent
+      }
+      if (parent === undefined || typeof parent.steer !== 'function') {
+        return attempt('the parent session has no steering surface')
+      }
+      const message = {
+        id: randomUUID(),
+        role: 'user',
+        content: [{ type: 'text', text: buildEscalationMessage(record) }],
+        source: { kind: 'user' },
+      }
+      parent.steer(message)
       markEscalationDelivered({ home: identity.home, parentSession: identity.parentSession, id: record.id })
       return { delivered: true, error: null }
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      markEscalationAttempt({
-        home: identity.home,
-        parentSession: identity.parentSession,
-        id: record.id,
-        error: reason,
-      })
-      return { delivered: false, error: reason }
+      return attempt(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -1082,7 +1106,7 @@ export function apply(ctx, config = {}) {
         if (existing.delivered_at !== null && existing.delivered_at !== undefined) {
           return { ok: true, tool: 'firstmate_native_escalate', home, id: existing.id, duplicate: true, delivered: true, pending: false, text: `escalation ${existing.id} was already delivered` }
         }
-        const retried = await deliverEscalation({ record: existing, sender: exec.agent, identity, signal: exec.signal })
+        const retried = await deliverEscalation({ record: existing, identity, signal: exec.signal })
         return {
           ok: true,
           tool: 'firstmate_native_escalate',
@@ -1112,7 +1136,7 @@ export function apply(ctx, config = {}) {
       })
       let delivery = { delivered: record.delivered_at !== null && record.delivered_at !== undefined, error: null }
       if (!delivery.delivered) {
-        delivery = await deliverEscalation({ record, sender: exec.agent, identity, signal: exec.signal })
+        delivery = await deliverEscalation({ record, identity, signal: exec.signal })
       }
       return {
         ok: true,

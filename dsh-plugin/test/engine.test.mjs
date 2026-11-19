@@ -143,17 +143,26 @@ function makeSubagents({ failSends = 0 } = {}) {
 }
 
 /**
- * Build the plugin-owned agent registry the coordinator uses for routine
- * wakes. Every steered batch is recorded; no subagent settlement notice is
- * ever produced by this path.
+ * Build the plugin-owned agent registry used for routine wakes and escalation
+ * delivery. Every steered message is recorded; no subagent settlement notice
+ * is ever produced by this path.
  * @returns the registry plus its observations.
  */
-function makeAgents() {
+function makeAgents({ failResumes = 0, liveParents = new Map() } = {}) {
   const resumed = []
   const messages = []
   const handles = []
+  let failures = failResumes
   const agents = {
+    get(id) {
+      return liveParents.get(id)
+    },
     async resume(options) {
+      resumed.push(options)
+      if (failures > 0) {
+        failures -= 1
+        throw new Error('the parent session cannot be resumed')
+      }
       const agent = {
         id: options.resumeSessionId,
         steer(message) {
@@ -167,7 +176,6 @@ function makeAgents() {
           this.disposed += 1
         },
       }
-      resumed.push(options)
       handles.push(handle)
       return handle
     },
@@ -378,7 +386,8 @@ test('an engine escalation is delivered and recorded durably', async () => {
   try {
     seedEngineRecord({ home })
     const fake = makeSubagents()
-    const surface = await boot({ home, subagents: fake.subagents })
+    const agents = makeAgents()
+    const surface = await boot({ home, subagents: fake.subagents, agents: agents.agents })
     const engine = engineAgent({ home })
     const escalate = toolNamed(surface.tools, 'firstmate_native_escalate')
 
@@ -386,11 +395,11 @@ test('an engine escalation is delivered and recorded durably', async () => {
     assert.equal(result.ok, true)
     assert.equal(result.delivered, true)
     assert.equal(result.duplicate, false)
-    assert.equal(fake.sends.length, 1)
-    assert.equal(fake.sends[0].sender, engine)
-    assert.equal(fake.sends[0].targetId, 'parent-a')
-    assert.match(fake.sends[0].content[0].text, /firstmate engine escalation/)
-    assert.match(fake.sends[0].content[0].text, /task-a is ready for review/)
+    assert.equal(fake.sends.length, 0, 'delivery bypasses the managed subagent tree')
+    assert.equal(agents.messages.length, 1, 'the parent receives exactly one steered escalation')
+    assert.match(agents.messages[0].content[0].text, /firstmate engine escalation/)
+    assert.match(agents.messages[0].content[0].text, /task-a is ready for review/)
+    assert.equal(agents.resumed[0].resumeSessionId, 'parent-a')
 
     const records = readEscalations({ home, parentSession: 'parent-a' }).records
     assert.equal(records.length, 1)
@@ -407,8 +416,9 @@ test('a repeated escalation deduplicates and retries a failed delivery', async (
   const home = engineHome()
   try {
     seedEngineRecord({ home })
-    const fake = makeSubagents({ failSends: 1 })
-    const surface = await boot({ home, subagents: fake.subagents })
+    const fake = makeSubagents()
+    const agents = makeAgents({ failResumes: 1 })
+    const surface = await boot({ home, subagents: fake.subagents, agents: agents.agents })
     const engine = engineAgent({ home })
     const escalate = toolNamed(surface.tools, 'firstmate_native_escalate')
 
@@ -424,7 +434,8 @@ test('a repeated escalation deduplicates and retries a failed delivery', async (
     assert.equal(second.duplicate, true)
     assert.equal(second.id, first.id)
     assert.equal(second.delivered, true)
-    assert.equal(fake.sends.length, 2, 'the duplicate retried delivery instead of recording again')
+    assert.equal(agents.messages.length, 1, 'the duplicate retried delivery instead of recording again')
+    assert.equal(agents.resumed.length, 2)
     records = readEscalations({ home, parentSession: 'parent-a' }).records
     assert.equal(records.length, 1)
     assert.equal(typeof records[0].delivered_at, 'number')
@@ -439,7 +450,8 @@ test('two engines in one home contend for one task with exactly one winner', asy
     seedEngineRecord({ home, parent: 'parent-a', engine: 'engine-a' })
     seedEngineRecord({ home, parent: 'parent-b', engine: 'engine-b' })
     const fake = makeSubagents()
-    const surface = await boot({ home, subagents: fake.subagents })
+    const agents = makeAgents()
+    const surface = await boot({ home, subagents: fake.subagents, agents: agents.agents })
     const engineA = engineAgent({ home, parent: 'parent-a', id: 'engine-a' })
     const engineB = engineAgent({ home, parent: 'parent-b', id: 'engine-b' })
     const lease = toolNamed(surface.tools, 'firstmate_native_lease')
@@ -456,7 +468,7 @@ test('two engines in one home contend for one task with exactly one winner', asy
 
     const escalation = await escalate.execute({ outcome: 'Only engine-a should see this.' }, execFor(engineB))
     assert.equal(escalation.ok, true)
-    assert.equal(fake.sends.at(-1).targetId, 'parent-b', 'an engine only ever escalates into its own parent')
+    assert.equal(agents.resumed.at(-1).resumeSessionId, 'parent-b', 'an engine only ever escalates into its own parent')
 
     const recordA = readEngineRecord({ home, parentSession: 'parent-a' })
     const recordB = readEngineRecord({ home, parentSession: 'parent-b' })
@@ -725,9 +737,9 @@ test('an escalation is the only message that reaches the parent', async () => {
 
     const outcome = await escalate.execute({ outcome: 'A real blocker needs the captain.', task: 'task-a' }, execFor(engine))
     assert.equal(outcome.delivered, true)
-    assert.equal(fake.sends.length, 1, 'only the escalation uses the parent channel')
-    assert.equal(fake.sends[0].targetId, 'parent-a')
-    assert.match(fake.sends[0].content[0].text, /engine escalation/)
+    assert.equal(agents.messages.length, 2, 'only the escalation adds a parent message')
+    assert.equal(agents.resumed.at(-1).resumeSessionId, 'parent-a')
+    assert.match(agents.messages.at(-1).content[0].text, /engine escalation/)
   } finally {
     cleanup(home)
   }
