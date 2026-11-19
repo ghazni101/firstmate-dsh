@@ -260,8 +260,17 @@ launch_template() {
   # naming them with -e as well loads each twice (verified), doubling every
   # session_stop continuation. The busy extension is the exception: it lives
   # outside the home, so discovery never sees it, and -e is the only load.
+  # A crewmate or scout additionally carries FM_OMP_ROLE=worker on this launch
+  # boundary. It is the structural role signal the tracked primary extensions
+  # read to stay inactive in a task worktree, which omp discovers from cwd with
+  # no trust gate. A secondmate never carries it: that session is the primary
+  # of its own home and keeps its watcher as before.
   omp)
-    printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u GEMINI_CLI -u CURSOR_AGENT -u CURSOR_INVOKED_AS FM_OMP_HARNESS=omp OMP_SKIP_SETUP=1 __OMPBIN____OMPPROFILE__ --config __OMPWORKERCFG__ --auto-approve --cwd __WORKTREE__ __MODELFLAG____EFFORTFLAG__-e __OMPEXT__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+    printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u GEMINI_CLI -u CURSOR_AGENT -u CURSOR_INVOKED_AS'
+    if [ "$kind" != secondmate ]; then
+      printf '%s' ' FM_OMP_ROLE=worker'
+    fi
+    printf '%s' ' FM_OMP_HARNESS=omp OMP_SKIP_SETUP=1 __OMPBIN____OMPPROFILE__ --config __OMPWORKERCFG__ --auto-approve --cwd __WORKTREE__ __MODELFLAG____EFFORTFLAG__-e __OMPEXT__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
     ;;
   # agy (Antigravity CLI): --prompt-interactive "<brief>" starts the supervised
   # interactive session and auto-submits it, so the brief rides the launch
