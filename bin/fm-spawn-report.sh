@@ -650,7 +650,6 @@ else
       sleep 0.2
     done
   }
-  SPAWN_LAUNCH_SENT=1
   # errexit is on here: a failed send still exits, and Orca source mode first
   # removes the credential-bearing file the pane never received.
   LAUNCH_SOURCE_TEXT=". $(shell_quote "$LAUNCH_FILE")"
@@ -664,6 +663,10 @@ else
     [ "$ORCA_LAUNCH_ENV_ENABLED" != 1 ] || spawn_orca_launch_send_fail
     exit 1
   fi
+  # Only a send the endpoint accepted counts as delivered: a refused send leaves
+  # no worker behind, so abort cleanup may close the endpoint and return the
+  # lease. Mark it here, after the send, for exactly that reason.
+  SPAWN_LAUNCH_SENT=1
   sleep 0.3
   if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
     HERDR_PROJECTION_ABORT_CLEANUP=0

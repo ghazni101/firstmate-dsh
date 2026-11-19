@@ -129,6 +129,7 @@ esac
 exit 0
 SH
   chmod +x "$fb/treehouse" "$fb/herdr" "$fb/polytoken"
+  fm_test_fake_harness "$fb"
   fm_test_fake_sleep_noop "$fb"
   printf '%s\n' "$dir"
 }
@@ -204,10 +205,8 @@ test_rolled_back_spawn_after_launch_names_the_lease_it_keeps() {
 
 # abort_kept_harness_spawn <id> <dirty|launch-fails> [session-lockable]: a spawn
 # on the fixture harness aborts, either before its launch into a dirty copy or
-# after a launch that was not delivered into a clean copy. fm-spawn-abort.sh's
-# endpoint and wiring cleanup still names the removed polytoken harness, so a
-# kept harness leaves those steps undone. FM_EXPECT_ABORT_CLEANUP_FIX=1 turns
-# the expected-failure assertions below into the corrected behavior.
+# after a launch that was not delivered into a clean copy. fm-spawn-abort.sh
+# closes its endpoint and returns a clean lease for any kept harness.
 abort_kept_harness_spawn() {
   local id=$1 dir
   dir=$(make_lease_case "$id")
@@ -221,22 +220,17 @@ abort_kept_harness_spawn() {
   LEASE_DIR=$dir
 }
 
-# EXPECTED-FAILURE FIXTURE (open finding: abort cleanup past polytoken). A
-# kept-harness abort whose clean launch failed neither closes its endpoint nor
-# returns its lease, because both branches are gated on HARNESS=polytoken.
+# A kept-harness abort whose clean launch failed closes its endpoint and returns
+# its lease: fresh-endpoint cleanup is no longer gated on the removed polytoken
+# harness.
 test_abort_cleanup_past_removed_polytoken_harness() {
   local id=lease-cleanup-gap
   abort_kept_harness_spawn "$id" launch-fails session-lockable
   [ "$LEASE_STATUS" -ne 0 ] || fail "spawn succeeded although its launch was not delivered"$'\n'"$LEASE_OUT"
   [ ! -e "$LEASE_DIR/home/state/$id.meta" ] || fail "the failed spawn kept its task record"
-  if [ -n "${FM_EXPECT_ABORT_CLEANUP_FIX:-}" ]; then
-    assert_grep 'pane close' "$LEASE_DIR/fake/herdr-log" "the abort did not close its pane"$'\n'"$LEASE_OUT"
-    [ -e "$LEASE_DIR/fake/returned" ] || fail "the abort kept a clean lease although its pane is gone"$'\n'"$LEASE_OUT"
-  else
-    ! grep -q 'pane close' "$LEASE_DIR/fake/herdr-log" || fail "the gap changed: a kept-harness abort now closes its pane"
-    [ ! -e "$LEASE_DIR/fake/returned" ] || fail "the gap changed: a kept-harness abort now returns its lease"
-  fi
-  pass "EXPECTED FAILURE pinned: kept-harness abort cleanup still stops at the removed polytoken harness"
+  assert_grep 'pane close' "$LEASE_DIR/fake/herdr-log" "the abort did not close its pane"$'\n'"$LEASE_OUT"
+  [ -e "$LEASE_DIR/fake/returned" ] || fail "the abort kept a clean lease although its pane is gone"$'\n'"$LEASE_OUT"
+  pass "a kept-harness abort closes its endpoint and returns a clean lease"
 }
 
 test_abort_keeps_a_dirty_lease_once_the_pane_is_gone() {

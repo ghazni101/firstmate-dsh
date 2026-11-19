@@ -342,6 +342,53 @@ test_relaunch_rebuilds_the_switch() {
     [ "$setting" = absent ] || : > "$home/config/launch-env-allowlist"
     make_relaunch_stub "$dir"
     fm_test_fake_herdr_spawn "$dir/fakebin"
+    # The shared herdr stub answers the launch verbs; a relaunch also needs an
+    # agent-bearing process view and a composer read to prove the old agent
+    # stopped. Model those on the same endpoint instead of leaving the control
+    # classifier an unreadable pane.
+    mv "$dir/fakebin/herdr" "$dir/fakebin/herdr-real"
+    cat > "$dir/fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+case "${1:-} ${2:-}" in
+  'pane process-info')
+    if [ -f "${FM_FAKE_DIR:-}/agent-stopped" ]; then
+      printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_processes":[]}}}\n' "${4:-%9}"
+    else
+      printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_processes":[{"pid":4243,"name":"claude","argv":["claude"],"cmdline":"claude"}]}}}\n' "${4:-%9}"
+    fi
+    exit 0 ;;
+  'agent get')
+    if [ -f "${FM_FAKE_DIR:-}/agent-stopped" ]; then
+      printf '{"error":{"code":"agent_not_found"}}\n'
+    else
+      printf '{"result":{"agent":{"agent_status":"idle"}}}\n'
+    fi
+    exit 0 ;;
+  'pane send-text')
+    payload=${4:-}
+    case "$payload" in
+      ". '"*"'")
+        staged=${payload#". '"}; staged=${staged%"'"}
+        [ ! -f "$staged" ] || payload=$(cat "$staged")
+        printf '%s\n' "$payload" > "${FM_FAKE_DIR:-}/launch" ;;
+    esac
+    case "$payload" in
+      /exit|/quit) : > "${FM_FAKE_DIR:-}/agent-stopped" ;;
+      *'encode launch-brief'* | *'Firstmate operational input waiting: read'*)
+        rm -f "${FM_FAKE_DIR:-}/agent-stopped"
+        printf '%s' "$FM_TEST_FIXTURE_HARNESS" > "${FM_FAKE_DIR:-}/command" ;;
+    esac
+    exec "$(dirname "$0")/herdr-real" "$@" ;;
+  'pane read')
+    printf '╭────╮\n│    │\n╰────╯\n'
+    exit 0 ;;
+  'pane run')
+    printf '%s\n' "${4:-}" >> "${FM_FAKE_DIR:-}/keys"
+    exec "$(dirname "$0")/herdr-real" "$@" ;;
+esac
+exec "$(dirname "$0")/herdr-real" "$@"
+SH
+    chmod +x "$dir/fakebin/herdr"
     fm_git_worktree "$proj" "$wt" "wt-relaunch-$setting"
     fm_test_spawn_brief "$home" "$id"
     : > "$dir/fake/literal"
@@ -370,6 +417,7 @@ test_relaunch_rebuilds_the_switch() {
 
     mkdir -p "$dir/user-home"
     out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
+      FM_FAKE_PANE_PATH="$wt" \
       HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' FM_SPAWN_NO_GUARD=1 \
       HARNESS="$FM_TEST_FIXTURE_HARNESS" \
       FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \

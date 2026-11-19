@@ -437,18 +437,35 @@ SH
   chmod +x "$fakebin/herdr"
 }
 
+# fm_test_fake_harness <fakebin> [name]
+# Records argv to FM_FAKE_HARNESS_LOG and exits 0. Every spawn fixture that
+# builds a fakebin must install this for its worker harness: the real CLI is on
+# PATH in development homes, and a missing stub would launch a live agent in a
+# temp fixture (Claude Code then stops at its folder-trust dialog).
+fm_test_fake_harness() {  # <fakebin> [name]
+  local fakebin=$1 name=${2:-$FM_TEST_FIXTURE_HARNESS}
+  cat > "$fakebin/$name" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_HARNESS_LOG:-/dev/null}"
+exit 0
+SH
+  chmod +x "$fakebin/$name"
+}
+
 # fm_test_make_spawn_fakebin <dir> [extra-exit0-tool...]
-# Creates <dir>/fakebin with the spawn tmux stub, a no-op treehouse, and any
-# extra exit-0 tools. Echoes the fakebin path.
+# Creates <dir>/fakebin with the spawn tmux and herdr stubs, a fake worker
+# harness, a no-op treehouse, and any extra exit-0 tools. Echoes the fakebin.
 fm_test_make_spawn_fakebin() {
   local dir=$1 fakebin
   shift
   fakebin=$(fm_fakebin "$dir")
   fm_test_fake_tmux_spawn "$fakebin"
   fm_test_fake_herdr_spawn "$fakebin"
+  fm_test_fake_harness "$fakebin"
   fm_fake_exit0 "$fakebin" treehouse "$@"
   printf '%s\n' "$fakebin"
 }
+
 
 # Drop-in name used by the spawn suites. Extra args are additional exit-0 tools
 # (gh, gh-axi, pi, ...).
