@@ -679,6 +679,19 @@ supervision host.
   `parentSession` equal to that interactive session. The composition must register the
   in-process fork backend under the provider name `fork`; if it is missing, creation records
   an actionable failure and never touches the parent.
+- **Watchable.** The fork is a local in-process child, so DSH publishes it to the parent's
+  `subagentCatalog` projection. The installed web profile's `ui-subagent` package renders that
+  catalog in the session-header subagents menu and opens the child as an inspectable
+  conversation pane. The activation asks for the stable catalog name `firstmate-coordinator`,
+  so the coordinator is findable in every interactive session. No DSH core patch or new UI is
+  involved; the existing DSH view is the supported surface.
+- **Plugin-owned wakes.** Creation uses the subagent manager once, so the child inherits the
+  parent's composition and its catalog entry. Later routine batches are steered by the plugin
+  through its own agent-registry handle on that persisted session, not by
+  `subagents.sendMessage`. A manager cold resume would use parent delivery and post a
+  settlement notice into the interactive session on every routine turn; a plugin-owned wake
+  produces no such notice. Routine traffic therefore reaches only the coordinator pane, and
+  `firstmate_native_escalate` remains the only path into captain conversation.
 - **Seeded once.** The `fork` provider seeds the child with the parent's completed-turn prefix
   through the last `turn/end`; the in-flight turn is never seeded. The prefix is captured at
   creation and becomes part of the child's own durable transcript, so a later cold resume
@@ -735,16 +748,22 @@ The plugin runs one deterministic loop per engine host:
 2. **Observe.** `fm-fleet-snapshot.sh --json` through the existing reader. Its task rows already
    carry the classification output of `bin/fm-classify-lib.sh`: `pending_decision`,
    `blocked_event`, `open_decisions`, the classified last verb, and the captain-hold projection.
-3. **Classify coarsely.** Only those existing fields are read; the plugin never re-implements
+   Each row also carries `owner_session`, copied from the task's `dsh_session=` spawn marker.
+3. **Scope.** Tasks owned by another interactive session are dropped before diffing, at every
+   class. A task with no owner marker is legacy: its routine traffic is dropped from every
+   coordinator, while a captain-class outcome stays visible so a real deliverable or blocker
+   can still be escalated. This keeps two sessions' routine traffic private without touching
+   the escalation classes.
+4. **Classify coarsely.** Only those existing fields are read; the plugin never re-implements
    status verbs or hold policy. An event is tagged `captain` when a reader already marked it
    pending, blocked, open, captain-actionable, or a terminal outcome; otherwise `routine`.
-4. **Diff.** The engine record stores the last task-signature map. Only added or changed tasks
-   become a batch; an unchanged fleet produces no message.
-5. **Route.** One batch per tick is appended to the engine inbox, then delivered with
-   `ctx.subagents.sendMessage(parentAgent, engineSession, …)`, which wakes a live engine or
-   cold-resumes a dormant one. When the engine is being created, the batch is written before
-   the fork starts and the creation prompt points at it, so the bootstrap turn can never race
-   an empty inbox.
+5. **Diff.** The engine record stores the last task-signature map. Only added or changed visible
+   tasks become a batch; an unchanged fleet produces no message.
+6. **Route.** One batch per tick is appended to the engine inbox. For a live engine the plugin
+   resumes its persisted session through its own agent-registry handle and steers the batch as
+   a user message; no subagent activation settles, so the parent sees no notice. When the engine
+   is being created, the batch is written before the fork starts and the creation prompt points
+   at it, so the bootstrap turn can never race an empty inbox.
 
 A tick consumes **no model turn**. The engine wakes only for an actual batch or a due
 escalation retry, so a quiet fleet costs nothing. The engine's own turn is where judgment
@@ -773,15 +792,14 @@ happens; it re-derives every decision from durable records rather than trusting 
 
 - **Creation failure** writes a `crashed` record with the error and never touches the parent;
   the next tick retries.
-- **Crash detection.** The host follows its activation's result. A settled turn is normal
-  (the manager releases the activation and a later `sendMessage` cold-resumes it). A failed
-  turn or a rejected wake marks the record `crashed` and releases any live activation.
-- **Recovery.** The next tick sees a non-live record and creates a fresh fork from the
-  parent's then-completed turns. The parent session, its leases, and every worker are
-  untouched.
+- **Crash detection.** The host follows its activation's result and its plugin-owned wake
+  handle. A failed turn or a rejected wake marks the record `crashed` and releases both.
 - **Parent end.** `agent/disposed` on the interactive session stops the tick and marks the
-  engine record `closed`; the engine is disposed if it is still live. The parent is never
-  disposed, reset, or steered by engine cleanup.
+  engine record `closed`; the engine child and its plugin-owned handle are disposed. The host
+  then releases only the live leases held by that session or its engine, plus leases on tasks
+  whose spawn marker names that session. A lease release frees a write claim only: no worker,
+  worktree, branch, or PR is touched, and another session's crews are untouched. The parent is
+  never disposed, reset, or steered by engine cleanup.
 - **Resume.** A resumed interactive session supersedes its previous engine record before the
   host starts, so the next fork reflects the resumed history.
 - **Foreign owner.** If a record still names a live different process, the tick skips it
@@ -810,6 +828,11 @@ happens; it re-derives every decision from durable records rather than trusting 
    escalation retry. A quiet fleet costs no turns.
 10. Retirement of the single-owner machinery remains gated as in phase 5; this mechanism adds
     no fleet-wide owner and no new shared lock.
+11. A task dispatched through the native run channel records its owning interactive session
+    as `dsh_session=` in `state/<id>.meta`; the engine identity passes the parent session for
+    its own engine, so a coordinator's crew is always the captain session's, never the fork's.
+12. A routine coordinator turn produces no message in the interactive session. The only
+    parent-session content is an escalation when one is warranted.
 
 ## 7. Strangler phases
 
@@ -935,6 +958,10 @@ temporary home created by `mkdtemp`:
   gating for an engine versus an ordinary subagent, inbox batching, escalation delivery and
   dedupe, tick-driven retry, two-engine contention, crash recreation, parent-end close, and a
   quiet tick creating nothing.
+- Session crews: a routine batch is steered into the plugin-owned coordinator and produces no
+  parent-session message; an escalation still reaches the parent; two sessions' coordinators
+  route only their own tasks; unowned legacy captain outcomes still escalate; terminal close
+  releases only owned leases and leaves every worker and worktree intact.
 
 Integration tests (phase 1+) mint a disposable home with `bin/fm-lab-home.sh` and never touch
 the real fleet. The gate-refusal library keeps lab enforcement separate from the live fleet.

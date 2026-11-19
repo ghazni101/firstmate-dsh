@@ -163,7 +163,7 @@ function validateRule(rule, index) {
  * @param options - observation inputs.
  * @returns `{ snapshot, queued, inFlight, degraded }`.
  */
-export async function observeHome({ home, timeoutMs = 60000, signal } = {}) {
+export async function observeHome({ home, ownerSession = null, timeoutMs = 60000, signal } = {}) {
   const result = await runScript(home, 'fm-fleet-snapshot.sh', ['--json'], { timeoutMs, signal })
   if (result.code !== 0) {
     return {
@@ -198,6 +198,7 @@ export async function observeHome({ home, timeoutMs = 60000, signal } = {}) {
   const tasks = Array.isArray(snapshot?.tasks) ? snapshot.tasks : []
   const inFlight = tasks
     .filter((task) => task !== null && typeof task === 'object')
+    .filter((task) => ownerSession === null || task.owner_session === ownerSession)
     .filter((task) => task.state === 'in_flight' || task?.backlog?.state === 'in_flight')
     .map((task) => ({
       id: String(task.id ?? ''),
@@ -361,6 +362,7 @@ export async function reconcileTick({
   config,
   apply = false,
   pluginDir,
+  ownerSession = null,
   now = Date.now,
   signal,
 } = {}) {
@@ -381,8 +383,9 @@ export async function reconcileTick({
     actions: [],
     skipped: [],
     degraded: null,
+    owner_session: ownerSession,
   }
-  const observation = await observeHome({ home, signal })
+  const observation = await observeHome({ home, ownerSession, signal })
   if (observation.degraded !== null) {
     report.degraded = observation.degraded
     return report

@@ -36,9 +36,10 @@ import {
   toolNamed,
 } from './helpers.mjs'
 
-/** A task that is merely working. */
+/** A task that is merely working, owned by the first interactive session. */
 const ROUTINE_TASK = {
   id: 'task-a',
+  owner_session: 'parent-a',
   kind: 'ship',
   current_state: { state: 'working' },
   paths: { status_log: { last_event: { state: 'working', raw: 'working [at=1]: reviewing' } } },
@@ -142,6 +143,39 @@ function makeSubagents({ failSends = 0 } = {}) {
 }
 
 /**
+ * Build the plugin-owned agent registry the coordinator uses for routine
+ * wakes. Every steered batch is recorded; no subagent settlement notice is
+ * ever produced by this path.
+ * @returns the registry plus its observations.
+ */
+function makeAgents() {
+  const resumed = []
+  const messages = []
+  const handles = []
+  const agents = {
+    async resume(options) {
+      const agent = {
+        id: options.resumeSessionId,
+        steer(message) {
+          messages.push(message)
+        },
+      }
+      const handle = {
+        agent,
+        disposed: 0,
+        async dispose() {
+          this.disposed += 1
+        },
+      }
+      resumed.push(options)
+      handles.push(handle)
+      return handle
+    },
+  }
+  return { agents, resumed, messages, handles }
+}
+
+/**
  * Flush pending microtasks and timers.
  * @returns a promise resolved after one turn.
  */
@@ -192,8 +226,11 @@ function engineAgent({ home, parent = 'parent-a', id = 'engine-a' } = {}) {
  * @param options - boot options.
  * @returns the booted surface.
  */
-async function boot({ home, subagents, engineTickMs = 0 } = {}) {
-  const context = makeContext({ services: subagents === undefined ? {} : { subagents } })
+async function boot({ home, subagents, agents, engineTickMs = 0 } = {}) {
+  const services = {}
+  if (subagents !== undefined) services.subagents = subagents
+  if (agents !== undefined) services.agents = agents
+  const context = makeContext({ services })
   apply(context.ctx, { enabled: true, home, engineTickMs })
   const parent = rootAgent({ home })
   await emit(context.listeners, 'agent/created', { agent: parent, source: 'startup' })
@@ -204,16 +241,17 @@ async function boot({ home, subagents, engineTickMs = 0 } = {}) {
  * Build one EngineHost fixture.
  * @returns host plus fixtures.
  */
-function hostFixture({ home, fake, parent, id = 'parent-a' }) {
+function hostFixture({ home, fake, parent, agents = makeAgents(), id = 'parent-a' }) {
   const identity = makeIdentity(home, id)
   const host = new EngineHost({
     home,
     parentAgent: parent,
     identity,
     subagents: fake.subagents,
+    agents: agents.agents,
     tickMs: 0,
   })
-  return { host, identity }
+  return { host, identity, agents }
 }
 
 test('the fork seed boundary is the last completed turn, never the in-flight one', () => {
@@ -235,7 +273,7 @@ test('engine creation forks the completed-turn prefix with the dispatch default'
   try {
     const fake = makeSubagents()
     const parent = rootAgent({ home, events: [{ seq: 0, type: 'turn/start' }] })
-    const { host } = hostFixture({ home, fake, parent })
+    const { host, agents } = hostFixture({ home, fake, parent })
 
     const deferred = await host.tick()
     assert.equal(deferred.skipped, 'awaiting-completed-turn')
@@ -250,6 +288,7 @@ test('engine creation forks the completed-turn prefix with the dispatch default'
     assert.equal(spec.parent, parent)
     assert.equal(spec.delivery, 'caller')
     assert.equal(spec.label, 'firstmate-engine')
+    assert.equal(spec.name, 'firstmate-coordinator', 'the coordinator is a named, watchable DSH catalog child')
     assert.equal(spec.childId, created.engine_session)
     assert.equal(spec.agentOptions.provider, 'opencode-go')
     assert.equal(spec.agentOptions.model, 'deepseek-v4.1-flash')
@@ -267,6 +306,9 @@ test('engine creation forks the completed-turn prefix with the dispatch default'
     assert.equal(inbox[0].class, 'routine')
     assert.equal(inbox[0].items[0].id, 'task-a')
     assert.equal(typeof inbox[0].delivered_at, 'number')
+    assert.equal(agents.messages.length, 0, 'the creation batch is read from the bootstrap inbox, not a resumed turn')
+    assert.equal(fake.sends.length, 0, 'no subagent settlement message reaches the parent')
+    assert.equal(parent.followups.length, 0, 'the interactive session receives nothing on a routine batch')
   } finally {
     cleanup(home)
   }
@@ -572,20 +614,21 @@ test('the next tick recovers a lost escalation, then throttles the nudge', async
     })
     const fake = makeSubagents()
     const parent = rootAgent({ home })
-    const { host } = hostFixture({ home, fake, parent })
+    const { host, agents } = hostFixture({ home, fake, parent })
 
     const recovered = await host.tick()
     assert.equal(recovered.delivered, true)
     assert.equal(recovered.retries, 1)
-    assert.equal(fake.sends.length, 1)
-    const text = fake.sends[0].content[0].text
+    assert.equal(fake.sends.length, 0, 'the retry batch does not message the parent')
+    assert.equal(agents.messages.length, 1)
+    const text = agents.messages[0].content[0].text
     assert.match(text, new RegExp(record.id))
     assert.match(text, /firstmate_native_escalate retry_id=/)
     assert.equal(readEscalations({ home, parentSession: 'parent-a' }).records[0].delivered_at, null, 'the engine delivers, not the tick')
 
     const quiet = await host.tick()
     assert.equal(quiet.quiet, true, 'the throttle prevents a wake loop')
-    assert.equal(fake.sends.length, 1)
+    assert.equal(agents.messages.length, 1)
   } finally {
     cleanup(home)
   }
@@ -596,7 +639,8 @@ test('a root lease claim starts supervision and forks on the next tick', async (
   let surface
   try {
     const fake = makeSubagents()
-    surface = await boot({ home, subagents: fake.subagents, engineTickMs: 5 })
+    const agents = makeAgents()
+    surface = await boot({ home, subagents: fake.subagents, agents: agents.agents, engineTickMs: 5 })
     assert.equal(readEngineRecord({ home, parentSession: 'parent-a' }), null)
     const lease = toolNamed(surface.tools, 'firstmate_native_lease')
     await lease.execute({ action: 'acquire', task: 'task-a', purpose: 'dispatch' }, execFor(surface.parent))
@@ -610,8 +654,103 @@ test('a root lease claim starts supervision and forks on the next tick', async (
     assert.equal(record.status, 'live')
     assert.equal(fake.activations.length, 1)
     assert.equal(fake.activations[0].spec.provider, 'fork')
+    assert.equal(agents.messages.length, 0, 'a fresh coordinator reads its batch from the bootstrap inbox')
+    assert.equal(fake.sends.length, 0, 'no parent message was produced')
+    assert.equal(surface.parent.followups.length, 0)
   } finally {
     for (const dispose of surface?.cleanups ?? []) dispose()
     cleanup(home)
   }
 })
+
+test('two sessions supervise only their own crews and never see each other\'s routine traffic', async () => {
+  const ownedA = { ...ROUTINE_TASK, id: 'owned-a', owner_session: 'parent-a' }
+  const ownedB = { ...ROUTINE_TASK, id: 'owned-b', owner_session: 'parent-b' }
+  const foreignCaptain = { ...CAPTAIN_TASK, id: 'foreign-captain', owner_session: 'parent-b' }
+  const unownedRoutine = { ...ROUTINE_TASK, id: 'unowned-routine', owner_session: null }
+  const unownedCaptain = { ...CAPTAIN_TASK, id: 'unowned-captain', owner_session: null }
+  const snapshot = {
+    schema: 'fm-fleet-snapshot.v1',
+    backlog: { records: [] },
+    tasks: [ownedA, ownedB, foreignCaptain, unownedRoutine, unownedCaptain],
+  }
+  const events = observeFleetEvents(snapshot)
+  const forA = diffFleetEvents({ seen: {}, events, ownerSession: 'parent-a' })
+  const forB = diffFleetEvents({ seen: {}, events, ownerSession: 'parent-b' })
+
+  assert.deepEqual(forA.map((event) => event.id), ['unowned-captain', 'owned-a'])
+  assert.deepEqual(forB.map((event) => event.id), ['foreign-captain', 'unowned-captain', 'owned-b'])
+  assert.equal(forA.some((event) => event.id === 'unowned-routine'), false, 'legacy routine traffic stays out of every coordinator')
+  assert.equal(forA.some((event) => event.id === 'foreign-captain'), false, 'a captain item from another session is never routed here')
+  assert.equal(forA.find((event) => event.id === 'unowned-captain').class, 'captain', 'legacy captain outcomes still escalate')
+})
+
+test('a routine batch never produces a parent-session message', async () => {
+  const home = engineHome()
+  try {
+    seedEngineRecord({ home })
+    const fake = makeSubagents()
+    const agents = makeAgents()
+    const parent = rootAgent({ home })
+    const { host } = hostFixture({ home, fake, agents, parent })
+    const report = await host.tick()
+
+    assert.equal(report.delivered, true)
+    assert.equal(report.batch !== undefined, true)
+    assert.equal(fake.sends.length, 0, 'no subagent message or settlement notice was delivered to the parent')
+    assert.equal(parent.followups.length, 0, 'the interactive session saw nothing')
+    assert.equal(agents.messages.length, 1, 'the coordinator received the routine batch')
+    assert.equal(agents.messages[0].role, 'user')
+    assert.deepEqual(agents.messages[0].source, { kind: 'user' })
+    assert.equal(agents.resumed[0].resumeSessionId, 'engine-a')
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('an escalation is the only message that reaches the parent', async () => {
+  const home = engineHome()
+  try {
+    seedEngineRecord({ home })
+    const fake = makeSubagents()
+    const agents = makeAgents()
+    const surface = await boot({ home, subagents: fake.subagents, agents: agents.agents })
+    const engine = engineAgent({ home })
+    const escalate = toolNamed(surface.tools, 'firstmate_native_escalate')
+
+    await hostTickSilently(surface, home, fake, agents)
+    assert.equal(agents.messages.length, 1)
+    assert.equal(fake.sends.length, 0)
+    assert.equal(surface.parent.followups.length, 0)
+
+    const outcome = await escalate.execute({ outcome: 'A real blocker needs the captain.', task: 'task-a' }, execFor(engine))
+    assert.equal(outcome.delivered, true)
+    assert.equal(fake.sends.length, 1, 'only the escalation uses the parent channel')
+    assert.equal(fake.sends[0].targetId, 'parent-a')
+    assert.match(fake.sends[0].content[0].text, /engine escalation/)
+  } finally {
+    cleanup(home)
+  }
+})
+
+/**
+ * Run one tick through the plugin-registered host without an interval timer.
+ * @param surface - booted plugin surface.
+ * @param home - fixture home.
+ * @param fake - subagent fake.
+ * @param agents - plugin-owned agent fake.
+ * @returns the tick report.
+ */
+async function hostTickSilently(surface, home, fake, agents) {
+  const parent = surface.parent
+  const identity = makeIdentity(home, 'parent-a')
+  const host = new EngineHost({
+    home,
+    parentAgent: parent,
+    identity,
+    subagents: fake.subagents,
+    agents: agents.agents,
+    tickMs: 0,
+  })
+  return host.tick()
+}

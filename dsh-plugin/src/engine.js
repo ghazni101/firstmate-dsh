@@ -24,14 +24,16 @@
  * @module @local/dsh-plugin-firstmate-native/src/engine
  */
 import { randomUUID } from 'node:crypto'
-import { watch } from 'node:fs'
+import { readFileSync, watch } from 'node:fs'
 import { join } from 'node:path'
+import { listLeases, readLease, releaseLease } from './lease.js'
 import { observeHome } from './reconcile.js'
 import {
   buildBootstrapPrompt,
   buildTrafficMessage,
   completedTurnBoundary,
   diffFleetEvents,
+  ENGINE_AGENT_NAME,
   ENGINE_DEFAULT_TICK_MS,
   ENGINE_LABEL,
   ENGINE_MAX_BATCH_ITEMS,
@@ -126,16 +128,20 @@ export class EngineHost {
    * @param options.identity - the root supervisor identity.
    * @param options.subagents - the subagent service, when available.
    * @param options.getSubagents - live reader for a service that may load after the host.
+   * @param options.agents - the plugin-owned agent registry, used for coordinator wakes.
+   * @param options.getAgents - live reader for the agent registry.
    * @param options.tickMs - tick interval; 0 disables the timer for tests.
    * @param options.now - clock function.
    * @param options.logger - optional warning sink.
    */
-  constructor({ home, parentAgent, identity, subagents, getSubagents, tickMs = ENGINE_DEFAULT_TICK_MS, now = Date.now, logger } = {}) {
+  constructor({ home, parentAgent, identity, subagents, agents, getSubagents, getAgents, tickMs = ENGINE_DEFAULT_TICK_MS, now = Date.now, logger } = {}) {
     this.home = home
     this.parentAgent = parentAgent
     this.identity = { ...identity, kind: 'root' }
     this.subagents = subagents
     this.resolveSubagents = typeof getSubagents === 'function' ? getSubagents : () => subagents
+    this.agents = agents
+    this.resolveAgents = typeof getAgents === 'function' ? getAgents : () => agents
     this.tickMs = Number.isFinite(tickMs) ? tickMs : ENGINE_DEFAULT_TICK_MS
     this.now = now
     this.logger = logger
@@ -146,6 +152,7 @@ export class EngineHost {
     this.ticking = false
     this.activation = null
     this.engineSession = undefined
+    this.engineHandle = undefined
     this.lastReport = null
   }
 
@@ -254,7 +261,17 @@ export class EngineHost {
         // Disposal failure never reaches the parent.
       }
     }
+    const handle = this.engineHandle
+    this.engineHandle = undefined
+    if (handle !== undefined && typeof handle.dispose === 'function') {
+      try {
+        await handle.dispose()
+      } catch {
+        // Plugin-owned coordinator cleanup never reaches the parent.
+      }
+    }
     if (!terminal) return
+    const releasedLeases = this.releaseOwnedLeases()
     const record = this.record()
     if (record === null) return
     if (record.owner_pid !== process.pid && ownerIsLive(record)) return
@@ -265,9 +282,56 @@ export class EngineHost {
       mutate(next) {
         next.status = 'closed'
         next.closed_reason = reason
+        if (releasedLeases.length > 0) next.released_leases = releasedLeases
         return next
       },
     })
+  }
+
+  /**
+   * Release this session's live task leases on terminal close.
+   *
+   * A lease is only a write claim. Releasing one never kills a worker, removes
+   * a worktree, or discards a branch or PR. Only leases held by this parent or
+   * its engine, and tasks whose spawn marker names this parent, are touched.
+   * @returns the task ids whose leases were released.
+   */
+  releaseOwnedLeases() {
+    const sessions = new Set([this.parentSession, this.engineSession]
+      .filter((value) => typeof value === 'string' && value.length > 0))
+    const released = []
+    for (const row of listLeases({ home: this.home })) {
+      if (row.state !== 'held' || row.live !== true) continue
+      const { record, corrupt } = readLease(this.home, row.task)
+      if (corrupt || record === null || record.state !== 'held') continue
+      if (!sessions.has(record.session) && !this.taskOwnedByParent(row.task)) continue
+      try {
+        releaseLease({
+          home: this.home,
+          task: row.task,
+          identity: { home: this.home, sessionId: record.session, ownerLabel: record.owner },
+          token: record.token,
+        })
+        released.push(row.task)
+      } catch {
+        // A concurrent holder won the race; cleanup never escalates to teardown.
+      }
+    }
+    return released
+  }
+
+  /**
+   * Whether this interactive session's spawn marker names one task.
+   * @param task - task id from a live lease record.
+   * @returns true when the task belongs to this session's crew.
+   */
+  taskOwnedByParent(task) {
+    try {
+      const meta = readFileSync(join(this.home, 'state', `${task}.meta`), 'utf8')
+      return meta.split('\n').includes(`dsh_session=${this.parentSession}`)
+    } catch {
+      return false
+    }
   }
 
   /**
@@ -314,13 +378,13 @@ export class EngineHost {
 
     // Observe before creating: a quiet fleet with no engine must cost nothing.
     if (this.closed) return this.remember({ ok: false, skipped: 'closed', reason })
-    const observation = await observeHome({ home: this.home, signal })
+    const observation = await observeHome({ home: this.home, signal, ownerSession: this.parentSession })
     if (observation.degraded !== null) {
       return this.remember({ ok: false, skipped: 'degraded', reason, error: observation.degraded, engine_session: this.engineSession })
     }
     const events = observeFleetEvents(observation.snapshot)
     const seen = record !== null && record.seen !== null && typeof record.seen === 'object' ? record.seen : {}
-    const changed = diffFleetEvents({ seen, events })
+    const changed = diffFleetEvents({ seen, events, ownerSession: this.parentSession })
     const pending = pendingEscalations({ home: this.home, parentSession: this.parentSession, now: this.now() })
     const nextSeen = Object.fromEntries([...events].map(([id, event]) => [id, event.signature]))
     const visible = changed.slice(0, ENGINE_MAX_BATCH_ITEMS)
@@ -486,6 +550,7 @@ export class EngineHost {
       const activation = await subagents.startActivation({
         provider: ENGINE_PROVIDER,
         label: ENGINE_LABEL,
+        name: ENGINE_AGENT_NAME,
         prompt,
         parent: this.parentAgent,
         delivery: 'caller',
@@ -537,28 +602,59 @@ export class EngineHost {
   }
 
   /**
-   * Wake or cold-resume the engine with one traffic message.
+   * Wake the coordinator without a subagent-tree round trip.
+   *
+   * DSH's subagent manager cold-resumes a non-resident child with parent
+   * delivery, posting a settlement notice into the interactive session on
+   * every routine turn. The coordinator is plugin-owned: the plugin resumes
+   * its persisted session through the agent registry and steers the batch as
+   * an ordinary user message. No manager activation settles on a routine
+   * turn, so nothing reaches the parent except an escalation.
    * @param options - wake inputs.
    * @param options.text - message body.
    * @param options.record - current engine record.
    * @param options.signal - cancellation.
-   * @returns `{ ok, error?, messageId? }`.
+   * @returns `{ ok, error?, messageId?, ownership }`.
    */
   async wake({ text, record, signal } = {}) {
-    const subagents = this.service()
-    if (subagents === undefined || typeof subagents.sendMessage !== 'function') {
-      this.markCrashed('the subagent service is unavailable, so the engine cannot be woken')
-      return { ok: false, error: 'the subagent service is unavailable, so the engine cannot be woken' }
+    let agents
+    try {
+      agents = this.resolveAgents()
+    } catch {
+      agents = undefined
+    }
+    if (agents === undefined || typeof agents.resume !== 'function') {
+      const reason = 'the agent registry is unavailable, so the coordinator cannot be woken'
+      this.markCrashed(reason)
+      return { ok: false, error: reason }
     }
     const abort = signal ?? new AbortController().signal
     try {
-      const messageId = await subagents.sendMessage(
-        this.parentAgent,
-        record.engine_session,
-        [{ type: 'text', text }],
-        { signal: abort },
-      )
-      return { ok: true, messageId }
+      if (this.engineHandle === undefined) {
+        const config = resolveEngineConfig({ home: this.home })
+        if (config.config_error !== null) throw new Error(config.config_error)
+        const agentOptions = {}
+        if (config.provider !== null) agentOptions.provider = config.provider
+        if (config.model !== null) agentOptions.model = config.model
+        if (config.effort !== null) agentOptions.reasoningEffort = config.effort
+        this.engineHandle = await agents.resume({
+          resumeSessionId: record.engine_session,
+          ...(Object.keys(agentOptions).length === 0 ? {} : { agentOptions }),
+          signal: abort,
+        })
+      }
+      const agent = this.engineHandle?.agent
+      if (agent === undefined || typeof agent.steer !== 'function') {
+        throw new Error('the resumed coordinator has no steering surface')
+      }
+      const message = {
+        id: randomUUID(),
+        role: 'user',
+        content: [{ type: 'text', text }],
+        source: { kind: 'user' },
+      }
+      agent.steer(message)
+      return { ok: true, messageId: message.id, ownership: 'plugin' }
     } catch (error) {
       const reason = messageOf(error)
       this.markCrashed(`engine wake failed: ${reason}`)
@@ -588,6 +684,11 @@ export class EngineHost {
     this.activation = null
     if (activation !== undefined && activation !== null) {
       Promise.resolve(activation.dispose()).catch(() => undefined)
+    }
+    const handle = this.engineHandle
+    this.engineHandle = undefined
+    if (handle !== undefined && typeof handle.dispose === 'function') {
+      Promise.resolve(handle.dispose()).catch(() => undefined)
     }
     this.logger?.warn?.(`firstmate supervision engine for ${this.parentSession}: ${reason}`)
   }
