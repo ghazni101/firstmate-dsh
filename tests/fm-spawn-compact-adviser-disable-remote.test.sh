@@ -86,15 +86,15 @@ chmod +x "$FAKEBIN/fake-ssh"
 
 # The harness the remote pane would have started, replaced by a probe that
 # reports the one environment fact under test.
-cat > "$PROBEBIN/codex" <<'SH'
+cat > "$PROBEBIN/$FM_TEST_FIXTURE_HARNESS" <<'SH'
 #!/bin/sh
 printf '%s\n' "${COMPACT_ADVISER_DISABLE-unset}"
 SH
-chmod +x "$PROBEBIN/codex"
+chmod +x "$PROBEBIN/$FM_TEST_FIXTURE_HARNESS"
 
-printf 'codex\n' > "$PARENT/config/secondmate-harness"
-printf 'tmux\n' > "$PARENT/config/backend"
-printf 'codex\n' > "$PARENT/config/crew-harness"
+printf '%s\n' "$FM_TEST_FIXTURE_HARNESS" > "$PARENT/config/secondmate-harness"
+printf '%s\n' herdr > "$PARENT/config/backend"
+printf '%s\n' "$FM_TEST_FIXTURE_HARNESS" > "$PARENT/config/crew-harness"
 printf '## In flight\n\n## Queued\n\n## Done\n' > "$PARENT/data/backlog.md"
 
 remote_env() {

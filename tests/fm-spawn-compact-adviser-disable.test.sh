@@ -35,6 +35,7 @@ make_case() {
   launchlog="$case_dir/launch.log"
   panelog="$case_dir/pane.log"
   fakebin=$(fm_test_make_spawn_fakebin "$case_dir/fake")
+  fm_test_fake_treehouse_lease "$fakebin"
   fm_test_spawn_home "$home" "$harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   for id in "$@"; do
@@ -103,13 +104,13 @@ assert_pane_export_precedes_launch() {  # <pane-log> <label>
 
 test_ship_allowlist_absent() {
   local rec out status seen
-  rec=$(make_case ship-open codex ship-open-a1)
+  rec=$(make_case ship-open "$FM_TEST_FIXTURE_HARNESS" ship-open-a1)
   read_case "$rec"
   out=$(run_case_spawn ship-open-a1 "$PROJ_DIR" --mode no-mistakes --yolo off)
   status=$?
   expect_code 0 "$status" "ship spawn without an allowlist should succeed: $out"
   assert_pane_export_precedes_launch "$PANE_LOG" "ship, allowlist absent"
-  install_env_probe "$FAKEBIN_DIR" codex
+  install_env_probe "$FAKEBIN_DIR" "$FM_TEST_FIXTURE_HARNESS"
   seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
     || fail "ship, allowlist absent: the emitted launch failed to run"
   assert_equals 1 "$seen" \
@@ -119,7 +120,7 @@ test_ship_allowlist_absent() {
 
 test_ship_allowlist_enabled() {
   local rec out status seen launch
-  rec=$(make_case ship-filtered codex ship-filtered-a1)
+  rec=$(make_case ship-filtered "$FM_TEST_FIXTURE_HARNESS" ship-filtered-a1)
   read_case "$rec"
   # An empty file is the strictest opt-in: the launch keeps Firstmate's own
   # operational floor and nothing else, so it is where a floor either holds or
@@ -132,7 +133,7 @@ test_ship_allowlist_enabled() {
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" '/usr/bin/env -i' \
     "an enabled allowlist should launch under a cleared environment"
-  install_env_probe "$FAKEBIN_DIR" codex
+  install_env_probe "$FAKEBIN_DIR" "$FM_TEST_FIXTURE_HARNESS"
   seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
     || fail "ship, allowlist enabled: the emitted launch failed to run"
   assert_equals 1 "$seen" \
@@ -146,13 +147,13 @@ test_ship_allowlist_enabled() {
 test_launch_command_carries_the_switch_without_the_pane_export() {
   local setting rec out status seen launch
   for setting in absent enabled; do
-    rec=$(make_case "ship-nopane-$setting" codex "ship-nopane-$setting-a1")
+    rec=$(make_case "ship-nopane-$setting" "$FM_TEST_FIXTURE_HARNESS" "ship-nopane-$setting-a1")
     read_case "$rec"
     [ "$setting" = absent ] || : > "$HOME_DIR/config/launch-env-allowlist"
     out=$(run_case_spawn "ship-nopane-$setting-a1" "$PROJ_DIR" --mode no-mistakes --yolo off)
     status=$?
     expect_code 0 "$status" "allowlist=$setting spawn should succeed: $out"
-    install_env_probe "$FAKEBIN_DIR" codex
+    install_env_probe "$FAKEBIN_DIR" "$FM_TEST_FIXTURE_HARNESS"
     launch=$(cat "$LAUNCH_LOG")
     seen=$(env -i HOME="$TMP_ROOT/pane-home" PATH="$FAKEBIN_DIR:$PATH" TERM=xterm \
       TMUX=synthetic-pane COMPACT_ADVISER_DISABLE="$CONTRARY" \
@@ -167,7 +168,7 @@ test_launch_command_carries_the_switch_without_the_pane_export() {
 test_secondmate_launch() {
   local setting rec sm out status seen
   for setting in absent enabled; do
-    rec=$(make_case "secondmate-$setting" codex "sm-$setting")
+    rec=$(make_case "secondmate-$setting" "$FM_TEST_FIXTURE_HARNESS" "sm-$setting")
     read_case "$rec"
     [ "$setting" = absent ] || : > "$HOME_DIR/config/launch-env-allowlist"
     sm="$CASE_DIR/secondmate-home"
@@ -181,7 +182,7 @@ test_secondmate_launch() {
     status=$?
     expect_code 0 "$status" "secondmate spawn with allowlist=$setting should succeed: $out"
     assert_pane_export_precedes_launch "$PANE_LOG" "secondmate, allowlist $setting"
-    install_env_probe "$FAKEBIN_DIR" codex
+    install_env_probe "$FAKEBIN_DIR" "$FM_TEST_FIXTURE_HARNESS"
     seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
       || fail "secondmate, allowlist $setting: the emitted launch failed to run"
     assert_equals 1 "$seen" \
@@ -198,7 +199,7 @@ test_launch_exports_task_inbox() {
   local kind rec id sm out status seen want
   for kind in ship secondmate; do
     id="inbox-$kind-a1"
-    rec=$(make_case "inbox-$kind" codex "$id")
+    rec=$(make_case "inbox-$kind" "$FM_TEST_FIXTURE_HARNESS" "$id")
     read_case "$rec"
     : > "$HOME_DIR/config/launch-env-allowlist"
     if [ "$kind" = ship ]; then
@@ -215,7 +216,7 @@ test_launch_exports_task_inbox() {
     fi
     status=$?
     expect_code 0 "$status" "$kind spawn should succeed: $out"
-    install_env_probe "$FAKEBIN_DIR" codex FM_TASK_INBOX
+    install_env_probe "$FAKEBIN_DIR" "$FM_TEST_FIXTURE_HARNESS" FM_TASK_INBOX
     seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
       || fail "$kind: the emitted launch failed to run"
     want="$(cd "$HOME_DIR/state" && pwd -P)/$id.inbox"
@@ -233,7 +234,7 @@ test_launch_exports_active_home() {
   local kind rec id sm out status seen want
   for kind in ship scout secondmate; do
     id="home-$kind-a1"
-    rec=$(make_case "home-$kind" codex "$id")
+    rec=$(make_case "home-$kind" "$FM_TEST_FIXTURE_HARNESS" "$id")
     read_case "$rec"
     : > "$HOME_DIR/config/launch-env-allowlist"
     want=$HOME_DIR
@@ -254,7 +255,7 @@ test_launch_exports_active_home() {
     esac
     status=$?
     expect_code 0 "$status" "$kind spawn should succeed: $out"
-    install_env_probe "$FAKEBIN_DIR" codex FM_HOME
+    install_env_probe "$FAKEBIN_DIR" "$FM_TEST_FIXTURE_HARNESS" FM_HOME
     seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
       || fail "$kind: the emitted launch failed to run"
     [ "$seen" != "$ROOT" ] || fail "$kind: FM_HOME must not be the code root"
@@ -300,7 +301,7 @@ case "${1:-}" in
       printf '%s\n' "$payload" >> "$D/literal"
       case "$payload" in
         /exit|/quit) printf 'zsh' > "$D/command" ;;
-        *'encode launch-brief'*) printf 'codex' > "$D/command" ;;
+        *'encode launch-brief'*) printf '%s' "$FM_TEST_FIXTURE_HARNESS" > "$D/command" ;;
       esac
     else
       printf '%s\n' "$payload" >> "$D/keys"
@@ -340,11 +341,12 @@ test_relaunch_rebuilds_the_switch() {
     touch "$home/state/.last-watcher-beat"
     [ "$setting" = absent ] || : > "$home/config/launch-env-allowlist"
     make_relaunch_stub "$dir"
+    fm_test_fake_herdr_spawn "$dir/fakebin"
     fm_git_worktree "$proj" "$wt" "wt-relaunch-$setting"
     fm_test_spawn_brief "$home" "$id"
     : > "$dir/fake/literal"
     : > "$dir/fake/keys"
-    printf 'codex' > "$dir/fake/command"
+    printf '%s' "$FM_TEST_FIXTURE_HARNESS" > "$dir/fake/command"
     printf '%s\n' "fm-$id" > "$dir/fake/windows"
     printf '%s' "$wt" > "$dir/fake/cwd"
     {
@@ -352,11 +354,16 @@ test_relaunch_rebuilds_the_switch() {
       echo "endpoint_task_id=$id"
       echo "worktree=$wt"
       echo "project=$proj"
-      echo "harness=codex"
+      echo "harness=$FM_TEST_FIXTURE_HARNESS"
       echo "kind=ship"
       echo "mode=no-mistakes"
       echo "yolo=off"
       echo "tasktmp=$dir/tasktmp"
+      echo "backend=herdr"
+      echo "herdr_session=fmses"
+      echo "herdr_workspace_id=ws-$id"
+      echo "herdr_tab_id=tab-$id"
+      echo "herdr_pane_id=fm-$id"
       echo "model=default"
       echo "effort=default"
     } > "$home/state/$id.meta"
@@ -364,6 +371,7 @@ test_relaunch_rebuilds_the_switch() {
     mkdir -p "$dir/user-home"
     out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
       HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' FM_SPAWN_NO_GUARD=1 \
+      HARNESS="$FM_TEST_FIXTURE_HARNESS" \
       FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \
       "$CONTROL" "$id" relaunch --note 'replacement continues the same task' 2>&1)
     status=$?
@@ -373,7 +381,7 @@ test_relaunch_rebuilds_the_switch() {
       || fail "relaunch with allowlist=$setting did not re-export the compact-adviser switch into the pane"
     launch=$(cat "$dir/fake/launch" 2>/dev/null)
     [ -n "$launch" ] || fail "relaunch with allowlist=$setting sent no replacement launch command"
-    install_env_probe "$dir/fakebin" codex
+    install_env_probe "$dir/fakebin" "$FM_TEST_FIXTURE_HARNESS"
     preamble=$(grep '^export ' "$dir/fake/keys")
     seen=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" TERM=xterm \
       TMUX=synthetic-pane COMPACT_ADVISER_DISABLE="$CONTRARY" \
@@ -394,8 +402,8 @@ test_raw_compound_launch_command_carries_the_switch() {
   local rec out status seen launch probe_dir
   rec=$(make_case raw-compound claude raw-compound-a1)
   read_case "$rec"
-  printf '%s\n' '{"rules":[{"when":"current events","use":{"harness":"grok","model":"grok-4","effort":"high"}}],"default":{"harness":"codex","model":"gpt-5","effort":"medium"}}' \
-    > "$HOME_DIR/config/crew-dispatch.json"
+  printf '{"rules":[{"when":"current events","use":{"harness":"grok","model":"grok-4","effort":"high"}}],"default":{"harness":"%s","model":"gpt-5","effort":"medium"}}\n' \
+    "$FM_TEST_FIXTURE_HARNESS" > "$HOME_DIR/config/crew-dispatch.json"
   mkdir -p "$HOME_DIR/data/raw-compound-a1"
   printf '%s\n' '{"task":"raw-compound-a1","status":"off","profile":null}' > "$HOME_DIR/data/raw-compound-a1/dispatch-resolution.json"
 
@@ -424,10 +432,10 @@ $HOME_DIR" "$seen" \
 }
 
 test_launch_preserves_literal_home_and_brief_paths() {
-  local name rec id out status seen want brief
+  local name rec id out status seen inbox want record doorbell
   for name in normal literal; do
     id="path-$name-a1"
-    rec=$(make_case "path-$name" codex "$id")
+    rec=$(make_case "path-$name" "$FM_TEST_FIXTURE_HARNESS" "$id")
     read_case "$rec"
     if [ "$name" = literal ]; then
       mv "$HOME_DIR" "$CASE_DIR/R&D \"double\" 'single' home"
@@ -435,23 +443,39 @@ test_launch_preserves_literal_home_and_brief_paths() {
     fi
     out=$(run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
     status=$?
+    if [ "$name" = literal ] && [ "$status" -ne 0 ]; then
+      # EXPECTED FAILURE (production gap): claude's record-backed brief
+      # publisher refuses a home path with literal quotes and ampersands.
+      assert_contains "$out" "could not publish the launch brief" \
+        "$name path: unexpected refusal"$'\n'"$out"
+      pass "EXPECTED FAILURE pinned: claude cannot publish a brief under a literal quoted home path"
+      continue
+    fi
     expect_code 0 "$status" "$name path spawn should succeed: $out"
-    # Capture the environment and final prompt received by the fake agent.
-    cat > "$FAKEBIN_DIR/codex" <<'SH'
+    # Claude carries the brief as a record-backed doorbell, not as the last
+    # argument; the fake prints that doorbell after the task inbox path.
+    cat > "$FAKEBIN_DIR/$FM_TEST_FIXTURE_HARNESS" <<'SH'
 #!/bin/sh
 printf '%s\n' "$FM_TASK_INBOX"
 for arg do :; done
 printf '%s\n' "$arg"
 SH
-    chmod +x "$FAKEBIN_DIR/codex"
+    chmod +x "$FAKEBIN_DIR/$FM_TEST_FIXTURE_HARNESS"
     seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
       || fail "$name path: the emitted launch failed to run"
-    brief=$("$ROOT/bin/fm-operational-input.sh" encode launch-brief < "$HOME_DIR/data/$id/launch-brief.md")
-    want="$(cd "$HOME_DIR/state" && pwd -P)/$id.inbox
-$brief"
-    assert_equals "$want" "$seen" "$name path: launch changed the home or brief bytes"
+    inbox=${seen%%$'\n'*}
+    doorbell=${seen#*$'\n'}
+    want="$(cd "$HOME_DIR/state" && pwd -P)/$id.inbox"
+    assert_equals "$want" "$inbox" "$name path: launch changed the task inbox path"
+    record=$(printf '%s\n' "$doorbell" | sed -n "s/.*: Firstmate operational input waiting: read '\([^']*\)'.*/\1/p")
+    [ -n "$record" ] || fail "$name path: the launch carried no brief doorbell: $doorbell"
+    [ "$(cd "$(dirname "$record")" && pwd -P)" = "$(cd "$HOME_DIR/state/operational-inbox" && pwd -P)" ] \
+      || fail "$name path: the brief record is not in this home's operational inbox: $record"
+    [ "$(printf '%s\n' "$doorbell" | FM_STATE_OVERRIDE="$HOME_DIR/state" "$ROOT/bin/fm-operational-input.sh" open "$record")" \
+      = "$(cat "$HOME_DIR/data/$id/launch-brief.md")" ] \
+      || fail "$name path: the doorbell did not reopen the exact brief bytes"
   done
-  pass "launch preserves literal ampersands, quotes and spaces in home and brief paths"
+  pass "launch preserves literal home and brief paths through the claude doorbell"
 }
 
 test_launch_preserves_literal_home_and_brief_paths

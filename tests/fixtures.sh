@@ -371,15 +371,14 @@ SH
 # --- spawn-world ------------------------------------------------------------
 
 # fm_test_spawn_home <home> [harness]
-# Minimal firstmate home layout plus watcher-liveness beat. Optional harness
-# pin is written to config/crew-harness.
+# Minimal firstmate home layout plus watcher-liveness beat. The harness pin
+# written to config/crew-harness defaults to FM_TEST_FIXTURE_HARNESS; pass an
+# explicit harness only when it is the subject under test.
 fm_test_spawn_home() {
-  local home=$1 harness=${2-}
+  local home=$1 harness=${2:-$FM_TEST_FIXTURE_HARNESS}
   mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config"
   touch "$home/state/.last-watcher-beat"
-  if [ -n "$harness" ]; then
-    printf '%s\n' "$harness" > "$home/config/crew-harness"
-  fi
+  printf '%s\n' "$harness" > "$home/config/crew-harness"
 }
 
 # fm_test_spawn_brief <home> <id> [captain-intent]
@@ -396,6 +395,48 @@ Exercise the spawn behavior under test.
 EOF
 }
 
+# fm_test_fake_herdr_spawn <fakebin>
+# Drops a herdr stub beside the spawn tmux stub. The herdr-only stack delivers
+# the launch with `pane send-text` and pre-launch exports with `pane run`, so
+# recording those two verbs at the same FM_FAKE_LAUNCH_LOG / FM_FAKE_PANE_LOG
+# seams the tmux stub uses keeps launch-replay suites backend-neutral.
+fm_test_fake_herdr_spawn() {  # <fakebin>
+  local fakebin=$1
+  cat > "$fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+if [ "${1:-}" = status ] && [ "${2:-}" = --json ]; then
+  printf '{"client":{"version":"0.9.0","protocol":22},"server":{"running":true}}\n'
+  exit 0
+fi
+case "${1:-} ${2:-}" in
+  'pane send-text' | 'pane run')
+    payload=${4:-}
+    case "$payload" in
+      ". '"*"'")
+        staged=${payload#". '"}; staged=${staged%"'"}
+        [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
+    esac
+    if [ "${1:-} ${2:-}" = 'pane send-text' ]; then
+      [ -z "${FM_FAKE_LAUNCH_LOG:-}" ] || printf '%s\n' "$payload" >> "$FM_FAKE_LAUNCH_LOG"
+    else
+      [ -z "${FM_FAKE_PANE_LOG:-}" ] || printf '%s\n' "$payload" >> "$FM_FAKE_PANE_LOG"
+    fi ;;
+  'pane get')
+    printf '{"result":{"pane":{"pane_id":"%s","cwd":"%s","foreground_cwd":"%s"}}}\n' \
+      "${3:-%9}" "${FM_FAKE_PANE_PATH:-}" "${FM_FAKE_PANE_PATH:-}" ;;
+  'agent get') printf '{"result":{"agent":{"agent_status":"idle"}}}\n' ;;
+  'workspace list') printf '{"result":{"workspaces":[]}}\n' ;;
+  'workspace create')
+    printf '{"result":{"workspace":{"workspace_id":"wsfake"},"tab":{"tab_id":"seedfake"},"root_pane":{"pane_id":"%%1"}}}\n' ;;
+  'tab list') printf '{"result":{"tabs":[]}}\n' ;;
+  'tab create') printf '{"result":{"tab":{"tab_id":"tabfake"},"root_pane":{"pane_id":"%%9"}}}\n' ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/herdr"
+}
+
 # fm_test_make_spawn_fakebin <dir> [extra-exit0-tool...]
 # Creates <dir>/fakebin with the spawn tmux stub, a no-op treehouse, and any
 # extra exit-0 tools. Echoes the fakebin path.
@@ -404,6 +445,7 @@ fm_test_make_spawn_fakebin() {
   shift
   fakebin=$(fm_fakebin "$dir")
   fm_test_fake_tmux_spawn "$fakebin"
+  fm_test_fake_herdr_spawn "$fakebin"
   fm_fake_exit0 "$fakebin" treehouse "$@"
   printf '%s\n' "$fakebin"
 }
@@ -412,6 +454,29 @@ fm_test_make_spawn_fakebin() {
 # (gh, gh-axi, pi, ...).
 make_spawn_fakebin() {
   fm_test_make_spawn_fakebin "$@"
+}
+
+# fm_test_fake_treehouse_lease <fakebin>
+# Overwrites the spawn fakebin's no-op treehouse with one that answers the
+# task-copy lease call (`treehouse get --lease --lease-holder <id>`) with
+# FM_FAKE_PANE_PATH, which fm_test_run_spawn sets to the isolated pane copy.
+# Optional FM_FAKE_TREEHOUSE_LOG records each invocation. Suites whose fake
+# treehouse has its own lease behaviour keep theirs; this is the default shape
+# for suites that only need the task-copy phase to succeed.
+fm_test_fake_treehouse_lease() {  # <fakebin>
+  local fakebin=$1
+  cat > "$fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+set -u
+[ -z "${FM_FAKE_TREEHOUSE_LOG:-}" ] || printf '%s\n' "$*" >> "$FM_FAKE_TREEHOUSE_LOG"
+case "${1:-} ${2:-}" in
+  'get --lease') printf '%s\n' "${FM_FAKE_PANE_PATH:-}" ;;
+  'get') printf '%s' "${FM_FAKE_PANE_PATH:-}" ;;
+  'return --force') : ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/treehouse"
 }
 
 # fm_test_run_spawn <home> <pane-path> <fakebin> [fm-spawn args...]

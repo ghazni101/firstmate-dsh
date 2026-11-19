@@ -24,8 +24,9 @@ make_case() {
   ORIGIN_DIR="$CASE_DIR/origin.git"
   POOL_DIR="$CASE_DIR/pool"
   FAKEBIN_DIR=$(make_spawn_fakebin "$CASE_DIR/fake")
+  fm_test_fake_treehouse_lease "$FAKEBIN_DIR"
   mkdir -p "$HOME_DIR/data/$id" "$HOME_DIR/projects" "$HOME_DIR/state" "$HOME_DIR/config"
-  printf 'codex\n' > "$HOME_DIR/config/crew-harness"
+  printf '%s\n' "$FM_TEST_FIXTURE_HARNESS" > "$HOME_DIR/config/crew-harness"
   # shellcheck disable=SC2016 # Backticks are literal adapter text.
   printf '%s\n' 'Run `review-tool upload --draft`.' > "$HOME_DIR/config/external-review.md"
   printf -- '- project [%s] - fixture (added 2026-01-01)\n' "$tokens" > "$HOME_DIR/data/projects.md"

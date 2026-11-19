@@ -90,8 +90,9 @@ make_settle_case() {
   stale="$case_dir/stale-other-checkout"
   countfile="$case_dir/pane-call-count"
   fakebin=$(make_settle_fakebin "$case_dir/fake")
+  fm_test_fake_treehouse_lease "$fakebin"
   mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config"
-  printf 'codex\n' > "$home/config/crew-harness"
+  printf '%s\n' "$FM_TEST_FIXTURE_HARNESS" > "$home/config/crew-harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   fm_git_init_commit "$stale"
   mkdir -p "$home/data/$id"
@@ -183,7 +184,8 @@ make_primary_case() {
   wt="$case_dir/slot"
   countfile="$case_dir/pane-call-count"
   fakebin=$(make_settle_fakebin "$case_dir/fake")
-  fm_test_spawn_home "$home" codex
+  fm_test_fake_treehouse_lease "$fakebin"
+  fm_test_spawn_home "$home"
   fm_git_worktree "$primary" "$proj" "mate-$name"
   git -C "$primary" worktree add --quiet -b "slot-$name" "$wt"
   fm_test_spawn_brief "$home" "$id" "Exercise primary-checkout transient detection for $id."

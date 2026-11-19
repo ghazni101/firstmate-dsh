@@ -225,6 +225,11 @@ EOF
     echo "kind=ship"
     echo "mode=no-mistakes"
     echo "yolo=off"
+    echo "backend=herdr"
+    echo "herdr_session=$ses"
+    echo "herdr_workspace_id=ws-$id"
+    echo "herdr_tab_id=tab-$id"
+    echo "herdr_pane_id=fm-$id"
     echo "tasktmp=/tmp/fm-$id"
     echo "model=default"
     echo "effort=default"
@@ -2617,6 +2622,31 @@ test_spawn_relaunch_refuses_a_pane_outside_the_worktree() {
   pass "fm-spawn --relaunch: refuses to start a replacement outside the copy holding its work"
 }
 
+# EXPECTED-FAILURE FIXTURE (open finding: secondmate relaunch pane-cwd check).
+# The ship case above refuses a pane outside its recorded worktree, but both
+# spawn_acquire_task_copy and spawn_assert_agent_worktree return early for
+# KIND=secondmate, so a secondmate with the same drift is relaunched unchecked.
+# Set FM_EXPECT_SECONDMATE_CWD_CHECK=1 once that path verifies the pane cwd.
+test_spawn_relaunch_secondmate_pane_cwd_check() {
+  local dir home id=rl18sm out rc
+  dir=$(new_case wrongcwdsm "$id")
+  home="$dir/home"
+  add_ship_task "$dir" "$id" claude
+  sed -i "s|^kind=ship\$|kind=secondmate|" "$home/state/$id.meta"
+  printf 'zsh' > "$dir/fake/command"
+  printf '%s' "$dir/proj" > "$dir/fake/cwd"
+  out=$(run_spawn "$dir" "$id" --relaunch --harness claude); rc=$?
+  if [ -n "${FM_EXPECT_SECONDMATE_CWD_CHECK:-}" ]; then
+    expect_code 1 "$rc" "a drifted secondmate pane should refuse relaunch"$'\n'"$out"
+    assert_contains "$out" "not its recorded worktree" "the refusal should name the wrong location"
+  else
+    expect_code 0 "$rc" "EXPECTED FAILURE: a drifted secondmate pane is relaunched unchecked"$'\n'"$out"
+    pass "EXPECTED FAILURE pinned: secondmate relaunch skips the ship pane-cwd check"
+    return 0
+  fi
+  pass "secondmate relaunch now refuses a pane outside its recorded home"
+}
+
 # --- 7. reclaiming a task whose endpoint is gone ----------------------------
 #
 # Before this, `missing` was a terminal state: fm-spawn --relaunch accepted only
@@ -3337,6 +3367,7 @@ test_spawn_relaunch_refuses_a_pending_authoritative_close
 test_spawn_relaunch_refuses_contradicting_flags
 test_spawn_relaunch_refuses_an_unrecorded_task
 test_spawn_relaunch_refuses_a_pane_outside_the_worktree
+test_spawn_relaunch_secondmate_pane_cwd_check
 test_tmux_refuses_a_window_missing_from_its_session
 test_tmux_refuses_a_session_that_cannot_be_found
 test_tmux_refuses_when_the_server_is_gone

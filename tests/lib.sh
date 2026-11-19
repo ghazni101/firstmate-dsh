@@ -33,6 +33,12 @@ FM_TEST_LIB_SOURCED=1
 # the behavior under test can even run. 022 is the conventional default this
 # suite's fixtures were written against.
 umask 022
+# The single worker harness used by fixtures that only need A kept harness.
+# An explicit harness on a call site stays there when it is the subject under
+# test; everything else expands this one value, so a future harness removal is
+# a one-line change here.
+# shellcheck disable=SC2034  # read by suites that source this library.
+export FM_TEST_FIXTURE_HARNESS=claude
 
 # Fixture Git isolation for every suite that reaches this library; the helper's
 # header owns the invariant and the layers it deliberately leaves in force.
