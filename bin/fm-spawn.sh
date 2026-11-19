@@ -1568,6 +1568,11 @@ SPAWN_HC_LINE_SUBMITTED=0
 
 
 spawn_state_and_turnend_setup
+# Acquire (fresh) or adopt (relaunch) the task's durable copy, then prove the
+# pane sits in it before any launch environment is built. This phase was lost
+# in the modular reconciliation and its absence left every fresh spawn with an
+# empty worktree.
+spawn_acquire_task_copy
 spawn_install_launch_environment
 spawn_preserve_relaunch_state
 

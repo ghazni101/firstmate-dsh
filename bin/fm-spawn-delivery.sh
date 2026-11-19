@@ -152,6 +152,70 @@ spawn_assert_agent_worktree() {
   exit 1
 }
 
+# Acquire or adopt this task's durable copy and prove the pane sits in it.
+# The modular spawn reconciliation dropped this phase: the endpoint was created
+# in the project directory, WT stayed empty, and the launcher then failed at
+# the AI-trailer hook install (or, with hooks off, would have started the agent
+# outside the copy holding its work). It runs after the endpoint exists and
+# before any launch environment is built, for every ship, scout, and
+# secondmate.
+spawn_acquire_task_copy() {
+  [ "$KIND" = secondmate ] && return 0
+  local relaunch_wt_real relaunch_seen relaunch_cd_path
+  if [ "$RELAUNCH" -eq 1 ]; then
+    # No worktree is acquired: the recorded one is reused as-is. Prove the
+    # adopted endpoint's shell is actually sitting in it, and move it back when
+    # it is not, rather than launching wherever the pane drifted.
+    relaunch_wt_real=$(real_path_or_raw "$WT")
+    relaunch_seen=
+    for _ in $(seq 1 10); do
+      relaunch_seen=$(spawn_current_path "$WT_TARGET" || true)
+      [ -z "$relaunch_seen" ] || [ "$(real_path_or_raw "$relaunch_seen")" != "$relaunch_wt_real" ] || break
+      sleep 0.5
+    done
+    if [ -z "$relaunch_seen" ] || [ "$(real_path_or_raw "$relaunch_seen")" != "$relaunch_wt_real" ]; then
+      relaunch_cd_path=${WT//\'/\'\\\'\'}
+      spawn_send_text_line "$WT_TARGET" "cd -- '$relaunch_cd_path'" || {
+        echo "error: task $ID's endpoint is in '${relaunch_seen:-unknown}' and could not be told to return to its recorded worktree '$WT'; refusing to relaunch an agent outside the copy holding its work" >&2
+        exit 1
+      }
+      for _ in $(seq 1 10); do
+        relaunch_seen=$(spawn_current_path "$WT_TARGET" || true)
+        [ -z "$relaunch_seen" ] || [ "$(real_path_or_raw "$relaunch_seen")" != "$relaunch_wt_real" ] || break
+        sleep 0.5
+      done
+    fi
+    if [ -z "$relaunch_seen" ] || [ "$(real_path_or_raw "$relaunch_seen")" != "$relaunch_wt_real" ]; then
+      echo "error: task $ID's endpoint is in '${relaunch_seen:-unknown}' and did not return to its recorded worktree '$WT' when told to; refusing to relaunch an agent outside the copy holding its work" >&2
+      exit 1
+    fi
+    validate_spawn_worktree "relaunch" "$T"
+  else
+    case "$BACKEND" in
+    herdr) spawn_lease_herdr_slot ;;
+    *) return 0 ;;
+    esac
+    # Claim the pool slot for this task, so a slot handed on after this worker
+    # exits is provably not this task's. Written under the Treehouse project
+    # lock the admission phase holds from before slot allocation through record
+    # publication.
+    if fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
+      if ! fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME"; then
+        echo "error: could not claim Treehouse pool slot $WT for task $ID; refusing to launch a worker whose slot cannot later be proved to be its own; $(spawn_endpoint_hint)" >&2
+        exit 1
+      fi
+      SPAWN_SLOT_CLAIMED=1
+    fi
+    freshen_spawn_worktree_base "$WT" "$BASE_BRANCH" "$PROJ_ABS" "$MODE" || exit 1
+  fi
+  # Re-assert the durable copy after either acquisition or endpoint adoption.
+  # This also moves Herdr's restored pane shell before any harness starts, so a
+  # later host restart inherits the task worktree rather than the tab's
+  # original project directory.
+  spawn_enter_recorded_worktree
+  spawn_assert_agent_worktree
+}
+
 
 # Trust decisions read the visible pane only. The dialog is a TUI frame, so a
 # scrollback-backed capture keeps reporting it long after Kimi redrew past it -
