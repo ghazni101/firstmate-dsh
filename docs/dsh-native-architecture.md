@@ -202,9 +202,10 @@ Fields:
 | `ttl` | Hold validity in milliseconds, chosen by the acquirer. |
 | `released_at` | Epoch milliseconds of the last release, or null. |
 
-A record that fails to parse is treated as **free with token 0** by a reaper and as an error
-by a guard: an unreadable record must not grant anything, and must not permanently wedge a
-task either. Readers that do not take the mutex may observe a previous or a new complete
+A record that fails to parse is treated as **free with token 0** by `acquire` (which replaces
+it and reports a warning) and as an error by renew, release, and guard; the reaper leaves it
+alone. An unreadable record must not grant anything, and must not permanently wedge a task
+either. Readers that do not take the mutex may observe a previous or a new complete
 record, never a torn one.
 
 ### 4.3 Mutex
@@ -214,8 +215,9 @@ holder's pid and start time written inside. The mutex is a microseconds-scale cr
 section:
 
 - Acquire: `mkdir`; on `EEXIST`, if the lock directory's age exceeds `lockStaleMs` (5000),
-  remove it and retry once; otherwise sleep 10 ms and retry until `lockWaitMs` (2000) is
-  spent, then fail with `busy`.
+  remove it and retry; otherwise sleep 10 ms and retry until `lockWaitMs` (2000) is
+  spent, then fail with `busy`. Both bounds are measured on the wall clock against the
+  directory's filesystem mtime, never on an injected lease clock (`now`).
 - Release: remove the directory; failure to remove is logged and ignored because the
   `lockStaleMs` bound recovers it.
 - The mutex is not the lease. It never outlives one transition, and its age is the only
@@ -248,11 +250,11 @@ always passes the real clock.
 **renew(home, task, identity, token, ttl?) -> record**
 
 1. Validate and `assertSameHome`; take the mutex.
-2. No record or `state !== 'held'`: fail `not-held`.
+2. Unreadable record: fail `invalid-record`. No record or `state !== 'held'`: fail `not-held`.
 3. `record.token !== token`: fail `fenced`, naming the live token (this is the stale holder).
-4. `now - renewed_at >= ttl`: mark `free` with `reaped_at`, fail `expired` (the caller is
+4. Owner or session mismatch: fail `fenced`.
+5. `now - renewed_at >= ttl`: mark `free` with `reaped_at`, fail `expired` (the caller is
    fenced by time even if nobody reaped it yet).
-5. Owner or session mismatch: fail `fenced`.
 6. Update `renewed_at`, and `ttl` when supplied; write; return.
 
 **release(home, task, identity, token) -> record**
@@ -278,8 +280,8 @@ one. It runs at the top of every reconciliation tick (section 6) and before a cl
 
 `withLease` = acquire, start a heartbeat, run `fn(handle)`, stop the heartbeat, release.
 The heartbeat renews at `max(5000, floor(ttl / 3))`. If a renewal fails with `fenced` or
-`expired`, the handle records `fencedAt` and the operation must stop before its next durable
-write; the plugin surfaces the fence in the result instead of pretending the write succeeded.
+`expired`, the handle records that refusal as `fenced` and the operation must stop before its
+next durable write; the plugin surfaces the fence in the result instead of pretending the write succeeded.
 A fenced holder never continues on optimism: the fencing token exists so a later writer is
 the only writer.
 
@@ -333,9 +335,13 @@ $FM_HOME/state/leases/maintenance.lease    # same record format, reserved task i
 
 `maintenance` is a reserved lease id (section 4.1) and cannot be claimed as a task.
 Reserved purposes: `bootstrap-network`, `fleet-sync`, `self-update`, `capacity-allocate`.
-Default TTL 300000 ms, heartbeat 100000 ms. It is acquired by the operation that needs it,
-released immediately after, and never held across a worker's task work. It does not grant
-task authority: a maintenance holder may not claim, steer, merge, or teardown a task.
+Default TTL 300000 ms. `acquireMaintenanceLease` is the only way to take it: an ordinary
+acquire of the `maintenance` id (lease tool, run channel, or CLI) is refused with `usage`, and
+a purpose outside the reserved four is refused too. It is meant to be acquired by the
+operation that needs it, released immediately after, and never held across a worker's task
+work. No `bin/` operation acquires it yet; the four operations above still run without it. It
+does not grant task authority: a maintenance holder may not claim, steer, merge, or teardown a
+task.
 
 ### 4.9 What the lease does not own
 
@@ -374,13 +380,40 @@ Exit codes:
 A bash caller keeps its `bin/fm-lease-lib.sh` path until phase 2; the CLI script `fm-lease.mjs`
 is the adapter that phase 2 wires in behind `config/dsh-native`.
 
+### 4.11 Which mutating entrypoints enforce the lease
+
+In a home that records `config/dsh-native-lease`, `fm_lease_guard`
+([`bin/fm-lease-lib.sh`](../bin/fm-lease-lib.sh) routing to
+[`bin/fm-native-lib.sh`](../bin/fm-native-lib.sh)) refuses with exit 6 unless the caller
+presents `FM_LEASE_TOKEN` and `FM_LEASE_SESSION` for a live lease on that exact task (and a
+matching `FM_LEASE_TASK` when set), verified through `fm-lease.mjs guard`. A task id that
+cannot name a lease record is refused too. Without the marker the guard is inert.
+
+| Entrypoint | Lease-enforced |
+| --- | --- |
+| `bin/fm-send.sh` (steer to a task) | Yes |
+| `bin/fm-control.sh` (interrupt, exit, relaunch) | Yes |
+| `bin/fm-teardown.sh` | Yes |
+| `bin/fm-approval-failover.sh` | Yes |
+| `bin/fm-pr-merge.sh` | Yes |
+| `bin/fm-merge-local.sh` | Yes |
+| `bin/fm-spawn.sh` (fresh spawn) | No: exempt |
+
+A fresh spawn is exempt because it creates the task row it would need a lease for: no lease
+can exist for a task that does not exist yet. It keeps its existing fencing through the
+per-task spawn lock and the backlog transition it performs, and `fm_lease_forbid_branch`
+still applies to it outside a native home. The plugin channel and the reconciliation loop
+export the lease variables for every script they run under a lease, so those paths satisfy
+the guard; a direct shell invocation of an enforced entrypoint must present a live lease
+the same way.
+
 ## 5. Plugin surface
 
 ### 5.1 Bundle and feature flags
 
 ```text
 dsh-plugin/
-  package.json          @local/dsh-plugin-firstmate-native, version 0.1.0
+  package.json          @local/dsh-plugin-firstmate-native, version 0.2.0
   cordis.patch.yml      row id firstmate-native, config { enabled: false }
   index.js              apply(ctx, config)
   src/home.js           home anchors, resolution, canonicalization
@@ -554,7 +587,9 @@ One tick, default every 15000 ms and additionally on an event hint:
    waiting on this home, (b) failed/blocked work, (c) PR ready / landing, (d) queued work
    whose dependencies and project capacity allow dispatch.
 5. **Lease-then-act**: for each selected task, `acquire(home, task, identity, purpose, ttl)`;
-   on `contention` skip and retry next tick; on success run the action, then `release`.
+   on `contention` skip and retry next tick; on success re-read the home and act only when
+   the same rule still selects the task (otherwise report it `stale`), check merge authority,
+   run the action, then `release`.
 6. **Publish**: append the durable record the action owns (status line, transition, merge
    record) carrying the lease token where that owner supports it. Deliver one follow-up hint
    only when a captain-relevant outcome needs an interactive session.
@@ -819,17 +854,17 @@ Rollback: remove `config/dsh-native-lease` from the home.
 
 ### Phase 2 — Mutating `bin` entrypoints honor the lease (built)
 
-The six entrypoints already call `fm_lease_guard` / `fm_lease_forbid_branch` for per-task
-overlap, so the integration seam is one library instead of six edits: `bin/fm-lease-lib.sh`
+The mutating entrypoints call `fm_lease_guard` / `fm_lease_forbid_branch`, so the
+integration seam is one library instead of one edit per entrypoint: `bin/fm-lease-lib.sh`
 routes those two calls to `bin/fm-native-lib.sh` when `config/dsh-native-lease` exists. A
-native mutation must present `FM_LEASE_TOKEN` and `FM_LEASE_SESSION` (and the matching
-`FM_LEASE_TASK`) from the plugin channel or the loop; otherwise it refuses with exit 6. The
+native mutation through a lease-enforced entrypoint (section 4.11) must present
+`FM_LEASE_TOKEN` and `FM_LEASE_SESSION` (and the matching `FM_LEASE_TASK`) from the plugin
+channel or the loop; otherwise it refuses with exit 6. A fresh spawn is exempt. The
 native path never reads `state/.lock`, and the branch actor partition is a no-op because the
 native design has none. A home without the marker keeps the two-actor path byte for byte.
 
-The maintenance lease is the library's reserved `maintenance` record (section 4.8): bootstrap
-network, fleet sync, self-update, and capacity allocation acquire it for the operation and
-release immediately. `tests/fm-send-inbox.test.sh` and
+The maintenance lease is the library's reserved `maintenance` record (section 4.8); no `bin/`
+operation acquires it yet. `tests/fm-send-inbox.test.sh` and
 `tests/fm-approval-failover.test.sh` (the legacy lease consumers) still pass unchanged.
 
 Rollback: remove the marker; scripts fall back to the lock path.

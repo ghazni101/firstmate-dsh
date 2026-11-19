@@ -16,11 +16,14 @@
 #
 # THE TWO CALLS.
 #   fm_lease_guard <task> <action-label>
-#     Refuse the guarded mutation when another session holds a live lease on
-#     that task, and keep the claim serialized until fm_lease_guard_release.
+#     In a native-lease home, refuse the guarded mutation unless the caller
+#     presents the live lease token for that task (bin/fm-native-lib.sh).
 #     bin/fm-send.sh, bin/fm-control.sh, bin/fm-teardown.sh,
-#     bin/fm-approval-failover.sh, bin/fm-pr-merge.sh,
-#     bin/fm-merge-local.sh and bin/fm-spawn.sh call it.
+#     bin/fm-approval-failover.sh, bin/fm-pr-merge.sh and
+#     bin/fm-merge-local.sh call it. bin/fm-spawn.sh deliberately does not: a
+#     fresh spawn creates the task it would need a lease for, so it stays
+#     fenced by its spawn lock and backlog transition instead
+#     (docs/dsh-native-architecture.md section 4.11).
 #   fm_lease_forbid_branch <action-label>
 #     The surviving half of the retired role partition. A home that records
 #     config/dsh-native-lease has no branch actor, so every action is the calling
@@ -64,11 +67,15 @@ fm_lease_valid_id() {
 
 # fm_lease_guard <task> <action-label>: the per-task ownership gate. Inert in a
 # home that has not recorded config/dsh-native-lease, exactly as the native seam
-# has been since phase 2.
+# has been since phase 2. In a native home a task id that cannot name a lease
+# record refuses, because no lease can be shown to cover it.
 fm_lease_guard() {
   local task=$1 action=$2
-  fm_lease_valid_id "$task" || return 0
   fm_native_lease_enabled || return 0
+  if ! fm_lease_valid_id "$task"; then
+    printf 'error: %s refused - task id %s cannot name a native task lease\n' "$action" "'$task'" >&2
+    exit "$FM_LEASE_REFUSE_EXIT"
+  fi
   fm_native_lease_guard "$task" "$action"
 }
 

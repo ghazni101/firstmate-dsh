@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -308,6 +308,71 @@ test('the maintenance lease uses its own reserved record and TTL', () => {
     assert.equal(record.ttl, 300000)
     assert.equal(record.token, 1)
     assert.equal(inspectLease({ home, task: MAINTENANCE_TASK }).live, true)
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('the maintenance id cannot be claimed as an ordinary task', () => {
+  const home = makeHome()
+  try {
+    const identity = makeIdentity(home)
+    const error = catchError(() => acquireLease({ home, task: MAINTENANCE_TASK, identity, purpose: 'anything' }))
+    assert.ok(error instanceof LeaseError)
+    assert.equal(error.code, 'usage')
+    assert.equal(inspectLease({ home, task: MAINTENANCE_TASK }).exists, false, 'nothing was written')
+    const cli = spawnSync(process.execPath, [CLI, 'acquire', '--home', home, '--task', MAINTENANCE_TASK, '--session', 's'], {
+      env: { ...process.env, FM_HOME: home },
+      encoding: 'utf8',
+    })
+    assert.equal(cli.status, 2, cli.stdout)
+    assert.equal(inspectLease({ home, task: MAINTENANCE_TASK }).exists, false)
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('the maintenance lease refuses a purpose outside its reserved set', () => {
+  const home = makeHome()
+  try {
+    const error = catchError(() => acquireMaintenanceLease({ home, identity: makeIdentity(home), purpose: 'merge-pr' }))
+    assert.equal(error.code, 'usage')
+    assert.equal(inspectLease({ home, task: MAINTENANCE_TASK }).exists, false)
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('a busy mutex times out on the wall clock even when the lease clock is fixed', () => {
+  const home = makeHome()
+  try {
+    mkdirSync(join(home, 'state', 'leases', '.t.lock'), { recursive: true })
+    const started = Date.now()
+    const error = catchError(() => acquireLease({ home, task: 't', identity: makeIdentity(home), now: T0, lockWaitMs: 50 }))
+    assert.equal(error.code, 'busy')
+    assert.ok(Date.now() - started < 1500, 'the bounded wait elapsed instead of spinning forever')
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('a fresh mutex is not judged stale by a lease clock set in the future', () => {
+  const home = makeHome()
+  try {
+    const lockDir = join(home, 'state', 'leases', '.t.lock')
+    mkdirSync(lockDir, { recursive: true })
+    const error = catchError(() => acquireLease({
+      home,
+      task: 't',
+      identity: makeIdentity(home),
+      now: Date.now() + 3600000,
+      lockWaitMs: 50,
+    }))
+    assert.equal(error.code, 'busy', 'a live holder\'s mutex was broken by a skewed lease clock')
+    const old = (Date.now() - 60000) / 1000
+    utimesSync(lockDir, old, old)
+    const record = acquireLease({ home, task: 't', identity: makeIdentity(home), lockWaitMs: 50 })
+    assert.equal(record.token, 1, 'a genuinely abandoned mutex is still recovered')
   } finally {
     cleanup(home)
   }

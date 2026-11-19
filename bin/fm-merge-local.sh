@@ -58,6 +58,10 @@ META="$STATE/$ID.meta"
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-lease-lib.sh"
 fm_lease_forbid_branch "local-only landing (fm-merge-local)"
+# Task lease: in a config/dsh-native-lease home a landing runs only under the
+# live lease of the task it lands (docs/dsh-native-architecture.md section 6.4);
+# inert elsewhere.
+fm_lease_guard "$ID" "local-only landing (fm-merge-local)"
 
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
 if ! fm_backlog_meta_spawn_gen_optional "$META" "$STATE"; then

@@ -196,6 +196,51 @@ test('a merge action runs under the lease when the project posture is yolo', asy
   }
 })
 
+test('a tick that observed a task before another tick landed it does not merge it again', async () => {
+  const home = loopHome({
+    config: {
+      tick_ms: 1000,
+      rules: [{
+        id: 'land',
+        when: 'in_flight',
+        script: 'fm-pr-merge.sh',
+        vars: { project: 'demo' },
+        args: ['{id}', '{pr_url}'],
+      }],
+    },
+    snapshot: IN_FLIGHT_SNAPSHOT,
+  })
+  // The first posture read parks until released, so tick A can be held between
+  // its observation and its action while tick B runs to completion. A merge
+  // retires the task from the durable snapshot, as a real landing does.
+  writeScript(home, 'fm-project-mode.sh', `if mkdir "$FM_HOME/state/first-posture" 2>/dev/null; then
+  : > "$FM_HOME/state/posture-parked"
+  i=0
+  while [ ! -e "$FM_HOME/state/go" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+fi
+printf '%s\n' 'direct-PR on'
+`)
+  writeScript(home, 'fm-pr-merge.sh', `printf '%s|%s\n' "\${FM_LEASE_TOKEN:-}" "$*" >> "$FM_HOME/state/merge.log"
+printf '%s\n' '{"schema":"fm-fleet-snapshot.v1","backlog":{"records":[]},"tasks":[]}' > "$FM_HOME/snapshot.json"
+`)
+  try {
+    const tickA = reconcileTick({ home, identity: makeIdentity(home, 'loop-a'), apply: true })
+    for (let i = 0; i < 200 && !existsSync(join(home, 'state', 'posture-parked')); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+    assert.ok(existsSync(join(home, 'state', 'posture-parked')), 'tick A reached its posture read')
+    const tickB = await reconcileTick({ home, identity: makeIdentity(home, 'loop-b'), apply: true })
+    writeFileSync(join(home, 'state', 'go'), '')
+    const reportA = await tickA
+    const merges = existsSync(join(home, 'state', 'merge.log'))
+      ? readFileSync(join(home, 'state', 'merge.log'), 'utf8').trim().split('\n')
+      : []
+    assert.equal(merges.length, 1, `one landing only: ${JSON.stringify([reportA.actions, tickB.actions])}`)
+  } finally {
+    cleanup(home)
+  }
+})
+
 test('a local-only landing needs mode local-only', async () => {
   const home = loopHome({
     config: {

@@ -289,8 +289,25 @@ test_never_moving_worktree_entry() {
   pass "Herdr refuses a never-moving pane with diagnostic context and no launch"
 }
 
+# A fresh spawn creates the task it would need a lease for, so it is exempt
+# from the native task lease (docs/dsh-native-architecture.md section 4.11):
+# a config/dsh-native-lease home still launches it with no lease presented.
+test_native_lease_home_spawns_without_a_task_lease() {
+  local id=lease-native-exempt dir out status
+  dir=$(make_lease_case "$id" pi)
+  printf 'on\n' > "$dir/home/config/dsh-native-lease"
+  printf '%s\n' "$ROOT/dsh-plugin" > "$dir/home/config/native-plugin-dir"
+  out=$(FM_LEASE_TOKEN='' FM_LEASE_SESSION='' FM_LEASE_TASK='' run_lease_spawn "$dir" "$id"); status=$?
+  expect_code 0 "$status" "a fresh spawn in a native-lease home should launch without a task lease"$'\n'"$out"
+  assert_not_contains "$out" "native lease" "a fresh spawn was refused for a task lease it cannot hold"
+  [ -e "$dir/home/state/$id.meta" ] || fail "the exempt spawn did not publish its task record"
+  pass "a fresh spawn in a native-lease home launches without a task lease"
+}
+
+test_native_lease_home_spawns_without_a_task_lease
 test_delayed_worktree_entry
 test_dropped_worktree_entry
+
 test_never_moving_worktree_entry
 
 test_fresh_spawn_leases_and_moves_the_top_level_shell

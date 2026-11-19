@@ -261,9 +261,10 @@ launch_template() {
   # session_stop continuation. The busy extension is the exception: it lives
   # outside the home, so discovery never sees it, and -e is the only load.
   # A crewmate or scout additionally carries FM_OMP_ROLE=worker on this launch
-  # boundary. It is the structural role signal the tracked primary extensions
-  # read to stay inactive in a task worktree, which omp discovers from cwd with
-  # no trust gate. A secondmate never carries it: that session is the primary
+  # boundary. It is the structural role signal the tracked primary watch
+  # bridge (.omp/extensions/fm-primary-omp-watch.ts) reads to stay inactive in a
+  # task worktree, which omp discovers from cwd with no trust gate; the tracked
+  # turn-end guard extension does not read it. A secondmate never carries it: that session is the primary
   # of its own home and keeps its watcher as before.
   omp)
     printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u GEMINI_CLI -u CURSOR_AGENT -u CURSOR_INVOKED_AS'

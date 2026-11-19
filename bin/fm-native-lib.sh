@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # fm-native-lib.sh - native (DSH) task-lease enforcement for the mutating engine.
 #
-# This is phase 2's integration seam. The mutating entrypoints (fm-send,
-# fm-control, fm-teardown, fm-approval-failover) already call
-# `fm_lease_guard` for per-task overlap; fm-pr-merge, fm-merge-local, fm-spawn,
-# and fm-teardown also call `fm_lease_forbid_branch`. bin/fm-lease-lib.sh routes
-# those two calls here when the home is a native home, so the six entrypoints do
-# not each grow a second ownership model.
+# This is phase 2's integration seam. The lease-enforced entrypoints (fm-send,
+# fm-control, fm-teardown, fm-approval-failover, fm-pr-merge, fm-merge-local)
+# call `fm_lease_guard`; fm-pr-merge, fm-merge-local, fm-spawn, fm-send, and
+# fm-teardown also call `fm_lease_forbid_branch`. bin/fm-lease-lib.sh routes
+# those two calls here when the home is a native home, so the entrypoints do
+# not each grow a second ownership model. fm-spawn is exempt from the lease
+# (docs/dsh-native-architecture.md section 4.11).
 #
 # WHAT CHANGES IN A NATIVE HOME.
 #   - Task ownership is the DSH per-task lease (state/leases/<task>.lease): TTL,
