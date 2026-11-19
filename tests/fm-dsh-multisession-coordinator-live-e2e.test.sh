@@ -5,12 +5,11 @@
 # session/events through the authenticated Host API the GUI uses - never the
 # UI, the live web instance, the live DSH_HOME, or the live profile.
 #
-# This spends no model tokens: the disposable home has no credentials, so the
-# parent prompt turn settles as a failed model attempt with a real turn/end.
-# It is still opt-in because it boots a real Host and takes several seconds.
-# The driver refuses a pass with no Host, no completed turns, or no real fork
-# coordinators. The portable multi-session composition test covers the
-# coordinator's decisions with controllable seams.
+# This spends no model tokens: the disposable plugin copy registers a scripted
+# provider that drives one real coordinator escalation turn for a captain-class
+# traffic batch. It is still opt-in because it boots a real Host and takes
+# several seconds. The driver refuses a pass with no Host, no completed turns,
+# no real fork coordinators, or no tagged escalation in the owning parent.
 #
 # Run with FM_DSH_MULTISESSION_LIVE=1. Refresh
 # docs/verification/dsh-multisession-coordinator.md after a DSH or plugin

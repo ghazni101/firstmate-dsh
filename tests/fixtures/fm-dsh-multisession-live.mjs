@@ -9,15 +9,16 @@
  *
  * The coordinator is attached by seeding its durable record for the two real
  * parent sessions before they are created; the plugin then starts its engine
- * on agent creation and the real fork provider creates the child. The model
- * turn cannot run without credentials, so this driver does not assert the
- * coordinator's decisions - the portable suite does that with controllable
- * seams. It does assert real lineage, real session events, and no parent
- * message from routine traffic.
+ * on agent creation and the real fork provider creates the child. A
+ * credential-free scripted provider is registered inside the disposable plugin
+ * copy and emits one `firstmate_native_escalate` tool call for a captain-class
+ * traffic batch, so the driver asserts a real coordinator escalation turn:
+ * real lineage, real session events, no parent message from routine traffic,
+ * and exactly one tagged escalation in the owning parent only.
  */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, cpSync, writeFileSync, rmSync, realpathSync, symlinkSync, chmodSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, cpSync, writeFileSync, rmSync, realpathSync, chmodSync, mkdtempSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -27,6 +28,7 @@ import { completedTurnBoundary, writeEngineRecord } from '../../dsh-plugin/src/e
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '')
 const PLUGIN = join(REPO, 'dsh-plugin')
+const SCRIPTED = join(REPO, 'tests', 'fixtures', 'fm-dsh-scripted-llm')
 const ROOT = mkdtempSync(join(tmpdir(), 'fm-dsh-live-'))
 const DSH_HOME = join(ROOT, 'dsh-home')
 const LAB = join(ROOT, 'lab-home')
@@ -46,11 +48,22 @@ function makeProfile() {
   mkdirSync(dirname(PROFILE), { recursive: true })
   cpSync(source, PROFILE, { recursive: true, dereference: false })
   const pluginLink = join(PROFILE, 'node_modules', '@local', 'dsh-plugin-firstmate-native')
-  rmSync(pluginLink, { force: true })
-  symlinkSync(PLUGIN, pluginLink)
+  rmSync(pluginLink, { recursive: true, force: true })
+  cpSync(PLUGIN, pluginLink, { recursive: true })
+  // Test-only seam: register a credential-free scripted provider inside the
+  // disposable plugin copy so a real coordinator turn can call the tool.
+  cpSync(join(SCRIPTED, 'index.js'), join(pluginLink, 'scripted-llm.js'))
+  const indexPath = join(pluginLink, 'index.js')
+  const patched = readFileSync(indexPath, 'utf8')
+    .replace("export const inject = ['tools']", "export const inject = ['tools', 'llm']\nimport { apply as registerScripted } from './scripted-llm.js'")
+    .replace('export function apply(ctx, config = {}) {', 'export function apply(ctx, config = {}) {\n  registerScripted(ctx)')
+  assert.notEqual(patched, readFileSync(indexPath, 'utf8'), 'the disposable plugin must register the scripted provider')
+  writeFileSync(indexPath, patched)
   const patch = join(PROFILE, 'cordis.patch.yml')
   const original = readFileSync(patch, 'utf8')
   const rewritten = original
+    .replace(/provider: deepseek-account/, 'provider: fm-scripted')
+    .replace(/model: deepseek-flash/, 'model: scripted-escalate')
     .replace(/defaultDirectory: .*/, `defaultDirectory: ${LAB}`)
     .replace(/(id: firstmate-native[\s\S]*?enabled: true\n)/, '$1    engineTickMs: 500\n')
   assert.notEqual(rewritten, original, 'the disposable profile must repoint the default directory')
@@ -73,7 +86,7 @@ function makeLab() {
   for (const name of ['dsh-native', 'dsh-native-lease', 'dsh-engine']) writeFileSync(join(LAB, 'config', name), 'on\n')
   writeFileSync(join(LAB, 'config', 'native-plugin-dir'), `${PLUGIN}\n`)
   writeFileSync(join(LAB, 'config', 'crew-dispatch.json'), JSON.stringify({
-    default: { harness: 'omp', model: 'opencode-go/deepseek-v4.1-flash', provider: 'opencode-go', effort: 'low' },
+    default: { harness: 'omp', model: 'scripted-escalate', provider: 'fm-scripted', effort: 'low' },
   }))
   const snapshot = join(LAB, 'bin', 'fm-fleet-snapshot.sh')
   writeFileSync(snapshot, '#!/usr/bin/env bash\ncat "$FM_HOME/snapshot.json"\n')
@@ -196,6 +209,35 @@ try {
   const added = after.records.map((row) => `${row.event.seq}:${row.event.type}`).filter((entry) => !beforeTypes.includes(entry))
   assert.deepEqual(added.filter((entry) => /message|followup|escalation/.test(entry)), [], `routine traffic posted into the parent: ${added.join(',')}`)
   note('routine traffic produced no parent message')
+
+  // A captain-class outcome drives one real coordinator escalation turn. The
+  // scripted provider emits the tool call only for a [captain] traffic batch,
+  // so routine traffic above stayed silent.
+  const blocker = {
+    ...task(sessions[0].taskId, sessions[0].sessionId, 'blocked [at=live]: PR is ready for the captain'),
+    hints: { pending_decision: true, blocked_event: true, open_decisions: ['merge'] },
+  }
+  writeFileSync(join(LAB, 'snapshot.json'), JSON.stringify({
+    schema: 'fm-fleet-snapshot.v1', backlog: { records: [] },
+    tasks: [blocker, ...sessions.slice(1).map((s) => task(s.taskId, s.sessionId))],
+  }))
+  const tagged = (page) => page.records.filter((row) =>
+    row.event.type === 'user/message'
+    && JSON.stringify(row.event.data ?? {}).includes('firstmate engine escalation'))
+  let escalations = []
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    escalations = tagged(await events(sessions[0].sessionId))
+    if (escalations.length > 0) break
+    await sleep(100)
+  }
+  assert.equal(escalations.length, 1, `the owning parent must receive exactly one tagged escalation, saw ${escalations.length}`)
+  assert.equal(escalations[0].event.data?.source?.kind, 'user', 'the escalation arrives as an ordinary user steer')
+  const otherParent = tagged(await events(sessions[1].sessionId))
+  assert.equal(otherParent.length, 0, 'the second parent receives no escalation')
+  const settled = (await events(sessions[0].sessionId)).records.filter((row) =>
+    row.event.type === 'user/message' && row.event.data?.source?.kind === 'subagent-settled')
+  assert.equal(settled.length, 0, 'no subagent settlement notice reached the parent')
+  note('a real coordinator escalation turn delivered one tagged message to its own parent only')
 
   assert.ok(existsSync(join(LAB, 'state', 'engines')), 'the disposable home must hold the engine records')
   note(`${base} ${realpathSync(PLUGIN)}`)

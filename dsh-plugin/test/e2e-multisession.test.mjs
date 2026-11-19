@@ -265,9 +265,9 @@ test('two real sessions keep one coordinator each, isolated traffic, and one lea
   assert.equal(escalated.delivered, true)
   assert.equal(readEscalations({ home, parentSession: 'parent-a' }).records.length, 1)
   assert.equal(readEscalations({ home, parentSession: 'parent-b' }).records.length, 0)
-  assert.equal(services.sends.length, 1)
-  assert.equal(services.sends[0].targetId, 'parent-a')
-  assert.match(services.sends[0].content[0].text, /escalation/)
+  assert.equal(services.sends.length, 0, 'escalation bypasses the managed subagent tree')
+  assert.equal(registry.resumed.at(-1).resumeSessionId, 'parent-a', 'the escalation wakes its own parent')
+  assert.match(registry.messages.at(-1).content[0].text, /escalation/)
 
   // 4. Contention. Both coordinators claim one shared task; one wins.
   const identityA = { home, sessionId: 'parent-a', ownerLabel: 'dsh:parent-a' }
