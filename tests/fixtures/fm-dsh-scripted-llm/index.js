@@ -7,12 +7,15 @@
  * It never spends tokens. A coordinator turn carrying a `[captain]` engine
  * traffic batch gets one tool call to `firstmate_native_escalate`; the next
  * call, which carries that tool's result, ends the turn. Every other turn
- * ends with a plain text reply. That drives one real coordinator escalation
- * through the installed DSH Host and the plugin's real tool surface.
+ * ends with a plain text reply. A `[captain]` batch carrying `restart-proof`
+ * emits the restart outcome, so the guard can deliver an outcome that was
+ * recorded before a Host restart.
  */
 const PROVIDER = 'fm-scripted'
 const MODEL = 'scripted-escalate'
 const OUTCOME = 'Live guard: PR is ready for the captain.'
+export const RESTART_OUTCOME = 'Live guard: coordinator resumed after host restart.'
+const RESTART_MARKER = 'restart-proof'
 const TOOL_CALL_ID = 'fm-live-escalate'
 
 /** Duck-typed LlmAdapter: every method the registry and loop call is present. */
@@ -53,9 +56,11 @@ class ScriptedAdapter {
     const messages = options.messages ?? []
     const text = messages.map((message) => JSON.stringify(message.content ?? [])).join('\n')
     const captainBatch = text.includes('[firstmate engine traffic]') && text.includes('[captain]')
-    const answered = messages.some((message) => message.role === 'tool')
+    const batchIndex = messages.findLastIndex((message) => JSON.stringify(message.content ?? []).includes('[firstmate engine traffic]'))
+    const answered = batchIndex >= 0 && messages.slice(batchIndex + 1).some((message) => message.role === 'tool')
     if (captainBatch && !answered) {
-      const args = JSON.stringify({ outcome: OUTCOME, task: 'task-a' })
+      const outcome = text.includes(RESTART_MARKER) ? RESTART_OUTCOME : OUTCOME
+      const args = JSON.stringify({ outcome, task: 'task-a' })
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
       yield { type: 'tool-call-delta', index: 0, id: TOOL_CALL_ID, name: 'firstmate_native_escalate', argumentsDelta: args }
       yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: TOOL_CALL_ID, name: 'firstmate_native_escalate', arguments: args } }

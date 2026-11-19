@@ -568,8 +568,8 @@ A backend spawn refusal from a missing dependency or version gate is terminal; f
   marker; routine traffic from another session never enters its inbox. See
   [DSH-native supervisor architecture](dsh-native-architecture.md#613-parallel-session-invariants).
 - The same session's forked coordinator is watchable in the DSH web subagents menu under the
-  stable name `firstmate-coordinator`; routine turns stay there, and only captain-relevant
-  outcomes reach the interactive conversation.
+  `firstmate-coordinator` name, with a unique suffix on any replacement fork; routine turns
+  stay there, and only captain-relevant outcomes reach the interactive conversation.
 
 ### Task selectors
 

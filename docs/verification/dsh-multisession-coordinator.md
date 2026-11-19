@@ -38,7 +38,10 @@ contract.
   batch, so the guard drives a real coordinator escalation turn and asserts real
   completed turns, real fork catalog children, no parent message from routine
   traffic, and exactly one tagged escalation in the owning parent with none in
-  the second and no settlement notice.
+  the second and no settlement notice. It then records an undelivered captain
+  outcome, stops and respawns only the disposable Host against the same home,
+  and asserts that the new process adopts the persisted coordinator session
+  without a name collision, re-owns its record, and delivers that outcome.
 
 ## Coverage gap, stated precisely
 
@@ -48,8 +51,11 @@ session, because the disposable Home has no model credential to make the
 lease trigger inside the live Host; the fast layer asserts that trigger through
 the real plugin tool surface. The live layer's scripted provider replaces only
 the model's decision to escalate, not the tool call, the delivery, the durable
-record, or the DSH session writes, all of which run unmodified. No product code
-was changed to make either layer possible.
+record, or the DSH session writes, all of which run unmodified. The restart
+phase records one pending escalation directly because the scripted provider
+cannot create an undelivered record; DSH itself closes the engine record on
+shutdown, so the guard proves adoption of that real closed record. No product
+code was changed to make either layer possible.
 
 ## Commands and observed output
 
@@ -60,14 +66,14 @@ Fast suite, from the repository root:
 ```
 
 ```text
-ℹ tests 135
+ℹ tests 139
 ℹ suites 0
-ℹ pass 135
+ℹ pass 139
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 3434.835292
+ℹ duration_ms 3472.871458
 ```
 
 Residency regression alone:
@@ -87,6 +93,27 @@ Residency regression alone:
 ℹ duration_ms 67.517043
 ```
 
+Restart adoption regression alone:
+
+```sh
+( cd dsh-plugin && node --test --test-name-pattern='restarted plugin adopts' test/engine.test.mjs )
+```
+
+```text
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 55.670886
+```
+
+The same test against the pre-fix engine failed: a dead-owner record was not
+adopted, and the replacement fork reused the catalog name already reserved in
+the parent, which the fake catalog refused with `DUPLICATE_AGENT_NAME`.
+
 Live layer, opt-in:
 
 ```sh
@@ -99,12 +126,17 @@ ok - two real sessions completed their prompt turns with a real turn/end boundar
 ok - two real fork coordinators appear in their own parent catalogs
 ok - routine traffic produced no parent message
 ok - a real coordinator escalation turn delivered one tagged message to its own parent only
-ok - http://127.0.0.1:44927 /home/ghazni/.treehouse/firstmate-dsh-fcfcb2/1/firstmate-dsh/dsh-plugin
+ok - disposable DSH Host listens on a private loopback port
+ok - disposable DSH Host restarted with the same persisted home and sessions
+ok - the restarted Host adopted the persisted coordinator without a name collision
+ok - the adopted coordinator delivered the pending captain outcome after restart
+ok - http://127.0.0.1:39761 /home/ghazni/.treehouse/firstmate-dsh-fcfcb2/1/firstmate-dsh/dsh-plugin
 ```
 
 The Host URL and disposable plugin path are printed as the last `ok` line. The
 guard refuses a pass with no Host, no completed turns, no fork catalog children,
-or no tagged escalation in the owning parent.
+no adopted coordinator after a restart, or no tagged escalation in the owning
+parent.
 
 ## Interactive inspection
 

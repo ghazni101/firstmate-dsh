@@ -23,6 +23,7 @@ import {
   readEngineRecord,
   readEscalations,
   recordEscalation,
+  processStartTime,
   writeEngineRecord,
 } from '../src/engine-records.js'
 import {
@@ -97,13 +98,20 @@ function rootAgent({ home, id = 'parent-a', events = [{ seq: 0, type: 'turn/star
  * @param options - failure injection.
  * @returns controls plus the service object.
  */
-function makeSubagents({ failSends = 0 } = {}) {
+function makeSubagents({ failSends = 0, catalog = new Set() } = {}) {
   const activations = []
   const specs = []
   const sends = []
   let failures = failSends
   const subagents = {
     async startActivation(spec) {
+      if (typeof spec.name === 'string' && catalog.has(spec.name)) {
+        throw Object.assign(
+          new Error(`agent name ${JSON.stringify(spec.name)} is already used by another subagent you created`),
+          { code: 'DUPLICATE_AGENT_NAME' },
+        )
+      }
+      if (typeof spec.name === 'string') catalog.add(spec.name)
       const settled = Promise.withResolvers()
       const control = {
         childId: spec.childId,
@@ -596,6 +604,132 @@ test('a resumed session supersedes its old engine so the next tick forks fresh',
     const resumed = rootAgent({ home, id: 'parent-a' })
     await emit(surface.listeners, 'agent/created', { agent: resumed, source: 'resume' })
     assert.equal(readEngineRecord({ home, parentSession: 'parent-a' }).status, 'superseded')
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('a restarted plugin adopts a dead-owner coordinator and delivers its pending escalation', async () => {
+  const home = engineHome()
+  try {
+    writeEngineRecord({ home, parentSession: 'parent-a', record: {
+      parent_session: 'parent-a', home, engine_session: 'engine-old', status: 'live',
+      subagent_provider: 'fork', label: 'firstmate-engine', engine_name: 'firstmate-coordinator',
+      owner_pid: 999999, owner_started: null, crashes: 0,
+      seen: { 'task-a': 'before-restart' }, seed_boundary: 3,
+    } })
+    const catalog = new Set(['firstmate-coordinator'])
+    const fake = makeSubagents({ catalog })
+    const agents = makeAgents()
+    const parent = rootAgent({ home })
+    const { host } = hostFixture({ home, fake, parent, agents })
+    const { record: pending } = recordEscalation({
+      home, parentSession: 'parent-a', engineSession: 'engine-old',
+      task: 'task-a', outcome: 'PR is ready for the captain',
+    })
+
+    const report = await host.tick()
+    assert.equal(report.ok, true)
+    assert.equal(report.adopted, true)
+    assert.equal(report.created, undefined, 'no second coordinator is forked after a restart')
+    assert.equal(report.delivered, true)
+    assert.equal(fake.activations.length, 0)
+    assert.deepEqual(agents.resumed.map((entry) => entry.resumeSessionId), ['engine-old'])
+
+    const adopted = readEngineRecord({ home, parentSession: 'parent-a' })
+    assert.equal(adopted.status, 'live')
+    assert.equal(adopted.owner_pid, process.pid)
+    assert.equal(adopted.engine_session, 'engine-old')
+    const batch = readEngineInbox({ home, parentSession: 'parent-a' }).records[0]
+    assert.match(JSON.stringify(batch.retries), new RegExp(pending.id))
+
+    const surface = await boot({ home, subagents: fake.subagents, agents: agents.agents })
+    const engine = engineAgent({ home, id: 'engine-old' })
+    const escalate = toolNamed(surface.tools, 'firstmate_native_escalate')
+    const delivered = await escalate.execute({ retry_id: pending.id }, execFor(engine))
+    const escalations = agents.messages.filter((message) => message.content[0].text.includes('firstmate engine escalation'))
+    assert.equal(escalations.length, 1, 'the pending captain outcome reaches the parent once')
+    assert.match(escalations[0].content[0].text, /PR is ready for the captain/)
+    assert.notEqual(readEscalations({ home, parentSession: 'parent-a' }).records[0].delivered_at, null)
+    assert.equal(parent.followups.length, 0)
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('a coordinator closed by Host shutdown is adopted by the next process', async () => {
+  const home = engineHome()
+  try {
+    writeEngineRecord({ home, parentSession: 'parent-a', record: {
+      parent_session: 'parent-a', home, engine_session: 'engine-old', status: 'closed',
+      closed_reason: 'parent-session-ended', owner_pid: 999999, owner_started: null,
+      crashes: 0, seen: {},
+    } })
+    const fake = makeSubagents({ catalog: new Set(['firstmate-coordinator']) })
+    const agents = makeAgents()
+    const { host } = hostFixture({ home, fake, parent: rootAgent({ home }), agents })
+    const report = await host.tick()
+    assert.equal(report.adopted, true)
+    assert.equal(report.delivered, true)
+    assert.equal(fake.activations.length, 0, 'no second coordinator is forked')
+    assert.equal(agents.resumed[0].resumeSessionId, 'engine-old')
+    const record = readEngineRecord({ home, parentSession: 'parent-a' })
+    assert.equal(record.status, 'live')
+    assert.equal(record.owner_pid, process.pid)
+    assert.equal('closed_reason' in record, false)
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('a live foreign owner is skipped rather than adopted', async () => {
+  const home = engineHome()
+  try {
+    const foreignPid = process.ppid
+    const started = processStartTime(foreignPid)
+    assert.ok(started !== null, 'the parent process must be live for this regression')
+    writeEngineRecord({ home, parentSession: 'parent-a', record: {
+      parent_session: 'parent-a', home, engine_session: 'engine-foreign', status: 'live',
+      owner_pid: foreignPid, owner_started: started, crashes: 0, seen: {},
+    } })
+    const fake = makeSubagents()
+    const agents = makeAgents()
+    const { host } = hostFixture({ home, fake, parent: rootAgent({ home }), agents })
+    const report = await host.tick()
+    assert.equal(report.skipped, 'foreign-owner')
+    assert.equal(fake.activations.length, 0)
+    assert.equal(agents.resumed.length, 0)
+    assert.equal(readEngineRecord({ home, parentSession: 'parent-a' }).owner_pid, foreignPid)
+  } finally {
+    cleanup(home)
+  }
+})
+
+test('a resumed session forks a uniquely named coordinator without colliding with the old catalog child', async () => {
+  const home = engineHome()
+  try {
+    seedEngineRecord({ home, engine: 'engine-old' })
+    const catalog = new Set(['firstmate-coordinator'])
+    const fake = makeSubagents({ catalog })
+    const surface = await boot({ home, subagents: fake.subagents })
+    const resumed = rootAgent({ home, id: 'parent-a' })
+    await emit(surface.listeners, 'agent/created', { agent: resumed, source: 'clear' })
+    assert.equal(readEngineRecord({ home, parentSession: 'parent-a' }).status, 'superseded')
+
+    const host = new EngineHost({
+      home, parentAgent: resumed, identity: makeIdentity(home, 'parent-a'),
+      subagents: fake.subagents, agents: makeAgents().agents, tickMs: 0,
+    })
+    const report = await host.tick()
+    assert.equal(report.created, true)
+    assert.equal(fake.activations.length, 1)
+    const spec = fake.specs[0]
+    assert.match(spec.name, /^firstmate-coordinator-[a-z0-9]{8}$/)
+    assert.notEqual(spec.name, 'firstmate-coordinator')
+    assert.equal(spec.parent, resumed)
+    assert.equal(spec.delivery, 'caller')
+    assert.equal(readEngineRecord({ home, parentSession: 'parent-a' }).engine_session, report.engine_session)
+    assert.notEqual(report.engine_session, 'engine-old')
   } finally {
     cleanup(home)
   }

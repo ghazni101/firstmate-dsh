@@ -33,7 +33,7 @@ import {
   buildTrafficMessage,
   completedTurnBoundary,
   diffFleetEvents,
-  ENGINE_AGENT_NAME,
+  engineAgentName,
   ENGINE_DEFAULT_TICK_MS,
   ENGINE_LABEL,
   ENGINE_MAX_BATCH_ITEMS,
@@ -179,6 +179,39 @@ export class EngineHost {
    */
   record() {
     return readEngineRecord({ home: this.home, parentSession: this.parentSession })
+  }
+
+  /**
+   * Re-own a persisted coordinator whose former process died.
+   *
+   * DSH reserves the coordinator's name in the parent's durable subagent
+   * catalog, so a fresh fork after a restart collides with the old child. The
+   * persisted session is still resumable through the plugin's agent registry;
+   * adopting it keeps one coordinator per parent and preserves its transcript.
+   * A live foreign owner is never adopted.
+   * @param record - the persisted engine record.
+   * @returns the adopted record, or null when the record cannot be adopted.
+   */
+  adoptEngine(record) {
+    if (record === null || typeof record !== 'object') return null
+    if (typeof record.engine_session !== 'string' || record.engine_session.length === 0) return null
+    // A graceful DSH shutdown disposes the parent and marks the record closed
+    // even though only the process ended. The persisted coordinator session is
+    // still resumable, so a dead owner is adoptable regardless of that status.
+    if (record.owner_pid === process.pid || ownerIsLive(record)) return null
+    return updateEngineRecord({
+      home: this.home,
+      parentSession: this.parentSession,
+      now: this.now,
+      mutate(next) {
+        next.owner_pid = process.pid
+        next.owner_started = processStartTime(process.pid)
+        next.status = 'live'
+        delete next.closed_reason
+        delete next.last_error
+        return next
+      },
+    })
   }
 
   /**
@@ -370,6 +403,14 @@ export class EngineHost {
     if (record !== null && record.owner_pid !== process.pid && ownerIsLive(record)) {
       return this.remember({ ok: true, skipped: 'foreign-owner', reason, engine_session: record.engine_session })
     }
+    let adopted = false
+    if (record !== null && record.owner_pid !== process.pid && !ownerIsLive(record)) {
+      const resumed = this.adoptEngine(record)
+      if (resumed !== null) {
+        record = resumed
+        adopted = true
+      }
+    }
 
     const adoptable = record !== null
       && record.status === 'live'
@@ -449,7 +490,7 @@ export class EngineHost {
     if (this.engineSession !== record.engine_session) this.engineSession = record.engine_session
     if (changed.length === 0 && pending.length === 0) {
       this.writeSeen(nextSeen)
-      return this.remember({ ok: true, quiet: true, reason, engine_session: this.engineSession })
+      return this.remember({ ok: true, quiet: true, adopted, reason, engine_session: this.engineSession })
     }
 
     const batchClass = pending.length > 0 || changed.some((item) => item.class === 'captain')
@@ -472,8 +513,8 @@ export class EngineHost {
     })
     if (!delivery.ok) {
       return this.remember({
-        ok: false,
         crashed: true,
+        adopted,
         reason,
         engine_session: this.engineSession,
         error: delivery.error,
@@ -486,6 +527,7 @@ export class EngineHost {
     return this.remember({
       ok: true,
       delivered: true,
+      adopted,
       reason,
       engine_session: this.engineSession,
       batch: batch.id,
@@ -510,6 +552,7 @@ export class EngineHost {
     }
     const at = this.now()
     const engineSession = randomUUID()
+    const catalogName = engineAgentName(engineSession, previous)
     const record = {
       v: 1,
       schema: ENGINE_SCHEMA,
@@ -550,7 +593,7 @@ export class EngineHost {
       const activation = await subagents.startActivation({
         provider: ENGINE_PROVIDER,
         label: ENGINE_LABEL,
-        name: ENGINE_AGENT_NAME,
+        name: catalogName,
         prompt,
         parent: this.parentAgent,
         delivery: 'caller',
@@ -566,7 +609,7 @@ export class EngineHost {
         return { ok: false, skipped: 'closed', error: 'the parent session ended during engine creation' }
       }
       record.status = 'live'
-      record.engine_name = typeof activation.name === 'string' ? activation.name : null
+      record.engine_name = typeof activation.name === 'string' ? activation.name : catalogName
       record.started_at = this.now()
       const written = writeEngineRecord({ home: this.home, parentSession: this.parentSession, record, now: this.now })
       this.engineSession = engineSession
