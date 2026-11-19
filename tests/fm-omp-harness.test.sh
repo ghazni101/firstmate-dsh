@@ -114,12 +114,12 @@ test_harness_identity_and_liveness_classification() {
   ! fm_harness_process_matches comp '' || fail "harness identity must not accept comp"
   # shellcheck source=/dev/null
   . "$ROOT/bin/fm-backend.sh"
-  fm_backend_source tmux || fail "fm_backend_source tmux failed"
-  [ "$(fm_agent_process_classify_name omp)" = agent ] || fail "tmux liveness must classify omp as an agent"
-  [ "$(fm_agent_process_classify_name /opt/omp/bin/omp)" = agent ] || fail "tmux liveness must classify an omp path as an agent"
-  [ "$(fm_agent_process_classify_name ompd)" != agent ] || fail "tmux liveness must not classify ompd as an agent"
-  [ "$(fm_agent_process_classify_name comp)" != agent ] || fail "tmux liveness must not classify comp as an agent"
-  pass "harness identity and tmux liveness: omp is anchored, decoys stay out"
+  fm_backend_source herdr || fail "fm_backend_source herdr failed"
+  [ "$(fm_agent_process_classify_name omp)" = agent ] || fail "backend liveness must classify omp as an agent"
+  [ "$(fm_agent_process_classify_name /opt/omp/bin/omp)" = agent ] || fail "backend liveness must classify an omp path as an agent"
+  [ "$(fm_agent_process_classify_name ompd)" != agent ] || fail "backend liveness must not classify ompd as an agent"
+  [ "$(fm_agent_process_classify_name comp)" != agent ] || fail "backend liveness must not classify comp as an agent"
+  pass "harness identity and backend liveness: omp is anchored, decoys stay out"
 }
 
 # The bun global package install: `~/.bun/bin/omp` is a `#!/usr/bin/env bun`
@@ -233,6 +233,7 @@ make_spawn_case() {  # <name> <harness> <id>
   proj="$case_dir/project"
   wt="$case_dir/wt"
   fakebin=$(make_spawn_fakebin "$case_dir/fake" claude)
+  fm_test_fake_treehouse_lease "$fakebin"
   make_fake_omp "$fakebin"
   fm_test_spawn_home "$home" "$harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
@@ -328,12 +329,14 @@ test_secondmate_launch_relies_on_discovery() {
   printf '%s\n' 'projects/' 'state/' 'data/' 'config/' '.no-mistakes/' > "$home/.gitignore"
   git -C "$home" init -q -b main
   fakebin=$(make_spawn_fakebin "$world/fake" claude)
+  fm_test_fake_treehouse_lease "$fakebin"
   make_fake_omp "$fakebin"
   launchlog="$world/launch.log"
   : > "$launchlog"
-  # FM_BACKEND=tmux pins the fake tmux even where the developer shell carries a
-  # live Herdr environment; without it auto-detection would spawn a real pane.
-  out=$(PATH="$fakebin:$PATH" TMUX='fake,1,0' FM_BACKEND=tmux CLAUDECODE=1 \
+  # FM_BACKEND=herdr pins the only supported backend even where the developer
+  # shell carries a live Herdr environment; without it auto-detection could
+  # spawn a real pane.
+  out=$(PATH="$fakebin:$PATH" TMUX='fake,1,0' FM_BACKEND=herdr CLAUDECODE=1 \
     FM_ROOT_OVERRIDE='' FM_HOME="$world/home" \
     FM_STATE_OVERRIDE="$world/home/state" FM_DATA_OVERRIDE="$world/home/data" \
     FM_PROJECTS_OVERRIDE="$world/home/projects" FM_CONFIG_OVERRIDE="$world/home/config" \
@@ -369,10 +372,11 @@ test_secondmate_config_pinned_model_is_validated() {
   git -C "$home" init -q -b main
   printf 'omp openai-codex/gpt-nope\n' > "$world/home/config/secondmate-harness"
   fakebin=$(make_spawn_fakebin "$world/fake" claude)
+  fm_test_fake_treehouse_lease "$fakebin"
   make_fake_omp "$fakebin"
   launchlog="$world/launch.log"
   : > "$launchlog"
-  out=$(PATH="$fakebin:$PATH" TMUX='fake,1,0' FM_BACKEND=tmux CLAUDECODE=1 \
+  out=$(PATH="$fakebin:$PATH" TMUX='fake,1,0' FM_BACKEND=herdr CLAUDECODE=1 \
     FM_ROOT_OVERRIDE='' FM_HOME="$world/home" \
     FM_STATE_OVERRIDE="$world/home/state" FM_DATA_OVERRIDE="$world/home/data" \
     FM_PROJECTS_OVERRIDE="$world/home/projects" FM_CONFIG_OVERRIDE="$world/home/config" \
@@ -397,6 +401,7 @@ make_omp_secondmate_world() {  # <name> -> echoes <world>; seeded home at <world
   printf '%s\n' 'projects/' 'state/' 'data/' 'config/' '.no-mistakes/' > "$home/.gitignore"
   git -C "$home" init -q -b main
   fakebin=$(make_spawn_fakebin "$world/fake" claude)
+  fm_test_fake_treehouse_lease "$fakebin"
   make_fake_omp "$fakebin"
   : > "$world/launch.log"
   printf '%s\n' "$world"
@@ -405,8 +410,8 @@ make_omp_secondmate_world() {  # <name> -> echoes <world>; seeded home at <world
 run_omp_secondmate_spawn() {  # <world> <spawn-args...>
   local world=$1
   shift
-  # FM_BACKEND=tmux pins the fake tmux, as in the discovery case above.
-  PATH="$world/fake/fakebin:$PATH" TMUX='fake,1,0' FM_BACKEND=tmux CLAUDECODE=1 \
+  # FM_BACKEND=herdr pins the backend, as in the discovery case above.
+  PATH="$world/fake/fakebin:$PATH" TMUX='fake,1,0' FM_BACKEND=herdr CLAUDECODE=1 \
     FM_ROOT_OVERRIDE='' FM_HOME="$world/home" \
     FM_STATE_OVERRIDE="$world/home/state" FM_DATA_OVERRIDE="$world/home/data" \
     FM_PROJECTS_OVERRIDE="$world/home/projects" FM_CONFIG_OVERRIDE="$world/home/config" \
