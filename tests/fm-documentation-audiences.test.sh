@@ -34,8 +34,9 @@ data = json.loads(source.read_text(encoding="utf-8"))
 if mode.name == "duplicate":
     data["surfaces"].append(dict(data["surfaces"][0]))
 elif mode.name == "bad-setup-audience":
+    target = data["readmeSetupTargets"][0]
     for entry in data["surfaces"]:
-        if entry["path"] == "docs/tmux-backend.md":
+        if entry["path"] == target:
             entry["audience"] = "maintainer-verification"
             break
 elif mode.name == "missing-owner-pointer":
@@ -65,12 +66,14 @@ test_duplicate_and_setup_classification_fail() {
   local duplicate="$TMP_ROOT/duplicate.json"
   local bad_setup="$TMP_ROOT/bad-setup.json"
   local shrink_scope="$TMP_ROOT/shrink-scope.json"
+  local setup_target
+  setup_target=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["readmeSetupTargets"][0])' "$INVENTORY")
   mutate_inventory "$INVENTORY" "$duplicate" duplicate
   mutate_inventory "$INVENTORY" "$bad_setup" bad-setup-audience
   mutate_inventory "$INVENTORY" "$shrink_scope" shrink-scope
   run_expect_failure "surfaces classified more than once" \
     "$CHECK" --inventory "$duplicate"
-  run_expect_failure "README setup target docs/tmux-backend.md has disallowed audience" \
+  run_expect_failure "README setup target $setup_target has disallowed audience" \
     "$CHECK" --inventory "$bad_setup"
   run_expect_failure "scope.trackedPatterns must match the fixed maintained-prose scope" \
     "$CHECK" --inventory "$shrink_scope"
