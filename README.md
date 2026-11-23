@@ -42,16 +42,16 @@ Launching dsh inside it for your primary session instantiates your first mate - 
 ## Features
 
 - **One liaison** - you talk only to the first mate; it dispatches, supervises, escalates only real decisions, and reports plain outcomes.
-- **A visible crew** - every crewmate works in its own Herdr tab you can watch or interact with; the first mate reconciles.
+- **A visible crew** - every crewmate works in its own Herdr tab you can watch or interact with, and each interactive session's coordinator is a watchable conversation in the DSH subagents menu.
 - **Disposable worktrees** - each task runs in a clean [treehouse](https://github.com/kunchenguid/treehouse) git worktree, so parallel work on one repo never collides.
 - **Two task shapes** - ship tasks deliver authorized changes; scout tasks leave standalone investigation reports when the intake contract warrants separate research.
 - **Explicit project modes** - each project ships via `no-mistakes`, `direct-PR`, or `local-only`, with an optional `+yolo` merge-autonomy flag, an optional `branch=<prefix>` override for the default `fm/` ship-branch prefix, and an optional `forge=gerrit` binding under which the worker publishes a Gerrit change instead of opening a pull request, plus an optional `pr=manual` token under which the worker writes the PR title and body instead of the pipeline.
 - **Self-repo boundary** - a home runs as firstmate user/operator by default, so a firstmate bug is diagnosed and patched locally but never pushed, PRed, issued, commented, or forked upstream on its own; publishing to firstmate's own repository needs the `config/firstmate-role` maintainer opt-in or a per-task captain consent ([schema](docs/configuration.md#firstmate-role-configfirstmate-role)).
 - **Optional secondmates** - opt in to persistent second mates that run from isolated firstmate homes with their own `FM_HOME`, state, and projects, either locally or as a whole home on an SSH-reachable host, with guarded updates and recovery that never turns an unavailable remote route into a local replacement.
-- **Event-driven, zero-token supervision** - a bash watcher sleeps on the fleet and wakes the first mate only when something needs you, and the dsh plugin supplies the native session-open path.
+- **Native, watchable supervision** - the dsh plugin gives each interactive session its own coordinator child that absorbs routine fleet traffic; a model-free tick means a quiet fleet costs no agent turns, and your conversation only receives outcomes that need you.
 - **Optional Relay** - opt in with one local `.env` pairing token so firstmate can answer your public mentions on X and Discord alike, act on normal reversible mention requests through the same lifecycle as chat requests, acknowledge spawned work, and post up to three public-safe completion follow-ups within seven days for genuine milestones and the final outcome without changing non-Relay behavior; a final reply promised in a thread becomes durable state that is reconciled from disk, so a restart or a compacted conversation cannot lose it; dry-run preview records would-be replies and dismissals locally before go-live.
 - **Strict project boundary** - the first mate is read-only over your projects except for the narrow guarded and captain-approved operations authorized by [hard rule 1](AGENTS.md#1-identity-and-prime-directives), including fleet sync's guarded safe branch pruning; crewmates make every other project change behind the configured merge authority.
-- **Restart-proof** - all state lives on disk and in the active session backend (see [backend selection](docs/configuration.md#backend-selection-order)); the next session reconciles after a restart, while ordinary supervision recovers confirmed-dead secondmate agents without waiting for one.
+- **Restart-proof** - all state lives on disk; the dsh plugin re-owns a session's persisted coordinator after a restart, so the next session reconciles rather than reconstructing, while ordinary supervision recovers confirmed-dead secondmate agents without waiting for one.
 
 Full detail on every feature lives in [docs/architecture.md](docs/architecture.md).
 
@@ -86,7 +86,7 @@ Then launch dsh with this checkout as its working directory; AGENTS.md takes ove
 dsh
 ```
 
-The dsh plugin loads the native supervision engine for the session and the first mate owns the crew from there.
+The dsh plugin gives the session its native supervisor tools and its own coordinator, and the first mate owns the crew from there.
 Worker harness setup is documented in [docs/configuration.md](docs/configuration.md#harness-support).
 
 ### Talk to it
@@ -99,7 +99,7 @@ Worker harness setup is documented in [docs/configuration.md](docs/configuration
 # Minutes later:
 
   PR ready for review, captain: https://github.com/you/xyz/pull/42
-  (fix flaky login test - risk: low - CI green)
+  (fix flaky login test - risk: low - checks green)
 
 > alright merge it
 ```
@@ -134,7 +134,7 @@ Herdr is the only runtime backend; its setup is linked in [Documentation](#docum
 ```
 
 You chat with the first mate.
-It routes each request to a crewmate in its own session endpoint and git worktree, supervises the fleet with a zero-token event-driven watcher, and brings you finished PRs, approved local merges, or investigation reports.
+It routes each request to a crewmate in its own session endpoint and git worktree, keeps routine supervision in each session's own coordinator so the captain's conversation sees only outcomes, and brings you finished PRs, approved local merges, or investigation reports.
 Optional secondmates extend this to persistent local or whole-home remote second mates, dispatch profiles let you steer which harness handles which task, and opt-in Relay lets the same fleet answer public mentions.
 The treehouse worktree pool is not a runtime backend; herdr is the only runtime backend.
 
@@ -147,7 +147,7 @@ Use the slash form shown here; the worker harnesses do not install project hooks
 
 | Skill              | What it does                                                                                                                                  |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/afk`             | Enter away-mode supervision: the dsh supervision host or the daemon handles wakes while you step away; see the [away procedure](.agents/skills/afk/SKILL.md) for the posture and return contract |
+| `/afk`             | Enter away-mode supervision: the session's coordinator or the away daemon handles wakes while you step away; see the [away procedure](.agents/skills/afk/SKILL.md) for the posture and return contract |
 | `/quiet`           | Keep routine wakes off main while staying and chatting; requested actions proceed now rather than waiting for your return. Where an [attended supervision host](docs/supervision-host.md#quiet-mode) already does this, it only says so; otherwise it starts the quiet daemon, which stays active through ordinary chat until `/quiet off` |
 | `/ahoy`            | Recap visible session events since the prior real captain message plus visibly unanswered captain decisions, then guide the captain through any open decisions one at a time in agent-judged impact order; fall back to Bearings when invoked as the session's first real captain message |
 | `/bearings`        | Generate a concise four-section chat digest from bounded fleet state, including registered remote-home ledgers and measured follow-up for owned contributions; use `/bearings file` to also replace today's dated report in `data/`, and add `include PRs` for live GitHub enrichment |
@@ -200,11 +200,26 @@ Firstmate's skills live in two separate places with different audiences:
 - [docs/scripts.md](docs/scripts.md) - the `bin/` toolbelt reference.
 - [docs/documentation-audiences.md](docs/documentation-audiences.md) - documentation audiences and the machine-checked placement boundary.
 - [`AGENTS.md`](AGENTS.md) - the supervisor contract, role boundary, and routing index for conditional procedures.
-- [CONTRIBUTING.md](CONTRIBUTING.md) - how to contribute, including the dev/test commands.
+- [`VISION.md`](VISION.md) - the product vision and the principles a change is judged against.
 
 ## Contributing
 
-Contributions are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, repo conventions, and how to run the tests.
+Changes to firstmate's shared tracked material - `AGENTS.md`, `README.md`, `VISION.md`, `.tasks.toml`, `bin/`, `.agents/skills/`, and `skills/` - ship through this repository's registered delivery path on a feature branch, with the same merge authority as any other project.
+Load the agent-only `firstmate-coding-guidelines` skill before editing that material; it owns the knowledge-placement rules that keep `AGENTS.md` from regrowing.
+Everything personal to one captain's fleet - `.env`, `data/`, `state/`, `config/`, `projects/`, and `.no-mistakes/` - is gitignored; never commit it.
+This repository runs no CI, so a pull request here produces no commit status and the configured merge authority reviews it by hand.
+
+Check and test a change locally before pushing:
+
+```sh
+bin/fm-lint.sh   # the shell and workflow lint definition, with pinned versions
+bin/fm-test-run.sh tests/<subject>.test.sh   # one subject, timed
+bin/fm-test-run.sh --changed   # changed-file path with bounded concurrency
+```
+
+`bin/fm-test-run.sh` owns suite selection, lanes, concurrency, and the coverage guard; its `--help` lists the families and flags.
+Run `bin/fm-doc-audience-check.sh` after documentation changes.
+Put each full sentence on its own line in Markdown, and keep `README.md` a concise overview with pointers into `docs/`.
 
 ## License
 
