@@ -69,7 +69,7 @@ State the trigger as a condition ("load before X", "load on Y wake"), never as a
 Briefs for tasks that touch firstmate's own tracked material should tell the crewmate to load this skill.
 `bin/fm-brief.sh`'s `REPO` argument is a caller-supplied string, while its optional `--project` directory enables lineage-based self-repository detection for the publication gate (`bin/fm-role-lib.sh`).
 The scaffold does not add this skill's load instruction; firstmate adds it to firstmate-repo briefs by hand.
-`CONTRIBUTING.md`'s "Development" section carries the same instruction as a durable reminder.
+`README.md`'s "Contributing" section carries the same instruction as a durable reminder.
 
 ## Compatibility and enforcement
 

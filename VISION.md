@@ -36,7 +36,7 @@ A rigid script must never adjudicate meaning, and intelligence must never be spe
 Scripts stop safely and report when the world surprises them; agents read, interpret, and decide.
 Token efficiency is a first-class concern: every agent's context stays lean, and every task is achieved with the fewest tokens that do it well.
 The command structure stays flat: every layer between the captain's intent and the acting agent costs fidelity and tokens, so depth is capped, not grown.
-The always-loaded contract carries a stated ceiling of 9,000 words, and a change that would cross it must prune or move content behind a trigger before it lands.
+The always-loaded contract is kept deliberately small, and a change that would grow it must prune or move content behind a trigger before it lands.
 
 ## A restart is a non-event
 
@@ -56,8 +56,8 @@ A new task shape earns its way in only when existing primitives genuinely cannot
 ## The fleet outlives any vendor
 
 The first mate is not another harness and not another orchestrator app.
-The experience it creates is a new way of working, orthogonal to which agent harness or session manager the captain already uses.
-It is an agent distro, not an app: instructions, skills, scripts, and state conventions that any verified harness can inhabit - Claude Code, Codex, Pi, and others - and that run across session managers such as tmux, Herdr, and Orca.
+The experience it creates is a new way of working, and the distro is deliberately opinionated about the ground it stands on: DeepSeek Harness is its primary runtime, Herdr is its only worker backend, and its worker harnesses are only the ones verification has admitted - Claude Code, Cursor, Oh My Pi, and Pi.
+It is an agent distro, not an app: instructions, skills, scripts, and state conventions that turn dsh into a first mate who commands that crew.
 The first mate can read, understand, and evolve every part of itself: plain instructions, scripts, and text records keep the whole system introspectable, hot-modifiable, and self-evolving by the very agent that runs it.
 When something is not working well, the captain can ask the first mate and it figures it out; captains using their own firstmate to improve the shared surface is how the fleet evolves in the open.
 Harness adapters earn trust through verification, and the fleet keeps sailing when any one vendor's tool degrades.

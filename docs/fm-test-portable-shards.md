@@ -156,7 +156,7 @@ The retired workflow retained per-PR supersession and kept only the newest of cl
 
 ## Local entry points
 
-[CONTRIBUTING.md](../CONTRIBUTING.md) owns the local test policy and common entry points.
+[README.md](../README.md#contributing) owns the local test policy and common entry points.
 `bin/fm-test-run.sh --help` owns exact lane names, selection flags, and bounded `--jobs` mechanics.
 
 ## Timeouts

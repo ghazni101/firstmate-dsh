@@ -35,10 +35,6 @@
       "target": "docs/documentation-audiences.md"
     },
     {
-      "source": "CONTRIBUTING.md",
-      "target": "docs/documentation-audiences.md"
-    },
-    {
       "source": "README.md",
       "target": "docs/documentation-audiences.md"
     },
@@ -195,14 +191,6 @@
     {
       "path": "AGENTS.md",
       "audience": "agent-runtime"
-    },
-    {
-      "path": "CLAUDE.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "CONTRIBUTING.md",
-      "audience": "maintainer-architecture"
     },
     {
       "path": "README.md",
